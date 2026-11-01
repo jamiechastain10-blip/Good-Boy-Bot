@@ -20,6 +20,8 @@ export function editionConfig(pkg, id) {
   b.productName = NAMES[id];
   b.nsis = { ...b.nsis, artifactName: `${slug}-Setup-\${version}.\${ext}`, shortcutName: NAMES[id] };
   b.portable = { ...b.portable, artifactName: `${slug}-Portable-\${version}.\${ext}` };
+  // Each edition has its own update feed in the releases repository (latest.yml for Good Boy, developer.yml, owner.yml).
+  b.publish = (b.publish ?? []).map((x) => ({ ...x, channel: id === 'consumer' ? 'latest' : id }));
   b.mac = { ...b.mac, artifactName: `${slug}-\${version}-\${arch}.\${ext}` };
   return { ...pkg, productName: NAMES[id], build: b };
 }

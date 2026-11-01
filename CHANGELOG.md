@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.2
+**App updates from GitHub:** the installed Windows app checks the public Good-Boy-Bot repository, downloads new versions by itself (each file is checked against its SHA-512 before installing) and installs them when you restart. The Updates page shows what is happening and has Check now and Restart and update buttons. The portable app, the Mac app and the Owner build tell you a new version is out instead. Your settings, token and server data are kept.
+**Take control:** re-running setup no longer loses track of a running bot. If an older copy is still running in the background, or another Good Boy app on this computer runs the same bot, the app says so and offers Take control, which stops the old copy safely (only if it really is the bot) and starts fresh. Two installs on one computer can no longer run the same bot at once.
+**Client Secret check:** setup and Settings ask Discord whether the Client Secret is right before saving it, and Open dashboard warns you before a login that would fail with "invalid_client". Settings has a Change client secret field.
+**Data files:** Settings > Server data can export everything to one .goodboy file and import one back (the current data is backed up first). The token is never included.
+
 ## 2.1.1
 This is 2.1 with the later work folded in (there is no 2.2). Everything is tested against simulated Discord; nothing in this release has been tried on real Discord yet (see the README's first-run checklist), and the desktop app is **written but not built or run**.
 

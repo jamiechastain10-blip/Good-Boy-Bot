@@ -8,6 +8,8 @@
  *   summary <dataDir>        server name, members with XP and their levels, modules on or off
  *   import <dbFile> <dataDir> copy a database (including its -wal side file) into dataDir as one clean file,
  *                            keeping a backup of what was there
+ *   export <dataDir> <file>  write the bot's data as one file (a .goodboy data file) that import can read back,
+ *                            safe while the bot is running
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -47,6 +49,29 @@ export async function summary(dataDir, { top = 50 } = {}) {
   } finally { db.close(); }
 }
 
+/** Refuses anything that is not a healthy Good Boy database (a random file renamed .db, or a damaged one). */
+function checkGoodBoyDb(db) {
+  let tables;
+  try { tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name)); }
+  catch { throw new Error('That file is not a Good Boy data file.'); }
+  if (!['guilds', 'module_state', 'module_data'].every((t) => tables.has(t))) throw new Error('That file is not a Good Boy data file.');
+  const ok = db.prepare('PRAGMA integrity_check').get();
+  if (Object.values(ok)[0] !== 'ok') throw new Error('That data file is damaged (it failed its integrity check), so nothing was changed.');
+}
+
+/** The bot's data as one file. Reads a consistent snapshot, so the bot can keep running. */
+export async function exportDb(dataDir, destFile) {
+  const src = path.join(dataDir, 'eclipse.db');
+  if (!fs.existsSync(src)) throw new Error('There is no bot data yet to export.');
+  if (fs.existsSync(destFile)) fs.rmSync(destFile);
+  fs.mkdirSync(path.dirname(destFile), { recursive: true });
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(src, { readOnly: true });
+  try { checkGoodBoyDb(db); db.exec(`VACUUM INTO '${destFile.replace(/'/g, "''")}'`); } finally { db.close(); }
+  const s = await summary(dataDir);
+  return { ok: true, file: destFile, bytes: fs.statSync(destFile).size, guild: s.guild, memberCount: s.memberCount };
+}
+
 /** One clean copy of a database, WAL changes included. The source is opened read-only and never changed. */
 export async function importDb(srcFile, dataDir) {
   if (!fs.existsSync(srcFile)) throw new Error(`There is no database at ${srcFile}.`);
@@ -63,9 +88,12 @@ export async function importDb(srcFile, dataDir) {
   const { DatabaseSync } = await import('node:sqlite');
   const src = new DatabaseSync(srcFile, { readOnly: true });
   try {
-    const ok = src.prepare('PRAGMA integrity_check').get();
-    if (Object.values(ok)[0] !== 'ok') throw new Error('That database failed its integrity check, so it was not imported.');
+    checkGoodBoyDb(src);
     src.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
+  } catch (e) {
+    fs.rmSync(dest, { force: true });
+    if (backup) fs.copyFileSync(backup, dest); // put the old data back
+    throw e;
   } finally { src.close(); }
   const s = await summary(dataDir);
   return { ok: true, dest, backup, guild: s.guild, memberCount: s.memberCount };
@@ -88,6 +116,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (cmd === 'selftest') out(await selftest());
     else if (cmd === 'summary') out(await summary(a));
     else if (cmd === 'import') out(await importDb(a, b));
-    else { out({ ok: false, error: 'Use: selftest | summary <dataDir> | import <dbFile> <dataDir>' }); process.exitCode = 2; }
+    else if (cmd === 'export') out(await exportDb(a, b));
+    else { out({ ok: false, error: 'Use: selftest | summary <dataDir> | import <dbFile> <dataDir> | export <dataDir> <file>' }); process.exitCode = 2; }
   } catch (e) { out({ ok: false, error: e.message }); process.exitCode = 1; }
 }

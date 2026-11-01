@@ -22,7 +22,10 @@ import { ensureBotCode, seedData, installedVersion } from '../desktop/lib/botins
 import { runTool } from '../desktop/lib/tools.js';
 import { editionConfig } from '../desktop/scripts/set-edition.js';
 import { bundleFiles } from '../desktop/scripts/bundle-bot.js';
-import { levelOf as toolLevel, summary as toolSummary, importDb } from '../scripts/app-tools.js';
+import { levelOf as toolLevel, summary as toolSummary, importDb, exportDb } from '../scripts/app-tools.js';
+import { blockedBy, processName, takeControl, isNodeName } from '../desktop/lib/takeover.js';
+import { updateMode, channelFor, compareVersions, readLatest, RELEASES } from '../desktop/lib/updater.js';
+import { verifySecret } from '../desktop/lib/discord.js';
 import { levelOf as communityLevel } from '../modules/community/index.js';
 import { Database } from '../src/db.js';
 import { verifyToken, inviteUrl as appInvite, linkFor, intentsFrom, avatarUrl, PERMISSIONS } from '../desktop/lib/discord.js';
@@ -330,11 +333,148 @@ export default async function ({ test }) {
     assert.match((await runTool({ nodePath: path.join(tmp(), 'no-node'), botDir: root, args: ['summary', out] })).error, /bundled Node\.js is missing/);
   });
 
+  await test('take control: reads who is in the way, stops only a real Node process (and what it started), and clears a stale lock without stopping anything', async () => {
+    assert.deepEqual(blockedBy('Another supervisor (process 39764) is already running this install.'), { pid: 39764, other: false });
+    assert.deepEqual(blockedBy('This bot is already running from another Good Boy install on this computer (process 812).'), { pid: 812, other: true });
+    assert.equal(blockedBy('[21:47:53] INFO  Logged in'), null);
+    assert.ok(isNodeName('node.exe') && isNodeName('node') && !isNodeName('chrome.exe') && !isNodeName('node-red'));
+    // a fake Windows: tasklist answers, taskkill removes the process
+    const procs = new Map([[39764, 'node.exe'], [500, 'explorer.exe']]); const calls = [];
+    const execFile = (cmd, args, _o, cb) => {
+      calls.push([cmd, ...args]);
+      if (cmd === 'tasklist') { const pid = Number(args[1].split(' ').pop()); const n = procs.get(pid); return cb(null, n ? `"${n}","${pid}","Console","1","40,000 K"\r\n` : 'INFO: No tasks are running which match the specified criteria.\r\n'); }
+      if (cmd === 'taskkill') { procs.delete(Number(args[1])); return cb(null, 'SUCCESS'); }
+      cb(new Error('unknown'));
+    };
+    assert.equal(await processName(39764, { platform: 'win32', execFile }), 'node.exe');
+    assert.equal(await processName(4242, { platform: 'win32', execFile }), null);
+    const dir = tmp(); const lock = path.join(dir, 'supervisor.lock'); const other = path.join(dir, 'other.lock');
+    // stale: the lock names a process ID Windows gave to something else -> nothing is stopped, the lock is cleared
+    fs.writeFileSync(lock, JSON.stringify({ pid: 500, id: 'x' }));
+    const stale = await takeControl(500, { lockFiles: [lock], platform: 'win32', execFile, wait: async () => {} });
+    assert.deepEqual(stale, { ok: true, stopped: false, stale: true }); assert.ok(procs.has(500), 'explorer was not touched'); assert.ok(!fs.existsSync(lock));
+    assert.ok(!calls.some((c) => c[0] === 'taskkill'));
+    // real: the old supervisor is stopped with its whole tree, then both locks naming it are removed (others kept)
+    fs.writeFileSync(lock, JSON.stringify({ pid: 39764, id: 'a' })); fs.writeFileSync(other, JSON.stringify({ pid: 1, id: 'b' }));
+    const r = await takeControl(39764, { lockFiles: [lock, other], platform: 'win32', execFile, wait: async () => {} });
+    assert.deepEqual(r, { ok: true, stopped: true, stale: false });
+    assert.deepEqual(calls.find((c) => c[0] === 'taskkill'), ['taskkill', '/PID', '39764', '/T', '/F'], 'the bot under it is stopped too');
+    assert.ok(!fs.existsSync(lock) && fs.existsSync(other));
+    // one that will not stop: a plain answer, locks left alone
+    procs.set(77, 'node.exe'); const stubborn = (cmd, args, o, cb) => (cmd === 'taskkill' ? cb(null, '') : execFile(cmd, args, o, cb));
+    fs.writeFileSync(lock, JSON.stringify({ pid: 77 }));
+    assert.match((await takeControl(77, { lockFiles: [lock], platform: 'win32', execFile: stubborn, wait: async () => {} })).error, /would not stop/);
+    assert.ok(fs.existsSync(lock));
+  });
+
+  await test('take control: the app keeps track of a running bot when setup runs again, and shows what is in the way', async () => {
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    const recheck = main.slice(main.indexOf('function recheck()'), main.indexOf('const snapshot'));
+    assert.match(recheck, /if \(runner\) \{ Object\.assign\(runner,/, 'recheck updates the runner instead of replacing it');
+    assert.ok(!/removeAllListeners/.test(recheck), 'the running bot is never dropped');
+    assert.match(main, /'gb:takeover'/); assert.match(main, /takeControl\(b\.pid/);
+    // the runner reads the supervisor's message
+    const base = fakeInstall(); const r = new BotRunner({ botDir: base, script: path.join(base, 'scripts', 'blocked.js') });
+    fs.mkdirSync(path.join(base, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(base, 'scripts', 'blocked.js'), "console.error('\\nAnother supervisor (process 39764) is already running this install.\\n'); process.exit(1);");
+    const done = new Promise((res) => r.on('state', (st) => { if (st.state === 'failed') res(st); }));
+    r.nodePath = process.execPath; r.start();
+    const st = await done;
+    assert.deepEqual(st.blocked, { pid: 39764, other: false }); assert.match(st.error, /older copy of the bot is still running/);
+  });
+
+  await test('app updates: the installed Windows app updates itself, other builds are told, versions compare properly, odd answers are ignored', async () => {
+    assert.equal(updateMode({ packaged: true, platform: 'win32', edition: 'consumer' }), 'auto');
+    assert.equal(updateMode({ packaged: true, platform: 'win32', edition: 'developer' }), 'auto');
+    assert.equal(updateMode({ packaged: true, platform: 'win32', edition: 'owner' }), 'notify', 'the Owner build is never published, so it can only be told');
+    assert.equal(updateMode({ packaged: true, platform: 'win32', portable: true }), 'notify');
+    assert.equal(updateMode({ packaged: true, platform: 'darwin' }), 'notify');
+    assert.equal(updateMode({ packaged: false, platform: 'win32' }), 'off');
+    assert.equal(updateMode({ packaged: true, platform: 'win32', smoke: true }), 'off', 'the build check never downloads anything');
+    assert.equal(channelFor('developer'), 'developer'); assert.equal(channelFor('consumer'), 'latest'); assert.equal(channelFor('owner'), 'latest');
+    assert.equal(compareVersions('2.1.10', '2.1.9'), 1); assert.equal(compareVersions('v2.1.2', '2.1.2'), 0); assert.equal(compareVersions('2.0.9', '2.1.0'), -1); assert.equal(compareVersions('3.0.0-beta', '2.9.9'), 1);
+    const rel = (o) => ({ tag_name: 'v2.1.3', html_url: 'https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/tag/v2.1.3', body: 'notes', draft: false, prerelease: false, ...o });
+    assert.deepEqual(readLatest(rel(), '2.1.2'), { newer: true, version: '2.1.3', url: rel().html_url, notes: 'notes', publishedAt: null });
+    assert.equal(readLatest(rel(), '2.1.3').newer, false);
+    assert.equal(readLatest(rel({ draft: true }), '2.1.2').newer, false); assert.equal(readLatest(rel({ prerelease: true }), '2.1.2').newer, false);
+    assert.equal(readLatest(rel({ tag_name: 'nightly' }), '2.1.2').newer, false); assert.equal(readLatest(null, '2.1.2').newer, false);
+    assert.match(readLatest(rel({ html_url: 'https://evil.example/x' }), '2.1.2').url, /^https:\/\/github\.com\/jamiechastain10-blip\/Good-Boy-Bot\/releases$/, 'only ever opens the releases page on GitHub');
+    assert.deepEqual(RELEASES, { owner: 'jamiechastain10-blip', repo: 'Good-Boy-Bot' });
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'package.json'), 'utf8'));
+    assert.equal(pkg.build.publish[0].repo, RELEASES.repo, 'the build publishes where the app looks');
+    assert.equal(editionConfig(pkg, 'developer').build.publish[0].channel, 'developer'); assert.equal(editionConfig(pkg, 'consumer').build.publish[0].channel, 'latest');
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    assert.match(main, /autoUpdater\.allowDowngrade = false/, 'never installs an older version'); assert.match(main, /channelFor\(edition\.id\)/);
+    assert.match(main, /quitting = true;\s*await runner\?\.stop\(\);/, 'the bot is stopped cleanly before the update installs');
+  });
+
+  await test('client secret: checked with Discord, only invalid_client counts as wrong, network trouble does not block setup', async () => {
+    const answer = (status, body = {}) => async (url, o) => { answer.last = { url, o }; return { ok: status < 300, status, json: async () => body }; };
+    assert.deepEqual(await verifySecret('1469714389648015571', 'abc', answer(200)), { ok: true });
+    assert.equal(answer.last.url, 'https://discord.com/api/v10/oauth2/token'); assert.equal(answer.last.o.method, 'POST');
+    assert.equal(answer.last.o.headers.Authorization, `Basic ${Buffer.from('1469714389648015571:abc').toString('base64')}`);
+    assert.equal((await verifySecret('1469714389648015571', 'abc', answer(401, { error: 'invalid_client' }))).kind, 'invalid');
+    assert.equal((await verifySecret('1469714389648015571', 'abc', answer(400, { error: 'invalid_client' }))).kind, 'invalid');
+    assert.equal((await verifySecret('1469714389648015571', 'abc', answer(400, { error: 'invalid_scope' }))).ok, true, 'the secret was accepted, the scope was not');
+    assert.equal((await verifySecret('1469714389648015571', 'abc', async () => { throw new Error('offline'); })).kind, 'network');
+    assert.equal((await verifySecret(null, 'abc', answer(200))).kind, 'noapp');
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    const handler = main.slice(main.indexOf("'gb:setup-secret'"), main.indexOf("'gb:setup-finish'"));
+    assert.ok(handler.indexOf('verifySecret') < handler.indexOf('vault.merge'), 'checked before it is saved');
+  });
+
+  await test('data files: export makes one file a fresh install can import, with every row; other files and damaged ones are refused and nothing is lost', async () => {
+    const live = tmp(); const db = new Database(path.join(live, 'eclipse.db'));
+    db.upsertGuild('9', 'A Basic Discord Server'); db.setModuleState('9', 'community', true, '1');
+    for (let k = 0; k < 18; k++) db.dataSet('9', 'community', `user:${100 + k}`, { xp: 100 * (k + 1) });
+    db.dataSet('9', 'moderation', 'hist:1', { n: 1 });
+    const file = path.join(tmp(), 'good-boy-data.goodboy');
+    const ex = await exportDb(live, file);   // while the "bot" still has it open
+    assert.equal(ex.memberCount, 18); assert.ok(ex.bytes > 0);
+    db.close();
+    const fresh = tmp(); const im = await importDb(file, fresh);
+    assert.equal(im.guild.name, 'A Basic Discord Server'); assert.equal(im.memberCount, 18); assert.equal(im.backup, null);
+    const back = new Database(path.join(fresh, 'eclipse.db')); assert.deepEqual(back.dataGet('9', 'moderation', 'hist:1'), { n: 1 }); back.close();
+    // a file that is not ours: refused, and the data that was there is still there
+    const junk = path.join(tmp(), 'notes.goodboy'); fs.writeFileSync(junk, 'hello');
+    await assert.rejects(importDb(junk, fresh), /not a Good Boy data file/);
+    assert.equal((await toolSummary(fresh)).memberCount, 18, 'nothing was lost');
+    const { DatabaseSync } = await import('node:sqlite'); const other = path.join(tmp(), 'other.db'); const o = new DatabaseSync(other); o.exec('CREATE TABLE x (a)'); o.close();
+    await assert.rejects(importDb(other, fresh), /not a Good Boy data file/);
+    assert.equal((await toolSummary(fresh)).memberCount, 18);
+    await assert.rejects(exportDb(tmp(), path.join(tmp(), 'x.goodboy')), /no bot data yet/);
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    const imp = main.slice(main.indexOf("'gb:data-import'"), main.indexOf('// ---- app updates'));
+    assert.ok(imp.indexOf('runner.stop()') < imp.indexOf("'import'"), 'the bot is stopped before its data is replaced');
+  });
+
+  await test('supervisor: two Good Boy installs on one computer cannot run the same bot at once', async () => {
+    const { Supervisor, botIdOf } = await import('../src/supervisor.js');
+    const token = `${Buffer.from('1469714389648015571').toString('base64')}.x.y`;
+    assert.equal(botIdOf(token), '1469714389648015571'); assert.equal(botIdOf('nope'), null);
+    const lockDir = tmp(); const spawnFn = null;
+    const a = new Supervisor({ base: fakeInstall(), env: { DISCORD_TOKEN: token }, lockDir, spawnFn: () => { throw new Error('stop here'); } });
+    // a lock left by another install whose process is alive (this test process stands in for it)
+    fs.writeFileSync(path.join(lockDir, '1469714389648015571.lock'), JSON.stringify({ pid: process.pid, id: 'other', base: '/somewhere/else' }));
+    await assert.rejects(() => a.start(), /already running from another Good Boy install on this computer \(process \d+\)/);
+    // a dead process's lock does not block
+    fs.writeFileSync(path.join(lockDir, '1469714389648015571.lock'), JSON.stringify({ pid: 2147483646, id: 'old', base: '/somewhere/else' }));
+    await assert.rejects(() => a.start(), /stop here/, 'got past the lock');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(lockDir, '1469714389648015571.lock'), 'utf8')).base, a.base, 'and took it');
+    void spawnFn;
+  });
+
   await test('desktop build workflow: builds the .exe and .dmg, then starts the built app and fails the build if the window did not draw', async () => {
     const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'desktop.yml'), 'utf8');
     for (const must of ['windows-latest', 'macos-latest', 'npm run dist:win', 'npm run dist:mac', 'GOODBOY_SMOKE_DIR', 'GOODBOY_SMOKE_SEED', 'make-fixture.js', 'win-unpacked', '*-Setup-*.exe', '*-Portable-*.exe', '*.dmg', 'workflow_dispatch', 'edition: [owner, consumer, developer]', 'set-edition.js', 'bundle-bot.js', 'desktop/bundle/node/node.exe']) assert.ok(wf.includes(must), must);
     assert.ok(!/owner-seed\/eclipse\.db|good-boy-data/.test(wf), 'no real server data is ever part of the GitHub build');
-    assert.ok(!/secrets\.|GITHUB_TOKEN|contents:\s*write/.test(wf), 'the build uses no secrets and cannot write to the repo');
+    const [build, release] = wf.split(/^  release:$/m);
+    assert.ok(release, 'there is a release job');
+    assert.ok(!/secrets\.|GITHUB_TOKEN|contents:\s*write/.test(build), 'the builds use no secrets and cannot write to the repo');
+    assert.deepEqual([...wf.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]), ['RELEASES_TOKEN'], 'the only secret is the releases token, used only to publish');
+    assert.match(release, /needs: \[windows, mac\]/, 'nothing is published unless every build and its self-check passed');
+    assert.match(release, /REPO: jamiechastain10-blip\/Good-Boy-Bot/); assert.match(release, /gh release view "v\$v"/, 'a version is published once');
+    assert.ok(!/Windows-owner/.test(release), 'the Owner build is never published');
+    for (const f of ['desktop/dist/latest.yml', 'desktop/dist/developer.yml', '*-Setup-*.exe.blockmap']) assert.ok(build.includes(f), `${f} is kept for the update feed`);
     assert.ok(!/uses:\s*\S+@(main|master|latest)\b/.test(wf), 'actions are pinned to a version');
     const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
     assert.match(main, /process\.env\.GOODBOY_SMOKE_DIR/); assert.match(main, /app\.exit\(out\.ok \? 0 : 1\)/);
@@ -416,13 +556,13 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
     const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
     const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'verifyToken']);
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'updateCheck', 'updateInstall', 'updateOpen', 'verifyToken'].sort());
     assert.match(main, /const ownerOnly = \(\) =>/); for (const h of ['gb:lic-keygen', 'gb:lic-create', 'gb:lic-revoke']) assert.match(main.slice(main.indexOf(`'${h}'`), main.indexOf(`'${h}'`) + 200), /ownerOnly\(\)/, `${h} only works in the Owner version`);
     assert.ok(!/privateKey/.test(main.slice(main.indexOf("'gb:lic-state'"), main.indexOf("'gb:lic-keygen'"))), 'the signing key is never sent to the window');
     assert.match(main, /url && url\.startsWith\('https:\/\/discord\.com\/'\)/, 'setup only ever opens discord.com pages');
     assert.match(main, /vault: bundled \? vault\.describe\(\) : null/, 'the window gets the vault description, never its contents');
     const readers = [...main.matchAll(/vault\.read\(\)/g)].map((m) => [...main.slice(0, m.index).matchAll(/function (\w+)\(/g)].pop()?.[1]);
-    assert.deepEqual([...new Set(readers)].sort(), ['childEnv', 'recheck', 'savedToken'], 'secret values are read only to start the bot, to check readiness and to ask Discord, never for the window');
+    assert.deepEqual([...new Set(readers)].sort(), ['childEnv', 'recheck', 'savedSecret', 'savedToken'], 'secret values are read only to start the bot, to check readiness and to ask Discord, never for the window');
     assert.match(main, /allowedImport\.has\(dir\)/, 'the window can only import from a folder the person picked or that was found');
     const block = pre.slice(pre.indexOf('exposeInMainWorld'));
     assert.ok(!/\bipcRenderer\s*[,}]|:\s*ipcRenderer\s*[,}]|exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(block), 'ipcRenderer itself is never handed to the page');
@@ -445,7 +585,9 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.ok(fs.readFileSync(path.join(root, 'desktop', 'renderer', 'good-boy-logo.png')).equals(fs.readFileSync(path.join(pub, 'good-boy-logo.png'))), 'run "npm run sync" in desktop/ after changing the logo');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'package.json'), 'utf8'));
     assert.equal(pkg.main, 'boot.cjs'); assert.equal(pkg.build.mac.identity, null); assert.ok(pkg.devDependencies.electron && pkg.devDependencies['electron-builder']);
-    assert.ok(!pkg.dependencies, 'the app ships no runtime packages');
+    assert.deepEqual(Object.keys(pkg.dependencies ?? {}), ['electron-updater'], 'the only runtime package is the updater');
+    assert.deepEqual(pkg.build.publish, [{ provider: 'github', owner: 'jamiechastain10-blip', repo: 'Good-Boy-Bot', releaseType: 'release' }]);
+    assert.match(pkg.scripts['dist:win'], /--publish never/, 'electron-builder never publishes by itself: the release job does');
     const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     assert.equal(pkg.version, rootPkg.version, 'the app and the bot share one version number');
     for (const f of [pkg.build.win.icon, pkg.build.mac.icon]) assert.ok(fs.existsSync(path.join(root, 'desktop', f)), `${f} must exist`);

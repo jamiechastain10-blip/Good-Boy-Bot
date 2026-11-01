@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('goodBoy', {
   moduleAdd: () => ipcRenderer.invoke('gb:module-add'),
   moduleSign: () => ipcRenderer.invoke('gb:module-sign'),
   saveSettings: (patch) => ipcRenderer.invoke('gb:save-settings', patch),
+  takeover: () => ipcRenderer.invoke('gb:takeover'),
+  dataExport: () => ipcRenderer.invoke('gb:data-export'),
+  dataImport: () => ipcRenderer.invoke('gb:data-import'),
+  updateCheck: () => ipcRenderer.invoke('gb:update-check'),
+  updateOpen: () => ipcRenderer.invoke('gb:update-open'),
+  updateInstall: () => ipcRenderer.invoke('gb:update-install'),
   onState: listen('state'),
   onLog: listen('log'),
 });

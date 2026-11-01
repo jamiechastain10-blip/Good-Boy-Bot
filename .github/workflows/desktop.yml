@@ -1,7 +1,10 @@
 # Builds the Good Boy desktop app with the bot and its own Node inside: three Windows editions (Owner, Good Boy for
 # everyone, Developer) and the Mac app. Each Windows build is then started once on a clean machine with a made-up
 # server, every page is photographed, and the build fails if a page did not draw or the bundled bot cannot run.
-# Run it from the Actions tab: "Desktop app" > Run workflow. Nothing here uses secrets or a real server's data.
+# Run it from the Actions tab: "Desktop app" > Run workflow. No real server's data is ever used here.
+# When every build passes, the Good Boy and Developer editions are published as a release in the public repository
+# jamiechastain10-blip/Good-Boy-Bot (needs the RELEASES_TOKEN secret), where installed apps find their updates.
+# A version is published once: raise "version" in desktop/package.json to publish a new one. The Owner build is never published.
 name: Desktop app
 
 on:
@@ -83,7 +86,10 @@ jobs:
           name: Windows-${{ matrix.edition }}
           path: |
             desktop/dist/*-Setup-*.exe
+            desktop/dist/*-Setup-*.exe.blockmap
             desktop/dist/*-Portable-*.exe
+            desktop/dist/latest.yml
+            desktop/dist/developer.yml
           if-no-files-found: error
       # The Owner test build gets the owner's server data added afterwards, outside GitHub, so it is uploaded unpacked too.
       - uses: actions/upload-artifact@v4
@@ -121,3 +127,33 @@ jobs:
           name: Mac
           path: desktop/dist/*.dmg
           if-no-files-found: error
+
+  release:
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: Windows-consumer, path: out/consumer }
+      - uses: actions/download-artifact@v4
+        with: { name: Windows-developer, path: out/developer }
+      - uses: actions/download-artifact@v4
+        with: { name: Mac, path: out/mac }
+      - name: Publish the release to Good-Boy-Bot
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          REPO: jamiechastain10-blip/Good-Boy-Bot
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then echo "::error::The RELEASES_TOKEN secret is missing. Add it in ProjectEclipse > Settings > Secrets and variables > Actions."; exit 1; fi
+          v=$(node -p "require('./desktop/package.json').version")
+          if gh release view "v$v" -R "$REPO" >/dev/null 2>&1; then echo "Version $v is already published. Raise the version in desktop/package.json to publish again."; exit 0; fi
+          # release notes: this version's part of CHANGELOG.md
+          awk -v v="## $v" '$0==v{on=1;next} /^## /{if(on)exit} on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Good Boy $v" > notes.md
+          ls -la out/*
+          files=$(ls out/consumer/* out/developer/* out/mac/*.dmg)
+          gh release create "v$v" $files -R "$REPO" --title "Good Boy $v" --notes-file notes.md
+          echo "Published https://github.com/$REPO/releases/tag/v$v"
+

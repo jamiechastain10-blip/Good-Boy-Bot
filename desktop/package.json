@@ -1,7 +1,7 @@
 {
   "name": "good-boy-desktop",
   "productName": "Good Boy",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Good Boy desktop app - control panel for the Good Boy Discord bot (Windows and macOS)",
   "author": "Basic Ghost Labs",
   "private": true,
@@ -10,9 +10,12 @@
   "scripts": {
     "sync": "node scripts/sync-assets.js",
     "start": "npm run sync && electron .",
-    "dist:win": "npm run sync && electron-builder --win",
-    "dist:mac": "npm run sync && electron-builder --mac",
+    "dist:win": "npm run sync && electron-builder --win --publish never",
+    "dist:mac": "npm run sync && electron-builder --mac --publish never",
     "bundle": "node scripts/bundle-bot.js"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^35.0.0",
@@ -95,6 +98,14 @@
         "filter": [
           "eclipse.db"
         ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "jamiechastain10-blip",
+        "repo": "Good-Boy-Bot",
+        "releaseType": "release"
       }
     ]
   }

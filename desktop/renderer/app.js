@@ -100,7 +100,16 @@ function statusCard() {
             : el('button', { class: 'btn', disabled: !ready || moving, onclick: () => gb.start() }, 'Start'),
           el('button', { class: 'btn quiet', disabled: !isOn || moving, onclick: () => gb.stop() }, 'Stop'),
           el('button', { class: 'btn quiet', disabled: st !== 'running', onclick: () => gb.openDashboard() }, 'Open dashboard')))),
+    S.bot.blocked ? takeoverBox() : null,
     el('div', { class: 'figures' }, figs.map(([k, v, label]) => { const b = el('b'); countUp(b, k, v); return el('div', {}, b, el('small', {}, label)); })));
+}
+
+// An older copy of the bot is still running somewhere on this computer: offer to stop it and start fresh.
+function takeoverBox() {
+  const other = S.bot.blocked.other;
+  return el('div', { class: 'callout' }, el('b', {}, other ? 'This bot is already running in another Good Boy app' : 'An older copy of the bot is still running'),
+    el('p', {}, other ? 'Another Good Boy app on this computer is running the same bot. Two copies would answer every command twice, so this one waited.' : 'It was left running in the background, so Start could not take over. Take control stops it and starts the bot here.'),
+    el('button', { class: 'btn', disabled: busy, onclick: async () => { busy = true; render(); const r = await gb.takeover(); busy = false; toast(r.ok ? (r.stale ? 'Cleared. Starting the bot...' : 'Stopped the old copy. Starting the bot...') : r.error, !r.ok); render(); } }, busy ? 'Working...' : 'Take control'));
 }
 
 function memberRows(list, max, wide = false) {
@@ -175,21 +184,26 @@ const PAGES = {
     return [el('h1', {}, 'Log'), el('p', { class: 'sub' }, 'What the bot is saying. Tokens and secrets are hidden.'), el('div', { class: 'group' }, pre)];
   },
   updates() {
-    const v = S.vault ?? { keys: [] }, on = v.keys.includes('UPDATE_MANIFEST_URL');
-    const channel = 'stable';
-    return [el('h1', {}, 'Updates'), el('p', { class: 'sub' }, has('publish') ? 'Everything installed here, and what you publish to everyone else.' : 'What is installed on this computer.'),
+    const u = S.update ?? { phase: 'off' };
+    const text = { off: 'Updates are checked by the installed app.', idle: 'Checking soon after Good Boy opens.', checking: 'Checking for updates...', downloading: `Downloading version ${u.version ?? ''}${u.percent != null ? ` (${Math.round(u.percent)}%)` : ''}...`, ready: `Version ${u.version} is downloaded and ready.`, available: `Version ${u.version} is out.`, current: 'You have the latest version.', error: `Could not check: ${u.error ?? 'unknown problem'}` }[u.phase] ?? '';
+    const tag = { current: ['tag ok', 'Up to date'], ready: ['tag ok', 'Ready'], downloading: ['tag wait', 'Downloading'], checking: ['tag wait', 'Checking'], available: ['tag wait', 'New version'], error: ['tag off', 'Problem'], off: ['tag off', 'Off'], idle: ['tag off', 'Waiting'] }[u.phase] ?? ['tag off', ''];
+    const how = u.mode === 'auto' ? 'New versions download by themselves and install when you restart Good Boy. Your settings, token and server data are kept.'
+      : u.mode === 'notify' ? (S.edition.id === 'owner' ? 'The Owner build is not published, so it tells you when a new version is out. Ask for the new Owner build.' : 'This copy cannot replace itself (portable or Mac), so it tells you when a new version is out and opens the download page.')
+        : 'Running from source: no update checks.';
+    const actions = [];
+    if (u.phase === 'ready') actions.push(el('button', { class: 'btn', onclick: async () => { const r = await gb.updateInstall(); if (!r.ok) toast(r.error, true); } }, 'Restart and update'));
+    if (u.phase === 'available') actions.push(el('button', { class: 'btn', onclick: () => gb.updateOpen() }, 'Get the new version'));
+    if (u.mode !== 'off' && !['checking', 'downloading', 'ready'].includes(u.phase)) actions.push(el('button', { class: 'btn quiet', onclick: async () => { await gb.updateCheck(); } }, 'Check now'));
+    return [el('h1', {}, 'Updates'), el('p', { class: 'sub' }, 'Good Boy checks GitHub for new versions. The bot and dashboard update together with the app.'),
       el('div', { class: 'cols' },
         el('div', {}, el('div', { class: 'section-title' }, 'Installed'), el('div', { class: 'group' },
           el('div', { class: 'row inset' }, tile('box', 'blue'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Good Boy app'), el('span', { class: 'meta' }, `Version ${S.version}`)), el('span', { class: 'val' }, el('span', { class: 'tag ok' }, 'Installed'))),
-          el('div', { class: 'row inset' }, tile('puzzle', 'violet'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Bot'), el('span', { class: 'meta' }, S.bundled ? `Version ${S.version}, inside the app` : 'From your Good Boy folder')), el('span', { class: 'val' }, el('span', { class: 'tag ok' }, 'Installed'))),
-          el('div', { class: 'row inset' }, tile('chart', 'teal'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Dashboard'), el('span', { class: 'meta' }, 'Ships with the bot')), el('span', { class: 'val' }, el('span', { class: 'tag ok' }, 'Installed')))),
-          el('div', { class: 'section-title' }, 'Automatic updates'), el('div', { class: 'group' },
-            el('div', { class: 'row' }, el('span', { class: 'seg', role: 'group', 'aria-label': 'Update channel' }, ['stable', 'beta', 'development'].map((c) => el('button', { 'aria-pressed': c === channel, disabled: true }, c[0].toUpperCase() + c.slice(1))))),
-            el('div', { class: 'row' }, el('span', { class: 'lab' }, 'Status'), el('span', { class: 'val' }, el('span', { class: on ? 'tag ok' : 'tag off' }, on ? 'On' : 'Off: no update server yet')))),
-          el('p', { class: 'note' }, 'Updates switch on once releases are published. Every update is checked against your signature before it installs, and rolls back by itself if it fails to start.')),
-        has('publish') ? el('div', {}, el('div', { class: 'section-title' }, 'Publish an update'),
-          el('div', { class: 'group' }, el('div', { class: 'row inset' }, tile('lock', 'mint'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Signing key'), el('span', { class: 'meta' }, 'Kept on your computer only, never inside the app')), el('span', { class: 'val' }, el('span', { class: 'tag wait' }, 'Next build')))),
-          el('p', { class: 'note' }, 'Publishing bot updates and approving developer modules from this page comes in the next Owner build. Until then, use npm run release in the bot folder.')) : null)];
+          el('div', { class: 'row inset' }, tile('puzzle', 'violet'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Bot and dashboard'), el('span', { class: 'meta' }, S.bundled ? `Version ${S.version}, inside the app` : 'From your Good Boy folder')), el('span', { class: 'val' }, el('span', { class: 'tag ok' }, 'Installed'))))),
+        el('div', {}, el('div', { class: 'section-title' }, 'New versions'), el('div', { class: 'group' },
+          el('div', { class: 'row inset' }, tile('down', 'mint'), el('div', { class: 'two' }, el('span', { class: 'lab' }, text), u.checkedAt ? el('span', { class: 'meta' }, `Last checked ${new Date(u.checkedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`) : null), el('span', { class: 'val' }, el('span', { class: tag[0] }, tag[1]))),
+          u.phase === 'downloading' && u.percent != null ? el('div', { class: 'row' }, el('span', { class: 'bar', style: { width: '100%' } }, el('i', { style: { width: `${Math.round(u.percent)}%` } }))) : null,
+          actions.length ? el('div', { class: 'row' }, el('div', { class: 'row-btns' }, actions)) : null),
+          el('p', { class: 'note' }, how)))];
   },
   settings() {
     const v = S.vault;
@@ -202,7 +216,16 @@ const PAGES = {
         el('div', {}, S.bundled ? [el('div', { class: 'section-title' }, 'Bot'), el('div', { class: 'group' },
           el('div', { class: 'row inset' }, tile('key', 'amber'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Bot token'), el('span', { class: 'meta' }, S.secure ? 'Saved, encrypted by this computer' : 'This computer cannot encrypt it')), el('span', { class: 'val' }, el('span', { class: v?.hasToken ? 'tag ok' : 'tag wait' }, v?.hasToken ? 'Saved' : 'Missing'))),
           el('div', { class: 'row inset' }, tile('lock', 'indigo'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Dashboard login'), el('span', { class: 'meta' }, 'Discord client secret')), el('span', { class: 'val' }, el('span', { class: v?.hasClientSecret ? 'tag ok' : 'tag off' }, v?.hasClientSecret ? 'Saved' : 'Not set'))),
+          el('div', { class: 'field' }, el('label', { for: 'new-secret' }, 'Change client secret'), el('div', { class: 'copyrow' },
+            el('input', { type: 'password', id: 'new-secret', autocomplete: 'off', spellcheck: 'false', placeholder: 'Paste a new client secret' }),
+            el('button', { class: 'btn quiet', onclick: async () => { const i = document.getElementById('new-secret'); const v = i.value.trim(); if (!v) return toast('Paste the new client secret first.', true); const r = await gb.setupSecret(v); i.value = ''; toast(r.ok ? 'Client secret checked with Discord and saved. Restart the bot to use it.' : r.error, !r.ok); } }, 'Check and save')),
+            el('span', { class: 'meta' }, 'Developer Portal > your app > OAuth2 > Reset Secret.')),
           el('div', { class: 'row' }, el('button', { class: 'btn quiet', onclick: () => { forceSetup = true; W.step = 'welcome'; setupFound = null; render(); } }, 'Run setup again'))),
+          el('div', { class: 'section-title' }, 'Server data'), el('div', { class: 'group' },
+            el('div', { class: 'row inset' }, tile('folder', 'teal'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Move or back up your data'), el('span', { class: 'meta' }, 'Levels, settings, tickets and everything else, in one .goodboy file. The token is never included.'))),
+            el('div', { class: 'row' }, el('div', { class: 'row-btns' },
+              el('button', { class: 'btn quiet', onclick: async () => { const r = await gb.dataExport(); if (r.cancelled) return; toast(r.ok ? `Saved${r.memberCount != null ? ` (${num(r.memberCount)} members with XP)` : ''}.` : r.error, !r.ok); } }, 'Export data...'),
+              el('button', { class: 'btn quiet', onclick: async () => { const r = await gb.dataImport(); if (r.cancelled) return; toast(r.ok ? `Loaded${r.guild ? ` ${r.guild.name}` : ''}: ${num(r.memberCount ?? 0)} members with XP.` : r.error, !r.ok); refreshSummary(); } }, 'Import data...')))),
           el('p', { class: 'note' }, 'The token never leaves this computer and is never shown again after you save it.')]
           : [el('div', { class: 'section-title' }, 'Good Boy folder'), el('div', { class: 'group' }, el('div', { class: 'row' }, el('span', { class: 'path' }, S.settings.botDir || 'Not chosen yet')),
             el('div', { class: 'row' }, el('button', { class: 'btn', onclick: () => gb.chooseFolder() }, 'Choose folder...'), el('button', { class: 'btn quiet', onclick: async () => { S = await gb.recheck(); render(); } }, 'Check again'))),
@@ -479,6 +502,7 @@ function render() {
   // do not wipe what someone is typing into the setup form
   const typing = document.activeElement?.tagName === 'INPUT' && current === 'setup';
   if (typing && lastPage === `setup-${W.step}`) return;
+  if (current === 'settings' && lastPage === 'settings' && document.activeElement?.id === 'new-secret') return;
   const side = el('aside', { class: 'side', 'aria-label': 'Good Boy' },
     el('div', { class: 'brand' }, el('img', { src: 'good-boy-logo.png', alt: '' }), 'Good Boy', S.edition.name ? el('span', { class: 'edition' }, S.edition.name) : null),
     inSetup ? null : NAV().map(([label, rows]) => [el('div', { class: 'group-label' }, label), rows.map(([id, text, ic, color, count]) => el('button', { class: 'nav', 'data-nav': id, 'aria-current': current === id ? 'page' : null, onclick: () => go(id) }, tile(ic, color), text, count ? el('span', { class: 'count' }, count) : null))]),

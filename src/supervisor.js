@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { ReleaseStore, BUNDLED } from './update/store.js';
 
 export const DEFAULTS = {
@@ -25,6 +26,10 @@ export const DEFAULTS = {
   applyDelayMs: 750,            // after answering "accepted", wait so the bot can finish replying to the browser before it is stopped
 };
 
+/** The bot's application ID, read from the first part of its token (no secret in it). */
+export function botIdOf(token) {
+  try { const id = Buffer.from(String(token ?? '').split('.')[0], 'base64').toString('utf8'); return /^\d{17,20}$/.test(id) ? id : null; } catch { return null; }
+}
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 
 export class Supervisor extends EventEmitter {
@@ -36,6 +41,9 @@ export class Supervisor extends EventEmitter {
     this.state = 'stopped'; this.child = null; this.startedAt = null; this.readyAt = null; this.restarts = 0; this.lastExit = null; this.botStatus = null;
     this.crashes = []; this.lastCheck = null; this.lastError = null; this.trialTimer = null; this.checkTimer = null; this.expected = false; this.update = { phase: 'idle' };
     this.lockFile = path.join(this.base, 'supervisor.lock');
+    // A second lock per Discord bot (not per folder), so two installs on one computer cannot run the same bot at once.
+    const appId = botIdOf(env.DISCORD_TOKEN);
+    this.botLockFile = appId ? path.join(opts.lockDir ?? path.join(os.tmpdir(), 'good-boy-locks'), `${appId}.lock`) : null;
     this.instance = crypto.randomBytes(6).toString('hex');
   }
 
@@ -53,9 +61,16 @@ export class Supervisor extends EventEmitter {
     let other = null;
     try { other = JSON.parse(fs.readFileSync(this.lockFile, 'utf8')); } catch { /* no lock, or an unreadable one: take it */ }
     if (other?.pid && other.id !== this.instance && alive(other.pid)) throw new Error(`Another supervisor (process ${other.pid}) is already running this install.`);
-    fs.writeFileSync(this.lockFile, JSON.stringify({ pid: process.pid, id: this.instance }));
+    let bot = null;
+    if (this.botLockFile) try { bot = JSON.parse(fs.readFileSync(this.botLockFile, 'utf8')); } catch { /* none */ }
+    if (bot?.pid && bot.id !== this.instance && bot.base !== this.base && alive(bot.pid)) throw new Error(`This bot is already running from another Good Boy install on this computer (process ${bot.pid}).`);
+    const mine = JSON.stringify({ pid: process.pid, id: this.instance, base: this.base });
+    fs.writeFileSync(this.lockFile, mine);
+    if (this.botLockFile) try { fs.mkdirSync(path.dirname(this.botLockFile), { recursive: true }); fs.writeFileSync(this.botLockFile, mine); } catch { /* best effort */ }
   }
-  #dropLock() { try { if (JSON.parse(fs.readFileSync(this.lockFile, 'utf8')).id === this.instance) fs.rmSync(this.lockFile, { force: true }); } catch { /* already gone */ } }
+  #dropLock() {
+    for (const f of [this.lockFile, this.botLockFile].filter(Boolean)) try { if (JSON.parse(fs.readFileSync(f, 'utf8')).id === this.instance) fs.rmSync(f, { force: true }); } catch { /* already gone */ }
+  }
 
   async start() {
     if (this.child || ['starting', 'running', 'backoff', 'updating'].includes(this.state)) return;

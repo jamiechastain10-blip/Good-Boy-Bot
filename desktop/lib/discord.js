@@ -85,3 +85,27 @@ export function redirectUriFor(settings = {}) {
   } catch { /* default */ }
   return `${base}/callback`;
 }
+
+/**
+ * Checks a Client Secret with Discord itself (an OAuth2 client-credentials request: it proves the secret matches the
+ * application and grants nothing to anyone else). Wrong secret = the dashboard login would fail with invalid_client.
+ */
+export async function verifySecret(appId, secret, fetchFn = fetch) {
+  const id = String(appId ?? ''), s = String(secret ?? '').trim();
+  if (!isSnowflake(id)) return { ok: false, kind: 'noapp', error: 'Save your bot token first, so Good Boy knows which application the secret belongs to.' };
+  if (!s) return { ok: false, kind: 'empty', error: 'Paste your client secret.' };
+  try {
+    const r = await fetchFn(`${API}/oauth2/token`, {
+      method: 'POST', signal: AbortSignal.timeout(10000),
+      headers: { Authorization: `Basic ${Buffer.from(`${id}:${s}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'GoodBoy (https://basicghostlabs.com, 2.1)' },
+      body: 'grant_type=client_credentials&scope=identify',
+    });
+    if (r.ok) return { ok: true };
+    let code = ''; try { code = String((await r.json())?.error ?? ''); } catch { /* not JSON */ }
+    // Only invalid_client means the secret is wrong; any other refusal (scope, grant) means Discord accepted the secret.
+    if (r.status === 400 && code !== 'invalid_client') return { ok: true };
+    if (r.status === 401 || code === 'invalid_client') return { ok: false, kind: 'invalid', error: 'Discord says this client secret is wrong for your bot. Open OAuth2 in the Developer Portal, click Reset Secret, and paste the new one.' };
+    if (r.status === 429) return { ok: false, kind: 'slow', error: 'Discord asked us to slow down. Try again in a few seconds.' };
+    return { ok: false, kind: 'other', error: `Discord could not check the secret right now (HTTP ${r.status}).` };
+  } catch { return { ok: false, kind: 'network', error: 'Could not reach Discord to check the secret.' }; }
+}

@@ -19,7 +19,9 @@ import { parseEnv, safeBotSettings, looksLikeToken } from './lib/envfile.js';
 import { readEdition } from './lib/edition.js';
 import { ensureBotCode, seedData } from './lib/botinstall.js';
 import { runTool } from './lib/tools.js';
-import { verifyToken, linkFor, isSnowflake, appIdFromToken, redirectUriFor } from './lib/discord.js';
+import { verifyToken, verifySecret, linkFor, isSnowflake, appIdFromToken, redirectUriFor } from './lib/discord.js';
+import { takeControl } from './lib/takeover.js';
+import { updateMode, channelFor, readLatest, latestApi, releasesPage } from './lib/updater.js';
 import { brandStatus, applyBrand, applyCustom } from './lib/brand.js';
 import { createLicense, verifyLicense, generateKeyPair, hasFeature, FEATURES } from './lib/license.js';
 import { signModule, verifyModule, moduleNameOf } from './lib/modsign.js';
@@ -64,6 +66,8 @@ const allowedImport = new Set(); // folders the person picked or that were found
 let knownAppId = null; // from the last successful token check, for the setup's links
 let redirectUri = 'http://localhost:3000/callback';
 let licence = { ok: false };
+const U = { mode: 'off', phase: 'off', version: null, percent: null, error: null, url: null, checkedAt: null }; // app updates
+let autoUpdater = null;
 const publicKey = (() => { try { return fs.readFileSync(P.publicKey, 'utf8'); } catch { return null; } })();
 const whiteLabel = () => edition.id === 'owner' || hasFeature(licence, 'whitelabel');
 
@@ -96,7 +100,9 @@ function recheck() {
     nodeInfo = findNode(undefined, settings.nodePath);
     folder = checkBotDir(settings.botDir);
   }
-  runner?.removeAllListeners();
+  // Keep the same runner: replacing it while the bot runs would lose track of the running bot (it would keep going
+  // in the background with no way to stop it from the app). New settings apply the next time it starts.
+  if (runner) { Object.assign(runner, { botDir: botDir(), script: path.join(botDir(), 'scripts', 'supervise.js'), nodePath: nodePath(), env: childEnv() }); return; }
   runner = new BotRunner({ botDir: botDir(), nodePath: nodePath(), env: childEnv() });
   runner.on('state', (s) => { send('state', snapshot()); refreshTray(); if (s.state === 'running' && settings.dashboardOnStart && !runner.openedDashboard) { runner.openedDashboard = true; openDashboard(); } });
   runner.on('log', (line) => send('log', line));
@@ -106,6 +112,7 @@ const snapshot = () => ({
   settings, folder, node: nodeInfo, bot: runner.status(), url: dashboardUrl(folder.port), platform: process.platform, version: app.getVersion(),
   edition: { id: edition.id, name: edition.name, features: edition.features }, bundled, prep,
   vault: bundled ? vault.describe() : null, redirectUri, whiteLabel: whiteLabel(),
+  update: U,
   licence: settings.license ? { ok: licence.ok, error: licence.error ?? null, to: licence.payload?.to ?? null, features: licence.payload?.features ?? [], exp: licence.payload?.exp ?? null } : null, licencesOn: !!publicKey, setupNeeded: bundled && (!vault.has('DISCORD_TOKEN') || !settings.setupComplete), secure: bundled ? vault.available() : true,
 });
 const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.send(ch, payload); };
@@ -118,6 +125,12 @@ async function openDashboard() {
   // Discord refuses the dashboard login unless this exact address is on the bot's Redirects list. Check first.
   if (bundled && vault.has('DISCORD_CLIENT_SECRET')) {
     const v = await verifyToken(savedToken()).catch(() => null);
+    const sec = v?.ok ? await verifySecret(v.app.id, savedSecret()) : null;
+    if (sec && !sec.ok && sec.kind === 'invalid') {
+      const r = await dialog.showMessageBox(win, { type: 'warning', title: 'The dashboard login will not work yet', message: 'Your Client Secret is wrong', detail: 'Discord turned down the saved Client Secret, so logging in to the dashboard would fail ("invalid_client").\n\nOpen OAuth2 in the Developer Portal, click Reset Secret, copy it, then paste it in Good Boy: Settings > Change client secret.', buttons: ['Open the OAuth2 page', 'Cancel'], defaultId: 0, cancelId: 1, noLink: true });
+      if (r.response === 0) shell.openExternal(linkFor('oauth', v.app.id));
+      return;
+    }
     if (v?.ok && Array.isArray(v.app.redirectUris) && !v.app.redirectUris.includes(redirectUri)) {
       const r = await dialog.showMessageBox(win, { type: 'warning', title: 'One more step for the dashboard login', message: 'Add the dashboard address to your bot first', detail: `Discord only lets you log in if this address is on your bot's Redirects list:\n\n${redirectUri}\n\nCopy it, open the OAuth2 page, click Add Redirect, paste it, then click Save Changes.`, buttons: ['Copy address and open OAuth2 page', 'Open the dashboard anyway', 'Cancel'], defaultId: 0, cancelId: 2, noLink: true });
       if (r.response === 0) { clipboard.writeText(redirectUri); shell.openExternal(linkFor('oauth', v.app.id)); return; }
@@ -246,6 +259,7 @@ function refreshTray() {
     { type: 'separator' },
     { label: st === 'running' || st === 'starting' ? 'Stop bot' : 'Start bot', enabled: ready() && st !== 'stopping', click: () => (st === 'running' || st === 'starting' ? runner.stop() : startBot()) },
     { type: 'separator' },
+    ...(U.phase === 'ready' ? [{ label: `Restart to update to ${U.version}`, click: () => { installUpdate().catch(() => {}); } }] : []),
     { label: 'Quit (stops the bot)', click: () => app.quit() },
   ]));
 }
@@ -320,6 +334,8 @@ ipcMain.handle('gb:setup-save', (_e, form) => {
 });
 /** The saved token, only ever sent to Discord to check it (never to the window). */
 function savedToken() { return vault.read().DISCORD_TOKEN; }
+/** The saved client secret, only ever sent to Discord to check it. */
+function savedSecret() { return vault.read().DISCORD_CLIENT_SECRET; }
 ipcMain.handle('gb:verify-token', async (_e, token) => {
   // The token typed in the window, or (with no argument) the saved one: used again on the invite step to see new servers.
   const t = token == null ? savedToken() : String(token);
@@ -332,10 +348,13 @@ ipcMain.handle('gb:open-link', (_e, kind) => {
   if (url && url.startsWith('https://discord.com/')) shell.openExternal(url);
   return !!url;
 });
-ipcMain.handle('gb:setup-secret', (_e, secret) => {
+ipcMain.handle('gb:setup-secret', async (_e, secret) => {
   const s = String(secret ?? '').trim();
   if (!s) return { ok: true };
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(s)) return { ok: false, error: 'That does not look like a client secret. Copy it from the Developer Portal > your app > OAuth2.' };
+  // Ask Discord now, so a wrong secret is caught here and not later as a failed dashboard login.
+  const check = await verifySecret(knownAppId ?? appIdFromToken(savedToken()), s);
+  if (!check.ok && check.kind !== 'network' && check.kind !== 'slow' && check.kind !== 'other') return { ok: false, error: check.error };
   try { vault.merge({ DISCORD_CLIENT_SECRET: s }); } catch (e) { return { ok: false, error: e.message }; }
   send('state', snapshot());
   return { ok: true };
@@ -463,6 +482,96 @@ ipcMain.handle('gb:module-sign', async () => {
 });
 ipcMain.handle('gb:save-settings', (_e, patch) => applySettings(patch));
 
+// ---- take control from an older copy of the bot that is still running in the background
+ipcMain.handle('gb:takeover', async () => {
+  const b = runner.status().blocked;
+  if (!b?.pid) return { ok: false, error: 'Nothing is in the way. Press Start.' };
+  if (b.pid === runner.child?.pid) return { ok: false, error: 'That is this app\'s own copy.' };
+  const r = await takeControl(b.pid, { lockFiles: [path.join(botDir(), 'supervisor.lock'), ...lockFilesForBot()] });
+  if (!r.ok) return r;
+  runner.blocked = null; runner.lastError = '';
+  await new Promise((res) => setTimeout(res, 1500));
+  startBot();
+  return { ...r, started: true };
+});
+function lockFilesForBot() { const id = appIdFromToken(savedToken()); return id ? [path.join(os.tmpdir(), 'good-boy-locks', `${id}.lock`)] : []; }
+
+// ---- data: one file to move the bot's data between computers or keep as a backup
+ipcMain.handle('gb:data-export', async () => {
+  if (!bundled) return { ok: false, error: 'Export works with the built-in bot.' };
+  const day = new Date().toISOString().slice(0, 10);
+  const r = await dialog.showSaveDialog(win, { title: 'Save the bot\'s data', defaultPath: path.join(app.getPath('documents'), `good-boy-data-${day}.goodboy`), filters: [{ name: 'Good Boy data', extensions: ['goodboy'] }] });
+  if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
+  return runTool({ nodePath: nodePath(), botDir: botDir(), args: ['export', P.dataDir(), r.filePath] });
+});
+ipcMain.handle('gb:data-import', async () => {
+  if (!bundled) return { ok: false, error: 'Import works with the built-in bot.' };
+  const r = await dialog.showOpenDialog(win, { title: 'Choose a Good Boy data file', properties: ['openFile'], filters: [{ name: 'Good Boy data', extensions: ['goodboy', 'db'] }] });
+  if (r.canceled || !r.filePaths[0]) return { ok: false, cancelled: true };
+  const ask = await dialog.showMessageBox(win, { type: 'question', title: 'Replace the bot\'s data?', message: 'Load this data file?', detail: 'The bot stops for a moment, the data it has now is backed up, and the file\'s data takes its place. Then the bot starts again.', buttons: ['Load it', 'Cancel'], defaultId: 0, cancelId: 1, noLink: true });
+  if (ask.response !== 0) return { ok: false, cancelled: true };
+  const wasOn = ['running', 'starting'].includes(runner.status().state);
+  await runner.stop();
+  const out = await runTool({ nodePath: nodePath(), botDir: botDir(), args: ['import', r.filePaths[0], P.dataDir()] });
+  if (wasOn) startBot();
+  send('state', snapshot());
+  return out;
+});
+
+// ---- app updates from GitHub (see lib/updater.js)
+const setU = (patch) => { Object.assign(U, { error: null }, patch); send('state', snapshot()); };
+const friendlyUpdateError = (e) => {
+  const m = String(e?.message ?? e).split('\n')[0];
+  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|net::|getaddrinfo|network/i.test(m)) return 'No internet connection right now.';
+  return m.slice(0, 160);
+};
+const noReleaseYet = (e) => /404|Cannot find .*\.yml|No published versions|Unable to find latest version/i.test(String(e?.message ?? e));
+async function initUpdates() {
+  U.mode = updateMode({ packaged: app.isPackaged, platform: process.platform, portable: !!process.env.PORTABLE_EXECUTABLE_DIR, edition: edition.id, smoke: !!smokeDir });
+  U.phase = U.mode === 'off' ? 'off' : 'idle';
+  if (U.mode === 'off') return;
+  if (U.mode === 'auto') {
+    try {
+      const { default: eu } = await import('electron-updater');
+      autoUpdater = eu.autoUpdater;
+      autoUpdater.channel = channelFor(edition.id);
+      autoUpdater.allowDowngrade = false; autoUpdater.allowPrerelease = false;
+      autoUpdater.autoDownload = true; autoUpdater.autoInstallOnAppQuit = true; autoUpdater.logger = null;
+      autoUpdater.on('checking-for-update', () => setU({ phase: 'checking' }));
+      autoUpdater.on('update-available', (i) => setU({ phase: 'downloading', version: i?.version ?? null, percent: 0 }));
+      autoUpdater.on('update-not-available', () => setU({ phase: 'current', checkedAt: Date.now() }));
+      autoUpdater.on('download-progress', (p) => setU({ phase: 'downloading', percent: p?.percent ?? null }));
+      autoUpdater.on('update-downloaded', (i) => { setU({ phase: 'ready', version: i?.version ?? U.version }); refreshTray(); });
+      autoUpdater.on('error', (e) => setU(noReleaseYet(e) ? { phase: 'current', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) }));
+    } catch (e) { log(`updater unavailable: ${e.message}`); autoUpdater = null; U.mode = 'notify'; }
+  }
+  setTimeout(() => checkUpdates().catch(() => {}), 15000).unref?.();
+  setInterval(() => checkUpdates().catch(() => {}), 6 * 3600000).unref?.();
+}
+async function checkUpdates() {
+  if (U.mode === 'off' || U.phase === 'downloading' || U.phase === 'ready') return U;
+  if (autoUpdater) { await autoUpdater.checkForUpdates().catch((e) => setU(noReleaseYet(e) ? { phase: 'current', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) })); return U; }
+  setU({ phase: 'checking' });
+  try {
+    const r = await fetch(latestApi(), { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'GoodBoy-desktop' }, signal: AbortSignal.timeout(15000) });
+    if (r.status === 404) { setU({ phase: 'current', checkedAt: Date.now() }); return U; }
+    if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
+    const l = readLatest(await r.json(), app.getVersion());
+    setU(l.newer ? { phase: 'available', version: l.version, url: l.url, checkedAt: Date.now() } : { phase: 'current', checkedAt: Date.now() });
+  } catch (e) { setU({ phase: 'error', error: friendlyUpdateError(e) }); }
+  return U;
+}
+ipcMain.handle('gb:update-check', () => checkUpdates());
+ipcMain.handle('gb:update-open', () => { const u = U.url && U.url.startsWith('https://github.com/') ? U.url : releasesPage(); shell.openExternal(u); return true; });
+async function installUpdate() {
+  if (!autoUpdater || U.phase !== 'ready') return { ok: false, error: 'No update is ready yet.' };
+  quitting = true;
+  await runner?.stop();
+  setImmediate(() => autoUpdater.quitAndInstall(true, true));
+  return { ok: true };
+}
+ipcMain.handle('gb:update-install', () => installUpdate());
+
 async function applySettings(patch) {
   const before = settings;
   settings = normalize({ ...settings, ...(patch && typeof patch === 'object' ? patch : {}) });
@@ -492,4 +601,4 @@ createWindow();
 log('window created');
 createTray();
 log('tray created');
-setImmediate(() => { prepare(); });
+setImmediate(() => { prepare(); initUpdates().catch((e) => log(`updates: ${e.message}`)); });

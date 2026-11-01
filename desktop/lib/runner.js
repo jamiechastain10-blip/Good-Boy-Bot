@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { LogBuffer } from './logbuf.js';
+import { blockedBy } from './takeover.js';
 
 /**
  * Runs the bot's supervisor (scripts/supervise.js) as a child process using the computer's own Node.
@@ -19,7 +20,7 @@ export class BotRunner extends EventEmitter {
     super();
     this.botDir = botDir; this.script = script ?? path.join(botDir, 'scripts', 'supervise.js');
     this.nodePath = nodePath; this.env = env; this.spawnFn = spawnFn; this.stopTimeoutMs = stopTimeoutMs;
-    this.state = 'stopped'; this.child = null; this.logs = new LogBuffer(); this.lastError = ''; this.startedAt = null;
+    this.state = 'stopped'; this.child = null; this.logs = new LogBuffer(); this.lastError = ''; this.startedAt = null; this.blocked = null;
   }
 
   /** Ask the running bot to do something (through the supervisor). Resolves with its answer, or a plain error. */
@@ -37,11 +38,13 @@ export class BotRunner extends EventEmitter {
   }
 
   #set(s) { if (this.state !== s) { this.state = s; this.emit('state', this.status()); } }
-  status() { return { state: this.state, pid: this.child?.pid ?? null, startedAt: this.startedAt, error: this.lastError }; }
+  status() { return { state: this.state, pid: this.child?.pid ?? null, startedAt: this.startedAt, error: this.lastError, blocked: this.blocked }; }
 
   #onOutput(chunk) {
     for (const line of this.logs.push(chunk)) {
       this.emit('log', line);
+      const b = blockedBy(line);
+      if (b) { this.blocked = b; this.lastError = b.other ? 'This bot is already running from another Good Boy app on this computer.' : 'An older copy of the bot is still running in the background.'; }
       if (/Ready\. In Discord/.test(line)) this.#set('running');
       else if (/^\[supervisor [^\]]*\] Stopped:/.test(line)) this.lastError = line.replace(/^\[supervisor [^\]]*\] Stopped:\s*/, '');
     }
@@ -50,7 +53,7 @@ export class BotRunner extends EventEmitter {
   start() {
     if (this.child) return false;
     if (!fs.existsSync(this.script)) { this.lastError = 'The supervisor script was not found. Is the folder right?'; this.#set('failed'); return false; }
-    this.lastError = ''; this.#set('starting');
+    this.lastError = ''; this.blocked = null; this.#set('starting');
     // Read .env ourselves is not needed: the bot loads it (--env-file-if-exists) from its own folder.
     const args = ['--disable-warning=ExperimentalWarning'];
     if (fs.existsSync(path.join(this.botDir, '.env'))) args.unshift('--env-file=.env');
