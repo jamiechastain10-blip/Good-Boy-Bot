@@ -395,6 +395,7 @@ export default {
   commands: [
     {
       permission: 'member-management.manage',
+      ownPopup: ['setup'], // opens its own popup when run with nothing filled in
       data: new SlashCommandBuilder().setName('verify').setDescription('Verification gate')
         .addSubcommand((s) => s.setName('setup').setDescription('Set the roles and post the verification panel')
           .addRoleOption((o) => o.setName('role').setDescription('Role members get after verifying (leave everything empty for a popup)'))

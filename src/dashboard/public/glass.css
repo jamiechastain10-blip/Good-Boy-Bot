@@ -13,32 +13,36 @@
      8. Motion switch ......... .motion-off stops the aurora; prefers-reduced-motion also stops every animation and transition
    ========================================================================================== */
 
-/* ---- tokens (1, 7) */
-:root{--bg:#061127;--card:rgba(12,36,79,.68);--line:rgba(109,168,255,.24);--text:#ecf4ff;--muted:#9dbbe1;--accent:#1267ed;--ok:#31e5b0;--warn:#ffc168;--bad:#ff777e;--blur:blur(22px)}
-.theme-light{--bg:#dceafb;--card:rgba(255,255,255,.72);--line:rgba(36,95,161,.2);--text:#153052;--muted:#516f95}
-.theme-blue{--bg:#073775;--card:rgba(8,54,123,.62)}
+/* ---- tokens (1, 7): the desktop app's palette. Dark is the default here; light and blue switch the same variables. */
+:root{--bg:#060C18;--card:rgba(28,40,64,.58);--card-solid:#121C30;--field:rgba(255,255,255,.07);--line:rgba(238,243,251,.08);--text:#EEF3FB;--muted:#9AA9C2;--faint:#66768F;
+  --accent:#3D86FF;--accent-soft:rgba(61,134,255,.16);--ok:#22C38E;--warn:#F2A93B;--bad:#F0525C;--glow-a:#0D3A8C;--glow-b:#2A1F6B;--blur:blur(30px) saturate(1.6);color-scheme:dark}
+.theme-light{--bg:#EEF2F7;--card:rgba(255,255,255,.74);--card-solid:#FFFFFF;--field:rgba(13,27,46,.05);--line:rgba(13,27,46,.09);--text:#0D1B2E;--muted:#5E6E86;--faint:#8F9CB0;
+  --accent:#1A6BFF;--accent-soft:rgba(26,107,255,.12);--glow-a:#9EC2FF;--glow-b:#C9BDFF;color-scheme:light}
+.theme-blue{--bg:#06204A;--card:rgba(12,52,112,.55);--card-solid:#0B2D63;--glow-a:#0A5BD6;--glow-b:#2B3FB8}
 
 /* ---- glass surfaces (1) */
-.glass,.card,.side,.topbar{background:var(--card);border:1px solid var(--line);box-shadow:inset 0 1px rgba(255,255,255,.06),0 12px 35px rgba(0,0,0,.12);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)}
+.glass,.card,.side,.topbar{background:var(--card);border:1px solid var(--line);box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 10px 30px rgba(0,0,0,.10);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)}
 
 /* ---- aurora (2) */
 .aurora{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
-.aurora i{position:absolute;border-radius:50%;filter:blur(80px);opacity:.42;animation:drift 18s ease-in-out infinite alternate}
-.aurora i:nth-child(1){width:55vw;height:55vw;background:#076eff;top:-30vw;left:10%}
-.aurora i:nth-child(2){width:44vw;height:44vw;background:#00a8ed;bottom:-28vw;right:-15vw;animation-duration:24s;animation-direction:alternate-reverse}
-.aurora i:nth-child(3){width:36vw;height:36vw;background:#3349cc;top:28%;right:5%;animation-duration:21s}
+.aurora i{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 18s ease-in-out infinite alternate}
+.aurora i:nth-child(1){width:55vw;height:55vw;background:var(--glow-a);top:-30vw;left:10%}
+.aurora i:nth-child(2){width:44vw;height:44vw;background:var(--glow-b);bottom:-28vw;right:-15vw;animation-duration:24s;animation-direction:alternate-reverse}
+.aurora i:nth-child(3){width:36vw;height:36vw;background:var(--glow-a);top:28%;right:5%;opacity:.3;animation-duration:21s}
 @keyframes drift{to{transform:translate(13vw,8vh) scale(1.22)}}
 
 /* ---- hover lift (3) */
 .guild,.quick{transition:transform .2s,border-color .2s}
-.guild:hover,.quick:hover{transform:translateY(-2px);border-color:#58a7ff}
+.guild:hover,.quick:hover{transform:translateY(-2px);border-color:var(--accent)}
 
 /* ---- buttons and focus (4, 5) */
 button:hover,.btn:hover{filter:brightness(1.13)}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #7dc3ff;outline-offset:2px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-/* ---- toast (6) */
+/* ---- toast (6), switches and dialogs */
 #toast{transition:opacity .2s}
+.switch,.switch::after{transition:background .2s,transform .25s cubic-bezier(.34,1.56,.64,1)}
+.dialog{transition:transform .2s}
 
 /* ---- motion switch (8) */
 .motion-off .aurora i{animation:none!important}

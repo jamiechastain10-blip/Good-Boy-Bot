@@ -551,6 +551,7 @@ export default {
     },
     {
       permission: 'tempvoice.manage',
+      ownPopup: ['event'], // opens its own popup when run with nothing filled in
       data: new SlashCommandBuilder().setName('voicehub').setDescription('Set up join-to-create lobbies')
         .addSubcommand((s) => s.setName('add').setDescription('Make a voice channel a lobby')
           .addChannelOption((o) => o.setName('lobby').setDescription('The voice channel people join').setRequired(true).addChannelTypes(ChannelType.GuildVoice))

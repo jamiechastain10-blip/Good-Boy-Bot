@@ -262,5 +262,9 @@ export class Database {
     return dest;
   }
 
+  /** Small core key/value store (schema_meta). Used for values that must survive restarts, like the popup signing key. */
+  metaGet(key) { return this.q('SELECT value FROM schema_meta WHERE key = ?').get(`meta.${key}`)?.value ?? null; }
+  metaSet(key, value) { this.q('INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)').run(`meta.${key}`, String(value)); }
+
   close() { try { this.db.close(); } catch { /* ignore */ } }
 }

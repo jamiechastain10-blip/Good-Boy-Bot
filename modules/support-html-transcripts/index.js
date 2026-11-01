@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
  *
  * Add-on for the Support module: adds a styled HTML transcript format.
- * Select it with: /config set module:support key:transcriptFormat value:html
+ * Select it with /config (or /modules): support > Edit settings > transcript format = html
  * Demonstrates the add-on system: it declares which module/version it needs, and the
  * platform refuses to enable it unless that host is installed, compatible and enabled.
  */

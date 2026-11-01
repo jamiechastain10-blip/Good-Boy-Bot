@@ -725,6 +725,7 @@ export default {
   ` }],
   commands: [
     {
+      ownPopup: ['panel'], // opens its own popup when run with nothing filled in
       data: new SlashCommandBuilder().setName('ticket').setDescription('Support tickets')
         .addSubcommand((s) => s.setName('panel').setDescription('Post the "open a ticket" buttons')
           .addChannelOption((o) => o.setName('channel').setDescription('Where to post it'))
@@ -796,12 +797,16 @@ export default {
   },
   panels: [
     { id: 'tickets', title: 'Tickets', view: 'tickets', permission: 'support.staff',
+      description: 'Open tickets, newest first. Staff work on them in their ticket channels.',
+      empty: 'No tickets are open right now.', recentTitle: 'Recently closed', recentEmpty: 'No tickets have been closed yet.',
       columns: [{ key: 'number', label: '#' }, { key: 'category', label: 'Category' }, { key: 'urgency', label: 'Urgency' }, { key: 'status', label: 'Status' }, { key: 'opener', label: 'Opened by' }, { key: 'claimed', label: 'Claimed' }, { key: 'opened', label: 'Opened' }],
       rowActions: [],
       recentColumns: [{ key: 'number', label: '#' }, { key: 'category', label: 'Category' }, { key: 'kind', label: 'How it ended' }, { key: 'resolution', label: 'Resolution' }, { key: 'by', label: 'By' }, { key: 'closed', label: 'Closed' }] },
     { id: 'watch', title: 'Watch log (staff only)', view: 'watch', permission: 'support.watch',
+      description: 'People named in reports. Later tickets that mention them are flagged for staff. A report is only an accusation until you record an outcome.',
+      empty: 'Nobody is on the watch log.',
       columns: [{ key: 'number', label: '#' }, { key: 'who', label: 'Person' }, { key: 'status', label: 'Outcome' }, { key: 'ticket', label: 'Ticket' }, { key: 'added', label: 'Added' }, { key: 'summary', label: 'What was reported' }],
-      rowActions: [{ action: 'watch-confirm', label: 'Confirmed' }, { action: 'watch-unfound', label: 'Unfounded' }, { action: 'watch-remove', label: 'Remove' }], recentColumns: [] },
+      rowActions: [{ action: 'watch-confirm', label: 'Confirmed', confirm: 'Mark this report as confirmed?', danger: false }, { action: 'watch-unfound', label: 'Unfounded', confirm: 'Mark this report as unfounded? Unfounded entries expire after 30 days.', danger: false }, { action: 'watch-remove', label: 'Remove', confirm: 'Remove this entry from the watch log?', danger: true }], recentColumns: [] },
   ],
 };
 

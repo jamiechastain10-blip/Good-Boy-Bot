@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.2.0
+**The first test build for the update system.** 2.2 is a big change on purpose: two new modules, a new way commands collect input, and new database tables. Use it to check that an update can be installed, rolled back and hot-reloaded while people are in the middle of using the bot. Step-by-step: `docs/V2.2-TEST-PLAN.md`. Nothing here has been tried on real Discord yet.
+
+**Every command is a popup**
+- No command asks you to type anything in Discord's command box any more. Commands are sent to Discord without their typed options; running one opens a popup built from them: text fields, dropdowns for choices and yes/no, number fields with their limits, and member, channel and role pickers. Subcommands stay as they are (picking one is not typing).
+- Commands that need more than 5 answers are asked in parts: submit part 1 and press **Continue** for the next. The command runs when the last part is in.
+- A wrong answer (a number out of range, a member who left) is explained, with a **Try again** button.
+- Commands that already had their own designed popup (polls, parties, team reminders, role menus, member IDs, verification, ticket panels, event voice hubs) keep it.
+- Popups work in the Discord desktop app, in the browser and on phones.
+
+**The modal pipeline (for new commands)**
+- New core piece `src/modalpipe.js`: a command serves a private button, the button opens a popup, the popup does the work. Nothing is typed into slash command options.
+- Each step carries a signed token (owner, form, target, expiry) in the button's ID, so nothing is held in memory between steps. Buttons and popups keep working across a hot reload **and** a full restart, nobody else can press your button, a changed ID is rejected, permissions are checked again on submit, and a popup can only be submitted once.
+- A mistake in a popup (bad colour, not enough coins...) answers with the error and a **Try again** button that reopens the form already filled in.
+- **`/warn`** has no options now: **Configure warning** opens a popup with member, warning reason, severity and duration/severity notes. Right-click a member → Apps → **Warn member** skips the member picker.
+- **`/announce send`** and **`/announce schedule`** have no options now: **Configure Announcement** opens one popup (channel, title, main text, hex colour, pings; scheduling asks for when and repeat instead of title and colour). Pick the @everyone role to ping everyone. `/announce cancel` is gone: `/announce list` has a picker to cancel one. Popups opened on 2.1 still finish after the update.
+
+**New: `/modules`, the module control panel in Discord**
+- One command, nothing to type: a private panel lists every module with its status. Pick one to see what it does, its commands and every setting with its current value.
+- **Turn on / Turn off** buttons, and **Edit settings** opens popups built from the module's own settings: on/off and choices are dropdowns, channels and roles are pickers, numbers and text are fields, lists are one entry per line. Big modules are split into pages of 5.
+- Saves through the same checks as the dashboard, shows what was saved and what was refused, and works for every module, including ones added later.
+- **`/module` and `/config` are popups now**, with nothing typed in the command. `/module` asks which module and what to do (turn on, turn off, show details and settings, reload). `/config` asks which module, then **Edit settings** opens its settings. The old typed forms (`/module enable name:…`, `/config set module:… key:… value:…`) are gone.
+
+**New: economy module**
+- `/balance`, `/daily`, `/pay`, `/top`, `/economy-admin`, right-click **View wallet** and **Pay member**.
+- Daily streaks: claim every 20 hours, the streak survives 48 hours, +5% per day (up to +150%), bonuses on days 7, 14 and every 30, and a **Streak Shield** every 7 days that saves the streak once.
+- **Live leaderboards** (`/top`): 10 per page, Previous/Next turn off at the ends, every click reads the database again, only the person who opened it can page it (anyone else gets their own copy), boards for coins, streaks and the games, and a global board for servers that opt in.
+
+**New: games module (needs economy)**
+- `/slots` with a server jackpot pool, `/blackjack` (hit, stand, double), `/coinflip`, and `/arcade` to post a panel anyone can play from. Every bet is typed in a popup; results have **again** and **change bet** buttons.
+- `/fish`: pick a place, rod, bait and tackle in a popup, then reel with buttons while a slider shows the fish and your catch zone. 5 places unlocked by level, 30 fish from Common to Mythical, Mutated and Corrupted variants, a shop, a bag and a collection log.
+- Outcomes are decided and paid before any animation starts, and hands and fights are saved in the database, so a reload or restart mid-game changes nothing.
+- Coins are play money: they cannot be bought or cashed out.
+
+**New: dead chat ping (deadchat module)**
+- `/deadchat` opens a popup: which channel to watch, which role to ping, how many quiet minutes, and the shortest gap between pings. When the channel goes quiet, the bot posts a random conversation starter and pings the role, once per quiet spell (someone has to talk before it pings again).
+- Conversation starters, and every other setting, can also be changed in the dashboard.
+- Pings go to an opt-in **@deadchat** role: leave the role empty in the popup and the bot creates it. Every ping, and a panel posted at setup, has a **Ping me** button that adds or removes the role for whoever presses it.
+
+**Dashboard**
+- No more "null": empty sections say something useful, like "Nothing has been caught yet."
+- **Levels box** in Community: everyone's rank, picture, level, XP and progress, with Give XP, Take XP, Reset and Reset everyone. Level rewards are handed out after each change.
+- **Permissions in plain words**, grouped by feature. Each one shows its default, and you add roles from a picker instead of a wall of checkboxes. Divider roles (like "--- bots under -") and bot roles are hidden.
+- Buttons open the page's own dialogs instead of browser boxes: AutoMod's action is a dropdown (Server default, Delete it, Delete + warn, Delete + time out), and big resets ask you to type RESET.
+- Tables explain their columns (for example what "This week" and "Exemptions" mean) and say why they are empty.
+- The whole dashboard now has the desktop app's look: Inter type, frosted grouped cards, pill buttons and iPhone-style switches, in light and dark.
+
+**Desktop app**
+- **Levels only**: Settings > Server data > Export levels saves just members' XP in a small .goodboy file. **Merge levels** adds a file's levels (from a levels file or a full data file): everyone keeps their higher level, new members are added, nothing else changes, and a backup is made first. A levels file can't be loaded by mistake with "Import data", which would replace everything.
+- When no version has been published at all, the Updates page now says so instead of "You have the latest version".
+
+**Also**
+- Research notes and the reasons behind the economy design: `docs/ENGAGEMENT.md`. Game rules, data tables and flows: `docs/GAMES.md`.
+- 335 automated tests (43 new), including hot reloads in the middle of a blackjack hand, a fishing fight and an open payment popup.
+
 ## 2.1.3
 **Dashboard link in one button:** Settings > Dashboard link > Set up does everything. It installs Tailscale (through winget, or Tailscale's own installer, which is only run when Windows confirms it is signed by Tailscale Inc.), opens Tailscale's sign-in page, opens the page to allow public links, turns the link on and adds it to your bot's Discord login. Each step shows a check mark as it finishes, and the steps that need you open by themselves and carry on when you are done. After that the link turns itself back on whenever Good Boy starts.
 **Pair your phone:** once the link is on, Settings shows a code to scan. On iPhone it opens the phone page with a reminder to add it to the Home Screen. On Android it offers "Open in the Good Boy app", and the app asks before connecting, showing the address.

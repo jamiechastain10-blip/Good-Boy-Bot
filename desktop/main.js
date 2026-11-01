@@ -625,6 +625,28 @@ ipcMain.handle('gb:data-import', async () => {
   return out;
 });
 
+// ---- levels only: a small file with just members' XP, and a merge that keeps the higher level for everyone
+ipcMain.handle('gb:levels-export', async () => {
+  if (!bundled) return { ok: false, error: 'Export works with the built-in bot.' };
+  const day = new Date().toISOString().slice(0, 10);
+  const r = await dialog.showSaveDialog(win, { title: 'Save the levels', defaultPath: path.join(app.getPath('documents'), `good-boy-levels-${day}.goodboy`), filters: [{ name: 'Good Boy data', extensions: ['goodboy'] }] });
+  if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
+  return runTool({ nodePath: nodePath(), botDir: botDir(), args: ['export-levels', P.dataDir(), r.filePath] });
+});
+ipcMain.handle('gb:levels-merge', async () => {
+  if (!bundled) return { ok: false, error: 'Merging works with the built-in bot.' };
+  const r = await dialog.showOpenDialog(win, { title: 'Choose a Good Boy file with levels', properties: ['openFile'], filters: [{ name: 'Good Boy data', extensions: ['goodboy'] }] });
+  if (r.canceled || !r.filePaths[0]) return { ok: false, cancelled: true };
+  const ask = await dialog.showMessageBox(win, { type: 'question', title: 'Merge levels?', message: 'Add the levels from this file?', detail: 'Everyone keeps their higher level: members in the file who are behind here are raised, nobody goes down, and nothing else changes. The bot stops for a moment and your data is backed up first.', buttons: ['Merge levels', 'Cancel'], defaultId: 0, cancelId: 1, noLink: true });
+  if (ask.response !== 0) return { ok: false, cancelled: true };
+  const wasOn = ['running', 'starting'].includes(runner.status().state);
+  await runner.stop();
+  const out = await runTool({ nodePath: nodePath(), botDir: botDir(), args: ['merge-levels', r.filePaths[0], P.dataDir()] });
+  if (wasOn) startBot();
+  send('state', snapshot());
+  return out;
+});
+
 // ---- app updates from GitHub (see lib/updater.js)
 const setU = (patch) => { Object.assign(U, { error: null }, patch); send('state', snapshot()); };
 const friendlyUpdateError = (e) => {
@@ -649,7 +671,7 @@ async function initUpdates() {
       autoUpdater.on('update-not-available', () => setU({ phase: 'current', checkedAt: Date.now() }));
       autoUpdater.on('download-progress', (p) => setU({ phase: 'downloading', percent: p?.percent ?? null }));
       autoUpdater.on('update-downloaded', (i) => { setU({ phase: 'ready', version: i?.version ?? U.version }); refreshTray(); });
-      autoUpdater.on('error', (e) => setU(noReleaseYet(e) ? { phase: 'current', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) }));
+      autoUpdater.on('error', (e) => setU(noReleaseYet(e) ? { phase: 'none', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) }));
     } catch (e) { log(`updater unavailable: ${e.message}`); autoUpdater = null; U.mode = 'notify'; }
   }
   setTimeout(() => checkUpdates().catch(() => {}), 15000).unref?.();
@@ -657,11 +679,11 @@ async function initUpdates() {
 }
 async function checkUpdates() {
   if (U.mode === 'off' || U.phase === 'downloading' || U.phase === 'ready') return U;
-  if (autoUpdater) { await autoUpdater.checkForUpdates().catch((e) => setU(noReleaseYet(e) ? { phase: 'current', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) })); return U; }
+  if (autoUpdater) { await autoUpdater.checkForUpdates().catch((e) => setU(noReleaseYet(e) ? { phase: 'none', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) })); return U; }
   setU({ phase: 'checking' });
   try {
     const r = await fetch(latestApi(), { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'GoodBoy-desktop' }, signal: AbortSignal.timeout(15000) });
-    if (r.status === 404) { setU({ phase: 'current', checkedAt: Date.now() }); return U; }
+    if (r.status === 404) { setU({ phase: 'none', checkedAt: Date.now() }); return U; }
     if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
     const l = readLatest(await r.json(), app.getVersion());
     setU(l.newer ? { phase: 'available', version: l.version, url: l.url, checkedAt: Date.now() } : { phase: 'current', checkedAt: Date.now() });

@@ -48,6 +48,8 @@ export function describe(u) {
     case 'ready': return `Version ${u.version} is ready. Restart Good Boy to finish.`;
     case 'available': return `Version ${u.version} is out.`;
     case 'current': return 'You have the latest version.';
+    // No release at all yet: say so, instead of claiming this is the latest (it hides a publishing problem).
+    case 'none': return 'No version has been published yet, so there is nothing to update to.';
     case 'error': return `Could not check for updates: ${u.error}`;
     default: return 'Not checked yet.';
   }

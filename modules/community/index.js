@@ -300,6 +300,16 @@ async function repComponent(ctx, i) {
   await i.update({ content: `✅ Reset **${result.affected}** member(s) to 0. Backup saved${result.backup ? ` (\`${result.backup.split(/[\\/]/).pop()}\`)` : ''}.`, components: [] });
 }
 
+/** Changes one member's XP through `fn(oldXp) -> newXp` and applies level rewards. Used by the dashboard. */
+async function changeXp(ctx, userId, fn) {
+  if (!SNOWFLAKE.test(String(userId))) throw new UserError('Pick a member.');
+  let before = 0, after = 0;
+  ctx.data.update(userKey(userId), (r) => { const cur = { ...fresh(), ...r }; before = cur.xp; after = Math.max(0, Math.round(fn(cur.xp))); return { ...cur, xp: after }; }, fresh());
+  const member = await ctx.guild?.members.fetch(userId).catch(() => null);
+  if (member) await applyRewards(ctx, member, levelOf(after).level);
+  return { before, after, level: levelOf(after).level };
+}
+
 function resetEveryone(ctx, actor) {
   const backup = ctx.backup('before-rep-reset-all');
   let affected = 0;
@@ -456,7 +466,7 @@ export default {
       const rows = all.slice(0, 100).map((x, n) => {
         const m = ctx.guild?.members.cache.get(x.id);
         const l = levelOf(x.xp);
-        return { rank: n + 1, id: x.id, name: m?.displayName ?? `Member …${x.id.slice(-4)}`, avatar: m?.displayAvatarURL?.({ size: 64, extension: 'png' }) ?? null, xp: x.xp, level: l.level, into: l.into, needed: l.needed };
+        return { rank: n + 1, id: x.id, name: m?.displayName ?? `Member …${x.id.slice(-4)}`, avatar: m?.displayAvatarURL?.({ size: 64, extension: 'png' }) ?? null, xp: x.xp, level: l.level, into: l.into, needed: l.needed, xpText: x.xp.toLocaleString('en-US'), progress: `${l.into.toLocaleString('en-US')} / ${l.needed.toLocaleString('en-US')}` };
       });
       return { total: all.length, rows };
     },
@@ -469,6 +479,19 @@ export default {
     },
   },
   actions: {
+    // Levels box in the dashboard: give, take or reset XP, then hand out any level rewards that now apply.
+    async 'xp-give'(ctx, body) { return changeXp(ctx, body.userId, (xp) => xp + intIn(body.value, 1, 10000000, 'The XP to give')); },
+    async 'xp-take'(ctx, body) { return changeXp(ctx, body.userId, (xp) => Math.max(0, xp - intIn(body.value, 1, 10000000, 'The XP to take'))); },
+    async 'xp-reset'(ctx, body) { return changeXp(ctx, body.userId, () => 0); },
+    async 'xp-reset-all'(ctx, body) {
+      if (body.confirm !== 'RESET') throw new UserError('Type RESET to confirm a server-wide reset.');
+      const backup = ctx.backup('before-xp-reset-all');
+      let affected = 0;
+      ctx.sql.transaction(() => {
+        for (const { key, value } of ctx.data.list('user:')) { if (!value.xp) continue; ctx.data.set(key, { ...value, xp: 0 }); affected++; }
+      });
+      return { affected, backup };
+    },
     async 'rep-set'(ctx, body, actor) {
       if (!SNOWFLAKE.test(String(body.userId))) throw new UserError('Pick a member.');
       const r = setRepValue(ctx, { target: body.userId, actor: actor.userId, value: intIn(body.value, -100000, 100000, 'The score'), kind: 'set', reason: `via dashboard (${actor.username})` });
@@ -484,10 +507,25 @@ export default {
     },
   },
   panels: [{
+    id: 'levels', title: 'Levels', view: 'levels', permission: 'community.manage',
+    description: 'Members earn XP for chatting (once a minute at most). More XP means a higher level, and level rewards hand out roles.',
+    empty: 'Nobody has earned XP yet. XP starts counting from the first message after Community was turned on.',
+    columns: [{ key: 'rank', label: '#', kind: 'rank' }, { key: 'name', label: 'Member', kind: 'member' }, { key: 'level', label: 'Level' },
+      { key: 'xpText', label: 'XP', hint: 'Total XP. The level comes from it: each level needs a bit more than the last.' }, { key: 'progress', label: 'Next level', hint: 'XP gathered towards the next level.' }],
+    rowActions: [
+      { action: 'xp-give', label: 'Give XP', prompt: 'number', field: 'value', hint: 'How much XP to add?', placeholder: 'e.g. 500', done: 'XP given' },
+      { action: 'xp-take', label: 'Take XP', prompt: 'number', field: 'value', hint: 'How much XP to take away? It never goes below 0.', placeholder: 'e.g. 500', done: 'XP taken' },
+      { action: 'xp-reset', label: 'Reset', confirm: 'Set this member back to 0 XP (level 0)? Roles they already earned are kept.', danger: true, done: 'Reset' },
+    ],
+    globalActions: [{ action: 'xp-reset-all', label: 'Reset everyone', confirmWord: 'RESET', confirm: 'Set every member back to 0 XP. A backup of the database is made first.' }],
+  }, {
     id: 'reputation', title: 'Reputation', view: 'reputation',
+    description: 'Points members give each other with /rep. Staff can set or reset a score here.',
+    empty: 'Nobody has any reputation yet.', recentEmpty: 'No reputation changes yet.',
     columns: [{ key: 'name', label: 'Member' }, { key: 'rep', label: 'Score' }],
-    rowActions: [{ action: 'rep-set', label: 'Set', prompt: 'number', field: 'value' }, { action: 'rep-reset', label: 'Reset' }],
-    globalActions: [{ action: 'rep-reset-all', label: 'Reset everyone', confirmWord: 'RESET' }],
+    rowActions: [{ action: 'rep-set', label: 'Set', prompt: 'number', field: 'value', hint: 'The new score (can be negative).', current: 'rep', done: 'Score saved' },
+      { action: 'rep-reset', label: 'Reset', confirm: 'Set this member\'s reputation back to 0?', danger: true, done: 'Reset' }],
+    globalActions: [{ action: 'rep-reset-all', label: 'Reset everyone', confirmWord: 'RESET', confirm: 'Set everyone\'s reputation back to 0. A backup is made first.' }],
     recentColumns: [{ key: 'when', label: 'When' }, { key: 'kind', label: 'Type' }, { key: 'change', label: 'Change' }, { key: 'target', label: 'Member' }, { key: 'by', label: 'By' }, { key: 'reason', label: 'Reason' }],
   }],
   events: {

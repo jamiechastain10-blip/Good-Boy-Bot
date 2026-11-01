@@ -10,6 +10,10 @@
  *                            keeping a backup of what was there
  *   export <dataDir> <file>  write the bot's data as one file (a .goodboy data file) that import can read back,
  *                            safe while the bot is running
+ *   export-levels <dataDir> <file>   a small .goodboy file with ONLY members' XP and message counts
+ *   merge-levels <file> <dataDir>    add the levels from a .goodboy file (levels-only or a full one) to the bot's data:
+ *                            each member keeps the higher XP and message count, nothing else changes. The bot
+ *                            must be stopped first (the desktop app does that); a backup is made.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -89,6 +93,7 @@ export async function importDb(srcFile, dataDir) {
   const src = new DatabaseSync(srcFile, { readOnly: true });
   try {
     checkGoodBoyDb(src);
+    if (exportKind(src) === 'levels') throw new Error('That file only holds levels. Use "Merge levels" instead, so the rest of your data is kept.');
     src.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
   } catch (e) {
     fs.rmSync(dest, { force: true });
@@ -97,6 +102,88 @@ export async function importDb(srcFile, dataDir) {
   } finally { src.close(); }
   const s = await summary(dataDir);
   return { ok: true, dest, backup, guild: s.guild, memberCount: s.memberCount };
+}
+
+const exportKind = (db) => { try { return db.prepare("SELECT value FROM goodboy_export WHERE key = 'kind'").get()?.value ?? 'full'; } catch { return 'full'; } };
+const parseRow = (v) => { try { return JSON.parse(v) ?? {}; } catch { return {}; } };
+
+/** A small .goodboy file with only levels: the server, and each member's XP and message count. */
+export async function exportLevels(dataDir, destFile) {
+  const src = path.join(dataDir, 'eclipse.db');
+  if (!fs.existsSync(src)) throw new Error('There is no bot data yet to export.');
+  const from = await openReadOnly(src);
+  let guild, rows;
+  try {
+    checkGoodBoyDb(from);
+    guild = from.prepare('SELECT id, name FROM guilds LIMIT 1').get();
+    if (!guild) throw new Error('The bot has not joined a server yet, so there are no levels to export.');
+    rows = from.prepare("SELECT key, value FROM module_data WHERE guild_id = ? AND module = 'community' AND key LIKE 'user:%'").all(guild.id)
+      .map((r) => { const v = parseRow(r.value); return { key: r.key, xp: Math.max(0, Number(v.xp) || 0), messages: Math.max(0, Number(v.messages) || 0) }; })
+      .filter((r) => r.xp > 0 || r.messages > 0);
+  } finally { from.close(); }
+  if (fs.existsSync(destFile)) fs.rmSync(destFile);
+  fs.mkdirSync(path.dirname(destFile), { recursive: true });
+  const { DatabaseSync } = await import('node:sqlite');
+  const out = new DatabaseSync(destFile);
+  try {
+    // The same core tables as a full file (so it is recognised), holding only what levels need.
+    out.exec(`CREATE TABLE guilds (id TEXT PRIMARY KEY, name TEXT, joined_at INTEGER);
+              CREATE TABLE module_state (guild_id TEXT, module TEXT, enabled INTEGER, version TEXT, PRIMARY KEY (guild_id, module));
+              CREATE TABLE module_data (guild_id TEXT, module TEXT, key TEXT, value TEXT, PRIMARY KEY (guild_id, module, key));
+              CREATE TABLE goodboy_export (key TEXT PRIMARY KEY, value TEXT);`);
+    out.prepare('INSERT INTO guilds (id, name, joined_at) VALUES (?, ?, ?)').run(guild.id, guild.name, Date.now());
+    const put = out.prepare("INSERT INTO module_data (guild_id, module, key, value) VALUES (?, 'community', ?, ?)");
+    for (const r of rows) put.run(guild.id, r.key, JSON.stringify({ xp: r.xp, messages: r.messages }));
+    out.prepare("INSERT INTO goodboy_export (key, value) VALUES ('kind', 'levels'), ('exportedAt', ?)").run(String(Date.now()));
+  } finally { out.close(); }
+  return { ok: true, file: destFile, bytes: fs.statSync(destFile).size, guild, memberCount: rows.filter((r) => r.xp > 0).length };
+}
+
+/**
+ * Adds levels from a .goodboy file to the bot's data. Each member keeps the HIGHER XP and message count, so merging
+ * the same file twice changes nothing and nobody loses progress. Works with levels-only and full files. If the file
+ * is from another server, its levels go to the bot's server (moving a community to a new server is the main use).
+ */
+export async function mergeLevels(srcFile, dataDir) {
+  if (!fs.existsSync(srcFile)) throw new Error(`There is no file at ${srcFile}.`);
+  const dest = path.join(dataDir, 'eclipse.db');
+  if (!fs.existsSync(dest)) throw new Error('Start the bot once first, so there is data to merge the levels into.');
+  const from = await openReadOnly(srcFile);
+  let incoming;
+  try {
+    checkGoodBoyDb(from);
+    const g = from.prepare('SELECT id FROM guilds LIMIT 1').get();
+    incoming = g ? from.prepare("SELECT key, value FROM module_data WHERE guild_id = ? AND module = 'community' AND key LIKE 'user:%'").all(g.id) : [];
+  } finally { from.close(); }
+  const { DatabaseSync } = await import('node:sqlite');
+  const backup = path.join(dataDir, `eclipse.before-merge-${new Date().toISOString().replace(/[:.]/g, '-')}.db`);
+  { const live = new DatabaseSync(dest, { readOnly: true }); try { live.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`); } finally { live.close(); } }
+  const db = new DatabaseSync(dest);
+  let added = 0, raised = 0, unchanged = 0, guild;
+  try {
+    checkGoodBoyDb(db);
+    guild = db.prepare('SELECT id, name FROM guilds LIMIT 1').get();
+    if (!guild) throw new Error('The bot has not joined a server yet, so there is nowhere to put the levels.');
+    const get = db.prepare("SELECT value FROM module_data WHERE guild_id = ? AND module = 'community' AND key = ?");
+    const set = db.prepare(`INSERT INTO module_data (guild_id, module, key, value) VALUES (?, 'community', ?, ?)
+                            ON CONFLICT(guild_id, module, key) DO UPDATE SET value = excluded.value`);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const r of incoming) {
+        if (!/^user:\d{17,20}$/.test(r.key)) continue;
+        const v = parseRow(r.value), xp = Math.max(0, Number(v.xp) || 0), messages = Math.max(0, Number(v.messages) || 0);
+        if (!xp && !messages) continue;
+        const cur = get.get(guild.id, r.key);
+        if (!cur) { set.run(guild.id, r.key, JSON.stringify({ xp, messages, rep: 0, lastXp: 0, lastRep: 0 })); added++; continue; }
+        const old = parseRow(cur.value);
+        const next = { ...old, xp: Math.max(Number(old.xp) || 0, xp), messages: Math.max(Number(old.messages) || 0, messages) };
+        if (next.xp === (Number(old.xp) || 0) && next.messages === (Number(old.messages) || 0)) { unchanged++; continue; }
+        set.run(guild.id, r.key, JSON.stringify(next)); raised++;
+      }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+  } finally { db.close(); }
+  return { ok: true, guild, added, raised, unchanged, backup };
 }
 
 export async function selftest() {
@@ -117,6 +204,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     else if (cmd === 'summary') out(await summary(a));
     else if (cmd === 'import') out(await importDb(a, b));
     else if (cmd === 'export') out(await exportDb(a, b));
-    else { out({ ok: false, error: 'Use: selftest | summary <dataDir> | import <dbFile> <dataDir> | export <dataDir> <file>' }); process.exitCode = 2; }
+    else if (cmd === 'export-levels') out(await exportLevels(a, b));
+    else if (cmd === 'merge-levels') out(await mergeLevels(a, b));
+    else { out({ ok: false, error: 'Use: selftest | summary <dataDir> | import <dbFile> <dataDir> | export <dataDir> <file> | export-levels <dataDir> <file> | merge-levels <file> <dataDir>' }); process.exitCode = 2; }
   } catch (e) { out({ ok: false, error: e.message }); process.exitCode = 1; }
 }

@@ -47,6 +47,7 @@ function component(f) {
     case 'role': case 'roles': {
       const r = new RoleSelectMenuBuilder().setCustomId(f.id).setMinValues(req ? 1 : 0).setMaxValues(f.kind === 'roles' ? (f.maxValues ?? 5) : 1).setRequired(req);
       if (f.placeholder) r.setPlaceholder(f.placeholder);
+      if (f.value) r.setDefaultRoles(...[].concat(f.value)); // shows the current role, so saving without touching it keeps it
       return ['setRoleSelectMenuComponent', r];
     }
     case 'user': {

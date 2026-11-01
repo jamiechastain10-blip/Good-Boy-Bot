@@ -18,6 +18,8 @@ import { UserError, SNOWFLAKE } from './util.js';
 import { Notifications } from './notifications.js';
 import { Database } from './db.js';
 import { CORE_PERMISSIONS } from './permissions.js';
+import { loadSecret, packToken } from './modalpipe.js';
+import * as AP from './autopopup.js';
 
 export const EPHEMERAL = 64; // MessageFlags.Ephemeral
 
@@ -108,6 +110,7 @@ export class ModuleManager {
     this.notifications = new Notifications(db);
     this.syncStatus = new Map();   // guildId -> { ok, at, count, failed[], bulkError }
     this.seenInteractions = new Map();
+    loadSecret(db); // popup tokens (src/modalpipe.js) are signed with a key that survives restarts
   }
 
   attach(client, intents = []) { this.client = client; this.intents = new Set(intents); }
@@ -415,7 +418,7 @@ export class ModuleManager {
       if (!semver.satisfies(host.version, r.version, { includePrerelease: true })) {
         throw new RequirementError(`**${def.name}** needs **${r.module}** ${r.version}, but ${host.version} is installed.`);
       }
-      if (!this.isActive(guildId, r.module)) throw new RequirementError(`**${def.name}** needs **${r.module}** enabled first. Run \`/module enable name:${r.module}\`.`);
+      if (!this.isActive(guildId, r.module)) throw new RequirementError(`**${def.name}** needs **${r.module}** enabled first. Turn it on with \`/module\` or \`/modules\`.`);
     }
   }
 
@@ -640,6 +643,66 @@ export class ModuleManager {
     return () => clearTimeout(timer);
   }
 
+  /**
+   * 2.2: commands reach Discord without typed options (see src/autopopup.js). When one that has options runs with
+   * nothing typed, answer with a popup built from its options instead of running it. Returns true when it did.
+   */
+  async #autoPopup(interaction, cmd) {
+    if (!interaction.isChatInputCommand?.() && interaction.isChatInputCommand !== undefined) return false;
+    if (AP.typedValueCount(interaction) !== 0) return false; // values were typed (an older client) or a test passed them
+    const json = cmdJson(cmd);
+    const group = interaction.options.getSubcommandGroup?.(false) ?? null;
+    const sub = interaction.options.getSubcommand?.(false) ?? null;
+    if (AP.ownsPopup(cmd, sub)) return false;
+    const opts = AP.leafOptions(json, group, sub);
+    if (!opts.length) return false;
+    await interaction.showModal(AP.popupFor(interaction, json, group, sub, opts));
+    return true;
+  }
+
+  /** The popup from #autoPopup was submitted (or its "Try again" button pressed): run the command with the answers. */
+  async #autoPopupSubmit(interaction) {
+    const t = AP.readToken(interaction.customId, interaction.user.id);
+    const guildId = interaction.guildId;
+    const builtin = this.builtins.get(t.name);
+    const found = builtin ? null : this.#findCommand(guildId, t.name);
+    if (!builtin && !found) return this.reply(interaction, 'That command is not enabled in this server any more.');
+    const cmd = builtin ?? found.cmd;
+    if (builtin?.access === 'admin' && !this.perms.isAdmin(interaction.member)) return this.reply(interaction, 'You need the **Manage Server** permission to use this.');
+    if (found && cmd.permission && !this.perms.check(interaction.member, cmd.permission)) return this.reply(interaction, `You don't have permission for that. (\`${cmd.permission}\`)`);
+    const json = cmdJson(cmd);
+    const opts = AP.leafOptions(json, t.group, t.sub);
+    const pages = AP.pageCount(opts);
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+    const button = (label, emoji, page, draft) => new ActionRowBuilder().addComponents(new ButtonBuilder()
+      .setCustomId(AP.tokenFor(interaction, json, t.group, t.sub, 'o', page, draft)).setLabel(label).setEmoji(emoji).setStyle(ButtonStyle.Primary));
+    if (t.step === 'o') return interaction.showModal(AP.popupFor(interaction, json, t.group, t.sub, opts, t.page, t.draft));
+    let options;
+    try {
+      const raw = AP.readPage(interaction, opts, t.page);
+      if (t.page < pages - 1) {
+        // Not the last part yet: keep these answers and offer the next part.
+        const draft = AP.saveDraft(t.draft, interaction.user.id, raw);
+        return interaction.reply({ content: `✅ Part ${t.page + 1} of ${pages} saved. Press **Continue** for the rest.`, components: [button(`Continue (part ${t.page + 2} of ${pages})`, '➡️', t.page + 1, draft)], flags: EPHEMERAL, allowedMentions: { parse: [] } });
+      }
+      options = await AP.optionsFrom(interaction, opts, t, { ...AP.takeDraft(t.draft, interaction.user.id), ...raw });
+    } catch (err) {
+      if (!(err instanceof UserError)) throw err;
+      return interaction.reply({ content: `❌ ${err.message}`, components: [button('Try again', '✏️', 0, '-')], flags: EPHEMERAL, allowedMentions: { parse: [] } });
+    }
+    // Make the popup look like the slash command it stands in for, so the command's code runs unchanged.
+    Object.defineProperty(interaction, 'options', { value: options, configurable: true });
+    Object.defineProperty(interaction, 'commandName', { value: t.name, configurable: true });
+    // A command that would ask for more in a second popup can't (Discord forbids a popup after a popup): say what to fill in.
+    Object.defineProperty(interaction, 'showModal', { value: async () => { throw new UserError('This needs one more thing filled in (usually the reason). Run the command again and fill in every field.'); }, configurable: true });
+    let stopNet = () => {};
+    try {
+      stopNet = this.#deferNet(interaction, cmd.defer ?? 'ephemeral');
+      if (builtin) await builtin.execute(interaction, this);
+      else await cmd.execute(this.ctx(guildId, found.def.name), interaction);
+    } finally { stopNet(); }
+  }
+
   async handleCommand(interaction) {
     if (this.#duplicate(interaction)) return;
     const guildId = interaction.guildId;
@@ -650,6 +713,7 @@ export class ModuleManager {
     try {
       if (builtin) {
         if (builtin.access === 'admin' && !this.perms.isAdmin(interaction.member)) return await this.reply(interaction, 'You need the **Manage Server** permission to use this.');
+        if (await this.#autoPopup(interaction, builtin)) return;
         stopNet = this.#deferNet(interaction, builtin.defer ?? 'ephemeral');
         return await builtin.execute(interaction, this);
       }
@@ -660,6 +724,7 @@ export class ModuleManager {
       if (cmd.permission && !this.perms.check(interaction.member, cmd.permission)) {
         return await this.reply(interaction, `You don't have permission for that. (\`${cmd.permission}\` - by default: ${this.perms.describeDefault(cmd.permission)})`);
       }
+      if (await this.#autoPopup(interaction, cmd)) return;
       stopNet = this.#deferNet(interaction, cmd.defer ?? 'ephemeral');
       await cmd.execute(this.ctx(guildId, def.name), interaction);
     } catch (err) { await this.#fail(interaction, owner, err); }
@@ -669,6 +734,18 @@ export class ModuleManager {
   async handleComponent(interaction) {
     if (this.#duplicate(interaction)) return;
     const id = interaction.customId;
+    if (id.startsWith(`${AP.NS}:`)) {
+      const owner = (() => { try { const t = AP.readToken(id, interaction.user.id); return this.builtins.has(t.name) ? 'core' : (this.#findCommand(interaction.guildId, t.name)?.def.name ?? 'core'); } catch { return 'core'; } })();
+      try { await this.#autoPopupSubmit(interaction); } catch (err) { await this.#fail(interaction, owner, err); }
+      return;
+    }
+    // Core panels (/modules) own a few prefixes too; they are checked first and do not depend on any module.
+    for (const b of this.builtins.values()) {
+      const comp = (b.components ?? []).find((c) => id.startsWith(c.prefix));
+      if (!comp) continue;
+      try { await comp.execute(interaction, this); } catch (err) { await this.#fail(interaction, 'core', err); }
+      return;
+    }
     for (const [name, def] of this.active.get(interaction.guildId) ?? []) {
       const comp = (def.components ?? []).find((c) => id.startsWith(c.prefix));
       if (!comp) continue;
@@ -715,6 +792,9 @@ export class ModuleManager {
     return out;
   }
 
+  /** What Discord is told: the same commands without typed options, so every input happens in a popup. */
+  discordCommandList(guildId) { return this.commandList(guildId).map((j) => AP.stripOptions(j)); }
+
   scheduleSync(guildId) {
     clearTimeout(this.syncTimers.get(guildId));
     const t = setTimeout(() => this.syncCommands(guildId).catch((e) => this.log.error(`Command sync failed for ${guildId}: ${e.message}`)), 1500);
@@ -724,7 +804,7 @@ export class ModuleManager {
 
   async syncCommands(guildId) {
     if (!this.client?.application) return;
-    const list = this.commandList(guildId).slice(0, 120);
+    const list = this.discordCommandList(guildId).slice(0, 120);
     const chat = list.filter((c) => !c.type || c.type === 1).length;
     if (chat > 100) this.log.error(`Guild ${guildId}: ${chat} slash commands enabled, Discord allows 100. Disable a module.`);
     const summarize = (e) => `${e.message}${e.rawError?.errors ? ' ' + JSON.stringify(e.rawError.errors).slice(0, 400) : ''}`;

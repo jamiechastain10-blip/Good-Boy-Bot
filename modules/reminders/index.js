@@ -191,6 +191,7 @@ export default {
   ],
   commands: [{
     permission: 'reminders.me',
+    ownPopup: ['team'], // opens its own popup when run with nothing filled in
     data: new SlashCommandBuilder().setName('remind').setDescription('Reminders')
       .addSubcommand((s) => s.setName('me').setDescription('Remind yourself')
         .addStringOption((o) => o.setName('when').setDescription('e.g. 30m, 2h, 1d, or 2026-12-31 18:30').setRequired(true))

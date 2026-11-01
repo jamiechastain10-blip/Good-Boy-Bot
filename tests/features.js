@@ -23,6 +23,7 @@ import { ModuleManager } from '../src/moduleManager.js';
 import { builtins } from '../src/builtins.js';
 import { startDashboard, normalizeBase, explainTokenError } from '../src/dashboard/server.js';
 import { CATEGORIES } from '../src/notifications.js';
+import { customIds, firstButtonId, modalInfo, fakeFields } from './pipe-helpers.js';
 
 const BANNED_BRANDS = ['Q2xhdWRl', 'QW50aHJvcGlj'].map((b) => Buffer.from(b, 'base64').toString());
 const BANNED_RE = new RegExp(['Eclipse', ...BANNED_BRANDS].join('|'));
@@ -34,7 +35,7 @@ class Coll extends Map {
 }
 
 // ---------------------------------------------------------------- fake Discord world
-function makeWorld(moduleNames, { guildId = '1' } = {}) {
+export function makeWorld(moduleNames, { guildId = '1' } = {}) {
   const db = new Database(':memory:');
   const perms = new Permissions(db);
   const people = new Map();
@@ -771,15 +772,46 @@ export default async function runFeatureTests({ test, rejectsWith }) {
   });
 
   // ================================================================ announcements
-  console.log('\nAnnouncements');
+  console.log('\nAnnouncements (2.2: command -> button -> popup)');
   const aWorld = async () => {
     const w = await makeWorld(['engagement']).load();
     w.news = w.channel('news'); w.silent = w.channel('no-ping-perm', { missing: [P.MentionEveryone] });
     w.admin = w.person('admin', { bits: [P.ManageGuild], pos: 15 });
     w.roleA = w.role('role-a'); w.roleB = w.role('role-b'); w.hidden = w.role('role-hidden'); w.roleA.mentionable = true; w.roleB.mentionable = true; w.hidden.mentionable = false;
-    w.send = async (opts, sub = 'send') => { const i = w.ix({ command: 'announce', sub, member: w.admin, opts: { message: 'Maintenance tonight\\nBack at 9', ping: 'none', title: null, color: null, role: null, role2: null, role3: null, ...opts } }); await w.mm.handleCommand(i); return i; };
+    // The whole 2.2 flow: /announce <sub> -> private button -> popup -> submit.
+    w.flow = async (sub, values, member = w.admin) => {
+      const cmd = w.ix({ command: 'announce', sub, member, channel: w.news }); await w.mm.handleCommand(cmd);
+      const bid = firstButtonId(cmd.replies[0]);
+      if (!bid) return { cmd, submit: cmd };
+      const click = w.ix({ customId: bid, member, channel: w.news }); await w.mm.handleComponent(click);
+      const info = modalInfo(click.modal);
+      const submit = w.ix({ customId: info.customId, member, channel: w.news }); submit.fields = fakeFields(values);
+      await w.mm.handleComponent(submit);
+      return { cmd, click, info, submit };
+    };
+    w.send = async (o = {}, sub = 'send') => (await w.flow(sub, {
+      channel: [o.channel?.id ?? w.news.id], title: o.title ?? '', text: o.text ?? 'Maintenance tonight\nBack at 9', color: o.color ?? '',
+      roles: (o.roles ?? []).map((r) => r.id ?? r), when: o.when ?? '', repeat: [o.repeat ?? 'none'],
+    })).submit;
+    w.errorText = (i) => i.replies.map((r) => r?.embeds?.[0]?.data?.description ?? r?.content ?? '').join(' | ');
     return w;
   };
+
+  await test('/announce takes no typed options; send serves one private "Configure Announcement" button', async () => {
+    const w = await aWorld();
+    const json = w.mm.commandList('1').find((c) => c.name === 'announce');
+    for (const sc of json.options) assert.deepEqual(sc.options ?? [], [], `/announce ${sc.name} has no options`);
+    const cmd = w.ix({ command: 'announce', sub: 'send', member: w.admin, channel: w.news }); await w.mm.handleCommand(cmd);
+    const r = cmd.replies[0];
+    assert.equal(r.flags, MessageFlags.Ephemeral, 'only the admin sees it');
+    assert.equal(customIds(r).length, 1, 'exactly one button');
+    assert.equal(r.components[0].components[0].data.label, 'Configure Announcement');
+    assert.equal(cmd.modal, null, 'no popup straight from the command');
+    const click = w.ix({ customId: customIds(r)[0], member: w.admin }); await w.mm.handleComponent(click);
+    const info = modalInfo(click.modal);
+    assert.deepEqual(info.fields, ['channel', 'title', 'text', 'color', 'roles']);
+    assert.ok(info.labels.includes('Announcement title') && info.labels.includes('Main body text') && info.labels.includes('Hex color code'));
+  });
 
   await test('announcements are normal messages: the text is the message, pings are real message text', async () => {
     const w = await aWorld();
@@ -792,89 +824,86 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.match(i.text(), /Announcement sent/);
   });
 
-  await test('@everyone, @here and several roles all really ping', async () => {
+  await test('@everyone (the @everyone role in the picker) and several roles all really ping', async () => {
     const w = await aWorld();
-    await w.send({ channel: w.news, ping: 'everyone' });
+    await w.send({ channel: w.news, roles: [w.g.id] });
     assert.equal(w.news.sent[0].content, '@everyone\nMaintenance tonight\nBack at 9');
     assert.deepEqual(w.news.sent[0].allowedMentions, { parse: ['everyone'] });
-    await w.send({ channel: w.news, ping: 'here' });
-    assert.match(w.news.sent[1].content, /^@here\n/);
-    await w.send({ channel: w.news, ping: 'role', role: w.roleA, role2: w.roleB, role3: w.roleA });
-    assert.match(w.news.sent[2].content, /^<@&role-a> <@&role-b>\n/, 'each role once');
-    assert.deepEqual(w.news.sent[2].allowedMentions, { roles: ['role-a', 'role-b'] });
-    assert.match(await w.run(w.ix({ command: 'announce', sub: 'send', member: w.admin, opts: { channel: w.news, message: 'x', ping: 'role' } })), /Choose which role/);
+    await w.send({ channel: w.news, roles: [w.roleA, w.roleB] });
+    assert.match(w.news.sent[1].content, /^<@&role-a> <@&role-b>\n/);
+    assert.deepEqual(w.news.sent[1].allowedMentions, { roles: ['role-a', 'role-b'] });
+    await w.send({ channel: w.news, roles: [w.roleA, w.g.id] });
+    assert.equal(w.news.sent[2].content, '@everyone\nMaintenance tonight\nBack at 9', '@everyone covers the roles');
+    const { announcePayload } = await import('../modules/engagement/index.js');
+    assert.match(announcePayload({ text: 'x', ping: 'here' }).content, /^@here\n/, '@here still works for older scheduled entries');
   });
 
-  await test('a title or color makes an embed, but the ping stays in the message text', async () => {
+  await test('a title or color makes an embed, but the ping stays in the message text; a bad color is refused with a retry button', async () => {
     const w = await aWorld();
-    await w.send({ channel: w.news, ping: 'everyone', title: 'Downtime', color: '#ff0000' });
+    await w.send({ channel: w.news, roles: [w.g.id], title: 'Downtime', color: '#ff0000' });
     const m = w.news.sent[0];
     assert.equal(m.content, '@everyone');
     assert.equal(m.embeds.length, 1);
+    assert.equal(m.embeds[0].data.color, 0xff0000);
+    const bad = await w.send({ channel: w.news, color: 'reddish' });
+    assert.match(w.errorText(bad), /Colors look like/);
+    assert.ok(firstButtonId(bad.replies[0]), 'a button to open the form again');
+    assert.equal(w.news.sent.length, 1, 'nothing posted');
   });
 
   await test('a ping Discord would ignore is never silently "sent": it posts without it and says exactly why', async () => {
     const w = await aWorld();
-    const i = await w.send({ channel: w.silent, ping: 'everyone' });
+    const i = await w.send({ channel: w.silent, roles: [w.g.id] });
     assert.equal(w.silent.sent[0].content, 'Maintenance tonight\nBack at 9', 'no dead @everyone text');
     assert.match(i.text(), /posted without the ping/);
     assert.match(i.text(), /Mention @everyone, @here, and All Roles/);
-    const j = await w.send({ channel: w.silent, ping: 'role', role: w.hidden });
+    const j = await w.send({ channel: w.silent, roles: [w.hidden] });
     assert.match(j.text(), /not mentionable/);
-    const k = await w.send({ channel: w.silent, ping: 'role', role: w.roleA });
+    const k = await w.send({ channel: w.silent, roles: [w.roleA] });
     assert.doesNotMatch(k.text(), /without the ping/, 'a mentionable role needs no extra permission');
     assert.match(w.silent.sent.at(-1).content, /^<@&role-a>/);
   });
 
-  await test('no text in the command opens a popup; submitting it posts the announcement (and only for the person who asked)', async () => {
+  await test('the button and popup belong to whoever ran the command, a popup is used once, and losing the permission stops it', async () => {
     const w = await aWorld();
-    const i = w.ix({ command: 'announce', sub: 'send', member: w.admin, opts: { channel: w.news, message: null, ping: 'here', title: null, color: null, role: null, role2: null, role3: null } });
-    await w.mm.handleCommand(i);
-    assert.ok(i.modal, 'a popup was shown');
-    const forms = globalThis[Symbol.for('goodboy.forms.announce')];
-    const [token] = [...forms.keys()];
-    const submit = (member, values) => Object.assign(w.ix({ command: undefined, customId: `announce:form:${token}`, member }), { fields: { getTextInputValue: (k) => values[k] ?? '' } });
-    assert.match(await w.click(submit(w.person('intruder'), { text: 'hi' })), /belongs to someone else/);
-    const ok = submit(w.admin, { text: 'Line one\nLine two', title: '' });
-    assert.match(await w.click(ok), /Announcement sent/);
-    assert.equal(w.news.sent[0].content, '@here\nLine one\nLine two');
-    assert.match(await w.click(submit(w.admin, { text: 'again' })), /expired/, 'a form can be used once');
+    const cmd = w.ix({ command: 'announce', sub: 'send', member: w.admin, channel: w.news }); await w.mm.handleCommand(cmd);
+    const bid = firstButtonId(cmd.replies[0]);
+    const intruder = w.person('intruder', { bits: [P.ManageGuild] });
+    const steal = w.ix({ customId: bid, member: intruder }); await w.mm.handleComponent(steal);
+    assert.equal(steal.modal, null); assert.match(steal.text(), /belongs to someone else/);
+    const click = w.ix({ customId: bid, member: w.admin }); await w.mm.handleComponent(click);
+    const sid = modalInfo(click.modal).customId;
+    const values = { channel: [w.news.id], title: '', text: 'hi', color: '', roles: [] };
+    const s1 = w.ix({ customId: sid, member: w.admin }); s1.fields = fakeFields(values); await w.mm.handleComponent(s1);
+    assert.match(s1.text(), /Announcement sent/);
+    const s2 = w.ix({ customId: sid, member: w.admin }); s2.fields = fakeFields(values); await w.mm.handleComponent(s2);
+    assert.match(s2.text(), /already submitted/); assert.equal(w.news.sent.length, 1);
+    const tampered = sid.replace(/:admin:/, ':intruder:');
+    const s3 = w.ix({ customId: tampered, member: w.admin }); s3.fields = fakeFields(values); await w.mm.handleComponent(s3);
+    assert.match(s3.text(), /could not be verified/);
+    const demoted = w.person('demoted', { bits: [P.ManageGuild] });
+    const c2 = w.ix({ command: 'announce', sub: 'send', member: demoted, channel: w.news }); await w.mm.handleCommand(c2);
+    const k2 = w.ix({ customId: firstButtonId(c2.replies[0]), member: demoted }); await w.mm.handleComponent(k2);
+    demoted.permissions = { has: () => false }; // lost Manage Server while the popup was open
+    const s4 = w.ix({ customId: modalInfo(k2.modal).customId, member: demoted }); s4.fields = fakeFields(values); await w.mm.handleComponent(s4);
+    assert.match(s4.text(), /permission/); assert.equal(w.news.sent.length, 1);
   });
 
-  await test('nothing typed: one popup asks for everything (message, title or time, channel, who to notify, roles) and posts it', async () => {
+  await test('schedule: one popup for channel, time, repeat, text and pings; bad times are refused with a retry button', async () => {
     const w = await aWorld();
-    const forms = globalThis[Symbol.for('goodboy.forms.announce')];
-    const open = async (sub, extra = {}) => { const before = new Set(forms.keys()); const i = w.ix({ command: 'announce', sub, member: w.admin, channel: w.news, opts: { channel: null, message: null, title: null, color: null, ping: null, role: null, role2: null, role3: null, when: null, repeat: null, ...extra } }); await w.mm.handleCommand(i); return { i, token: [...forms.keys()].find((k) => !before.has(k)) }; };
-    const submit = (token, { text = '', title = '', when = '', channel = w.news, notify = ['none'], roles = [] }) => Object.assign(w.ix({ command: undefined, customId: `announce:form:${token}`, member: w.admin, channel: w.news }), { fields: {
-      getTextInputValue: (k) => ({ text, title, when })[k] ?? '',
-      getSelectedChannels: () => (channel ? new Map([[channel.id, channel]]) : null),
-      getStringSelectValues: () => notify,
-      getSelectedRoles: () => new Map(roles.map((r) => [r.id, r])),
-    } });
-    const a = await open('send');
-    assert.ok(a.i.modal, 'a popup was shown'); assert.ok(a.token, 'a form is waiting for it');
-    assert.match(await w.click(submit(a.token, { text: 'Game night!\nBring snacks', notify: ['none'], roles: [w.roleA, w.roleB] })), /Announcement sent/);
-    assert.equal(w.news.sent[0].content, '<@&role-a> <@&role-b>\nGame night!\nBring snacks', 'roles picked in the popup are pinged');
-    const b = await open('send');
-    await w.click(submit(b.token, { text: 'Server update', title: 'Patch notes', notify: ['everyone'], roles: [w.roleA] }));
-    assert.equal(w.news.sent[1].content, '@everyone', '@everyone covers the roles; the title makes a box');
-    assert.equal(w.news.sent[1].embeds.length, 1);
-    const silent = await open('send');
-    const r = await w.click(submit(silent.token, { text: 'hi', channel: w.silent, notify: ['here'] }));
-    assert.match(r, /posted without the ping/); assert.equal(w.silent.sent[0].content, 'hi');
-    const sch = await open('schedule', { repeat: 'weekly' });
-    assert.match(await w.click(submit(sch.token, { text: 'Weekly reminder', when: '2h', notify: ['none'], roles: [w.roleA] })), /Scheduled/);
+    const ok = await w.send({ channel: w.news, text: 'Weekly reminder', when: '2h', repeat: 'weekly', roles: [w.roleA] }, 'schedule');
+    assert.match(ok.text(), /Scheduled/);
     const [{ value }] = w.mm.ctx('1', 'engagement').data.list('sched:');
     assert.deepEqual([value.repeat, value.ping, value.roleIds], ['weekly', 'role', ['role-a']]);
     assert.ok(Math.abs(value.nextAt - (Date.now() + 7200000)) < 10000);
-    const bad = await open('schedule');
-    assert.match(await w.click(submit(bad.token, { text: 'x', when: 'whenever' })), /delay like/);
-    assert.match(await w.run(w.ix({ command: 'announce', sub: 'schedule', member: w.admin, opts: { channel: w.news, message: 'x', when: null } })), /Say when/);
+    assert.match(w.errorText(await w.send({ when: 'whenever' }, 'schedule')), /delay like/);
+    assert.match(w.errorText(await w.send({ when: '2020-01-01 10:00' }, 'schedule')), /past/);
+    assert.equal(w.mm.ctx('1', 'engagement').data.list('sched:').length, 1);
   });
 
   await test('scheduled announcements keep their roles, ping at send time, and old single-role entries still work', async () => {
     const w = await aWorld();
-    const i = await w.send({ channel: w.news, ping: 'role', role: w.roleA, role2: w.roleB, when: '2h', repeat: 'none' }, 'schedule');
+    const i = await w.send({ channel: w.news, roles: [w.roleA, w.roleB], when: '2h' }, 'schedule');
     assert.match(i.text(), /Scheduled/);
     const c = w.mm.ctx('1', 'engagement');
     const [{ key, value }] = c.data.list('sched:');
@@ -886,6 +915,29 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.ok(w.news.sent.some((m) => /^<@&role-a> <@&role-b>\nMaintenance/.test(m.content)));
     assert.ok(w.news.sent.some((m) => /^<@&role-a>\nold style/.test(m.content)));
     assert.equal(c.data.list('sched:').length, 0, 'one-time announcements are removed once sent');
+  });
+
+  await test('/announce list cancels with a picker instead of typing a number', async () => {
+    const w = await aWorld();
+    await w.send({ text: 'one', when: '2h' }, 'schedule'); await w.send({ text: 'two', when: '3h' }, 'schedule');
+    const list = w.ix({ command: 'announce', sub: 'list', member: w.admin }); await w.mm.handleCommand(list);
+    const [sel] = customIds(list.replies[0]);
+    assert.match(sel, /^announce:cancel:admin$/);
+    const other = w.ix({ customId: sel, member: w.person('x2', { bits: [P.ManageGuild] }) }); other.values = ['1']; await w.mm.handleComponent(other);
+    assert.match(other.text(), /belongs to someone else/);
+    const pick = w.ix({ customId: sel, member: w.admin }); pick.values = ['1']; await w.mm.handleComponent(pick);
+    assert.match(pick.updated.content, /Cancelled #1/);
+    assert.deepEqual(w.mm.ctx('1', 'engagement').data.list('sched:').map((x) => x.value.text), ['two']);
+  });
+
+  await test('a popup opened before the update (old announce:form: token) still posts after it', async () => {
+    const w = await aWorld();
+    const { formStore } = await import('../src/forms.js');
+    const token = formStore('announce').put({ sub: 'send', rich: true, by: w.admin.id, color: null, title: undefined, repeat: 'none' });
+    const i = w.ix({ customId: `announce:form:${token}`, member: w.admin, channel: w.news });
+    i.fields = { getTextInputValue: (k) => ({ text: 'from 2.1', title: '' })[k] ?? '', getSelectedChannels: () => new Map([[w.news.id, w.news]]), getStringSelectValues: () => ['none'], getSelectedRoles: () => new Map() };
+    assert.match(await w.click(i), /Announcement sent/);
+    assert.equal(w.news.sent[0].content, 'from 2.1');
   });
 
   await test('the invite link asks for the Mention Everyone permission', async () => {
@@ -1177,23 +1229,53 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     return w;
   };
 
-  await test('/warn with no reason opens a popup first and records nothing until it is submitted', async () => {
+  // 2.2: /warn has no typed options. Command -> private "Configure warning" button -> popup -> submit.
+  const warnFlow = async (w, { command = 'warn', target = null, values, member = w.admin }) => {
+    const cmd = w.ix({ command, member }); if (target) cmd.targetUser = target.user;
+    await w.mm.handleCommand(cmd);
+    const bid = firstButtonId(cmd.replies[0]);
+    if (!bid) return { cmd };
+    const click = w.ix({ customId: bid, member }); await w.mm.handleComponent(click);
+    const info = modalInfo(click.modal);
+    const submit = w.ix({ customId: info.customId, member }); submit.fields = fakeFields(values);
+    await w.mm.handleComponent(submit);
+    return { cmd, click, info, submit };
+  };
+
+  await test('/warn takes no options: one private button, then a popup with member, reason, severity and notes', async () => {
     const w = await modWorld();
-    const i = await w.cmd('warn', { user: w.target.user, reason: null });
-    assert.ok(i.modal, 'a popup was shown');
-    assert.equal(i.deferred, false, 'the popup is the first response');
-    assert.equal(w.cases().length, 0);
-    const s = await w.submit(w.token(i), { reason: 'spamming links' });
+    const json = w.mm.commandList('1').find((c) => c.name === 'warn');
+    assert.deepEqual(json.options ?? [], [], 'nothing to type in the command');
+    const r = await warnFlow(w, { values: { user: [w.target.id], reason: 'spamming links', severity: ['high'], notes: 'counts for 30 days' } });
+    assert.equal(r.cmd.replies[0].flags, MessageFlags.Ephemeral);
+    assert.equal(r.cmd.replies[0].components[0].components[0].data.label, 'Configure warning');
+    assert.deepEqual(r.info.fields, ['user', 'reason', 'severity', 'notes']);
+    assert.ok(r.info.labels.includes('Warning reason') && r.info.labels.includes('Duration / severity notes'));
     assert.equal(w.cases().length, 1);
-    assert.equal(w.cases()[0].reason, 'spamming links');
-    assert.equal(s.deferred, true);
+    assert.deepEqual([w.cases()[0].reason, w.cases()[0].severity, w.cases()[0].notes], ['spamming links', 'high', 'counts for 30 days']);
+    assert.equal(r.submit.deferred, true);
   });
 
-  await test('a reason typed in the command skips the popup', async () => {
+  await test('right-click "Warn member" carries the target in the signed token, so the popup has no member picker', async () => {
     const w = await modWorld();
-    const i = await w.cmd('warn', { user: w.target.user, reason: 'rude' });
-    assert.equal(i.modal, null);
-    assert.equal(w.cases().length, 1);
+    const r = await warnFlow(w, { command: 'Warn member', target: w.target, values: { reason: 'rude', severity: ['low'], notes: '' } });
+    assert.match(firstButtonId(r.cmd.replies[0]), /^mpm:m1:o:warn:mpadmin:[0-9a-z]+:[0-9a-z]{4}:mptarget:[0-9a-f]{10}$/);
+    assert.deepEqual(r.info.fields, ['reason', 'severity', 'notes']);
+    assert.equal(w.cases().length, 1); assert.equal(w.cases()[0].severity, 'low');
+    const self = await warnFlow(w, { command: 'Warn member', target: w.admin, values: {} });
+    assert.match(self.cmd.text(), /cannot warn yourself/, 'checked before the button is even shown');
+    const boss = w.person('mpboss', { pos: 50 });
+    assert.match((await warnFlow(w, { command: 'Warn member', target: boss, values: {} })).cmd.text(), /equal to or above yours/);
+  });
+
+  await test('nothing is recorded until the popup is submitted, and an empty reason brings the form back', async () => {
+    const w = await modWorld();
+    const cmd = w.ix({ command: 'warn', member: w.admin }); await w.mm.handleCommand(cmd);
+    assert.equal(w.cases().length, 0);
+    const r = await warnFlow(w, { values: { user: [w.target.id], reason: '', severity: ['medium'], notes: '' } });
+    assert.equal(w.cases().length, 0);
+    assert.match(r.submit.replies[0].embeds[0].data.description, /give a reason/);
+    assert.ok(firstButtonId(r.submit.replies[0]), 'Try again button');
   });
 
   await test('popups are single-use, belong to whoever opened them, and an empty reason is refused', async () => {
@@ -2249,7 +2331,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     const view = await w.mm.runView('1', 'moderation', 'automod');
     assert.equal(view.rows.length, AM.RULES.length);
     const emoji = view.rows.find((r) => r.id === 'emoji');
-    assert.deepEqual([emoji.state, emoji.last7, emoji.limit], ['On', 1, 10]);
+    assert.deepEqual([emoji.state, emoji.last7, emoji.limit], ['● On', '1 caught', 10]);
     assert.equal(view.recent[0].rule, 'too many emoji');
     await w.mm.runAction('1', 'moderation', 'automod-toggle', { id: 'emoji', userId: 'emoji' }, actor);
     assert.equal(w.mm.ctx('1', 'moderation').config.get('automodEmoji'), false);

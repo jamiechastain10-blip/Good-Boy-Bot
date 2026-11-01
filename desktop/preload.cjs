@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('goodBoy', {
   takeover: () => ipcRenderer.invoke('gb:takeover'),
   dataExport: () => ipcRenderer.invoke('gb:data-export'),
   dataImport: () => ipcRenderer.invoke('gb:data-import'),
+  levelsExport: () => ipcRenderer.invoke('gb:levels-export'),
+  levelsMerge: () => ipcRenderer.invoke('gb:levels-merge'),
   updateCheck: () => ipcRenderer.invoke('gb:update-check'),
   updateOpen: () => ipcRenderer.invoke('gb:update-open'),
   updateInstall: () => ipcRenderer.invoke('gb:update-install'),

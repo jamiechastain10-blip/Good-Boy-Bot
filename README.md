@@ -48,18 +48,18 @@ Everything the dashboard does is also available through slash commands.
 
 Nothing is on until you turn it on, per server (needs the **Manage Server** permission):
 ```
-/module list                         see everything available
-/module enable name:moderation       turn a module on (its commands appear within seconds)
-/config view module:moderation       see its settings
-/config channel module:moderation key:logChannel channel:#mod-log
-/permissions list                    who can do what
+/modules            control panel: every module, Turn on / Turn off buttons, Edit settings popups
+/module             a popup: pick a module and turn it on, off, or see its settings
+/config             a popup: pick a module, then Edit settings opens its settings in popups
+/permissions list   who can do what
 ```
+Nothing needs typing anywhere: every command opens a popup (on/off and choices are dropdowns, members, channels and roles are pickers). The commands in the table below are written as before for reference; in Discord you only pick the command, and the popup asks for the rest.
 **Quick recipes**
 
 | Goal | Do this |
 |---|---|
-| Mod log + AutoMod | enable `moderation` → `/config channel module:moderation key:logChannel channel:#mod-log` → `/automod rule rule:Word filter enabled:true` → `/automod word add word:badword` → `/automod status` |
-| Welcome messages | enable `member-management` → `/config set … key:welcomeEnabled value:on` → `/config channel … key:welcomeChannel` |
+| Mod log + AutoMod | `/modules` → moderation → Turn on → Edit settings → Log channel → `/automod rule rule:Word filter enabled:true` → `/automod word add word:badword` → `/automod status` |
+| Welcome messages | `/modules` → member-management → Turn on → Edit settings → welcome on + welcome channel |
 | Verification gate | enable `member-management` → set `verificationRole` (+ optional `unverifiedRole`) → `/verify panel` |
 | Tickets | enable `support` → set `staffRole`, `ticketCategory`, `logChannel` and (recommended) `watchChannel` (staff only) → `/ticket panel` |
 | Live leaderboard | enable `community` → `/liveboard setup channel:#leaderboard` |
@@ -72,12 +72,12 @@ Nothing is on until you turn it on, per server (needs the **Manage Server** perm
 
 | Module | Commands and features |
 |---|---|
-| **moderation** | `/warn` `/timeout` `/untimeout` `/kick` `/ban` `/unban` (leave out the reason and a popup asks for it) · `/purge` `/modhistory` · **AutoMod**: spam, word filter, links and invites, mass mentions, repeated messages, capital letters, emoji, each with its own action, exemptions by role/channel/category, and a recent-activity list (`/automod status\|rule\|exempt\|recent\|word\|domain`, plus a dashboard panel) · raid protection · anti-nuke · edit/delete logging |
+| **moderation** | `/warn` (no options: a private **Configure warning** button opens a popup with member, reason, severity and notes; or right-click a member → Apps → **Warn member**) · `/timeout` `/untimeout` `/kick` `/ban` `/unban` (leave out the reason and a popup asks for it) · `/purge` `/modhistory` · **AutoMod**: spam, word filter, links and invites, mass mentions, repeated messages, capital letters, emoji, each with its own action, exemptions by role/channel/category, and a recent-activity list (`/automod status\|rule\|exempt\|recent\|word\|domain`, plus a dashboard panel) · raid protection · anti-nuke · edit/delete logging |
 | **member-management** | `/profile setup\|edit\|remove\|view` · `/verify setup\|panel\|repost\|status\|reset` · `/introduce` · `/birthday set\|remove\|upcoming` · `/afk` · welcome and goodbye messages |
 | **roles** | `/rolemenu create\|delete` · `/reactionrole add\|remove\|list` · `/autorole add\|remove\|list` · `/gamerole add\|remove\|list` |
 | **support** | **Tickets with 8 categories** (scam/phishing, safety, report a member, ban appeal, bot problem, access, partnership, other), each with an urgency level and its own popup · reports ask who, user ID, what happened and evidence · a staff-only **watch log** that flags later tickets mentioning a reported person (exact ID matches and "possible" name matches, shown with the earlier outcome, never to the member) · required close popup (resolution, reason, action taken, notes) with notes kept staff-only · appeals approved or denied with a reason · priority changes with a reason · optional auto-close after inactivity · history and `/ticket stats` · `/ticket panel\|type\|watch\|close\|add\|remove\|rename\|priority\|info\|transcript\|stats` |
 | **support-html-transcripts** | *add-on for support:* styled HTML transcripts |
-| **engagement** | `/announce send\|schedule\|list\|cancel` · `/poll create\|end` · `/suggest` and `/suggestion …` · `/starboard …` (popups for the long text) |
+| **engagement** | `/announce send\|schedule` (no options: a **Configure Announcement** button opens one popup for channel, title, text, colour and pings) · `/announce list` (cancel with a picker) · `/poll create\|end` · `/suggest` and `/suggestion …` · `/starboard …` (popups for the long text) |
 | **community** | `/rank` `/leaderboard` `/rep …` `/serverstats` `/xp set\|reset` `/levels reward …` · **`/liveboard setup\|refresh\|remove`** (a leaderboard message the bot keeps editing) · member-count channel |
 | **voice** | `/tts say\|join\|leave\|skip\|stop\|queue\|voices\|voice\|setup\|reading\|diagnose` · a **no-mic channel** whose messages are read aloud as "Name says …" |
 | **reminders** | `/remind me\|team\|list\|cancel` · team reminders can notify several roles |
@@ -87,9 +87,12 @@ Nothing is on until you turn it on, per server (needs the **Manage Server** perm
 | **stats** | `/stats me\|server\|top\|coverage\|recap\|backfill\|optout\|optin\|forget` · counts messages, voice time and reactions (never message text), weekly recap, optional history backfill, dashboard overview |
 | **achievements** | `/achievements show\|list\|privacy\|optout\|optin` · 17 built-in achievements plus your own (`/achievements custom create\|delete\|grant\|revoke`) · announcements to a channel and/or DM |
 | **eclipseid** | `/id show\|edit\|privacy\|link\|unlink\|roblox\|delete` · a member card with an ID, about text, linked game accounts (shown as *not verified*), per-field public / staff / private visibility |
+| **economy** | `/balance` `/daily` `/pay` `/top` `/economy-admin` · right-click → **View wallet** / **Pay member** · daily streaks with Streak Shields and milestone bonuses · a live, paginated leaderboard (coins, streaks, fishing, casino) for the server or across servers that opt in. Every amount is typed in a popup |
+| **games** | `/slots` (progressive server jackpot) `/blackjack` `/coinflip` `/fish` `/arcade` · each game opens a bet popup from a button · **fishing**: 5 places unlocked by level, 30 fish from Common to Mythical, Mutated and Corrupted variants, rods, bait and tackle, a reeling mini-game played with buttons, a bag and a collection log. Needs **economy**. Play money only |
+| **deadchat** | `/deadchat` (button → popup: channel, role to ping, quiet minutes, cooldown) · when the channel has been quiet that long, the bot posts a random conversation starter and pings the opt-in **@deadchat** role (created for you; members join or leave with a **Ping me** button), once per quiet spell. Starters are editable in the dashboard. Uses message times only, never message text |
 | **quotes** | right-click a message → Apps → **Quote Image** (black & white) / **Quote Image (Color)**, or `/quote`. Members with an animated (GIF) avatar get an **animated GIF quote**; the picture falls back to a still image if anything goes wrong or the file would be too big |
 
-Always available: `/module` `/config` `/permissions` `/notifications` `/health` `/help`.
+Always available: **`/modules`** (control panel with buttons and popups) `/module` `/config` `/permissions` `/notifications` `/health` `/help`.
 
 ### Custom profile roles (name + color)
 `/profile setup name:Jamie color:#FF69B4` creates a role **only for that member**, shown separately in the member list.
@@ -116,9 +119,9 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 
 ## 5. Honest status & limits
 
-**What was verified, and how.** Good Boy was built and tested against *simulated* Discord: 292 automated tests (module lifecycle, permissions, AutoMod rules, tickets and the watch log, popups, polls and suggestions, the live leaderboard, no-mic reading rules, the GIF codec, dashboard access control and design assets, and for the newer parts: temporary voice, party finder, statistics, achievements, member IDs, the update system with real child processes and a local update server, and the desktop app's logic). The same suite also passes on a PC with the real `discord.js`. Key rules were checked by *breaking the code on purpose* to make sure a test fails. The GIF reader and writer were compared against an independent library (Pillow); real animated quotes were rendered with the real canvas library. The dashboard was opened in a real browser to check the layout, themes and animations.
+**What was verified, and how.** Good Boy was built and tested against *simulated* Discord: 335 automated tests (module lifecycle, permissions, AutoMod rules, tickets and the watch log, popups, polls and suggestions, the live leaderboard, no-mic reading rules, the GIF codec, dashboard access control and design assets, and for the newer parts: temporary voice, party finder, statistics, achievements, member IDs, the update system with real child processes and a local update server, and the desktop app's logic). The same suite also passes on a PC with the real `discord.js`. Key rules were checked by *breaking the code on purpose* to make sure a test fails. The GIF reader and writer were compared against an independent library (Pillow); real animated quotes were rendered with the real canvas library. The dashboard was opened in a real browser to check the layout, themes and animations.
 
-**Not verified on real Discord yet** (please try these first, see "First-run checklist" below): temporary voice rooms (moving members, permissions), the party finder buttons and DMs, the member ID popup, achievement announcements, the statistics weekly recap and history backfill, the popups (modals), a full ticket from open to close, the watch-log flags, the live leaderboard message editing itself, animated quotes as uploaded to Discord, and the dashboard login with your own Client Secret. **Text-to-speech audio** (including the no-mic channel) can only be proven on a machine with a voice channel and speakers: the rules for *what* gets read are tested, the sound is not.
+**Not verified on real Discord yet** (please try these first, see "First-run checklist" below): everything new in 2.2 (the button-then-popup flow, popups with pickers and dropdowns, the leaderboard buttons, the games and the fishing mini-game; see [`docs/V2.2-TEST-PLAN.md`](docs/V2.2-TEST-PLAN.md)), temporary voice rooms (moving members, permissions), the party finder buttons and DMs, the member ID popup, achievement announcements, the statistics weekly recap and history backfill, the popups (modals), a full ticket from open to close, the watch-log flags, the live leaderboard message editing itself, animated quotes as uploaded to Discord, and the dashboard login with your own Client Secret. **Text-to-speech audio** (including the no-mic channel) can only be proven on a machine with a voice channel and speakers: the rules for *what* gets read are tested, the sound is not.
 
 **Known limits**
 - **Modules are trusted code.** They run inside the bot with full access. Only install modules you wrote or reviewed. There is no sandbox and no marketplace.
@@ -134,7 +137,7 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 - **Roblox lookup** (`/id roblox`, off by default) was written from memory of Roblox's public API and has never been run against it. Linked game accounts are only format-checked and always shown as *not verified*.
 - **Updates** are tested against a local update server only; nothing has been published or installed from a real host, and the supervisor has not been run on Windows. **The desktop app has not been built or started** (no `.exe` or `.dmg` exists yet).
 - **Statistics** start counting when the module is turned on; the backfill reads recent history only and is labelled as such.
-- **Not built:** Twitch/Steam/Spotify integrations, a module marketplace, updates that install without a click, achievement role rewards, the Minecraft launcher and server manager. **Deliberately excluded:** economy, games/fun, giveaways, AI.
+- **Not built:** Twitch/Steam/Spotify integrations, a module marketplace, updates that install without a click, achievement role rewards, the Minecraft launcher and server manager. **Deliberately excluded:** giveaways, AI, anything that sells coins for real money.
 - One SQLite file (`data/eclipse.db`, the name is kept so existing data carries over) is plenty for personal and mid-sized communities.
 
 ### First-run checklist (about 15 minutes)

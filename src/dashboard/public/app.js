@@ -46,6 +46,44 @@ async function api(path, body) {
 }
 
 function clear() { app.replaceChildren(); }
+/** replaceChildren() prints null/undefined as the words "null"/"undefined", so empty parts are dropped first. */
+function put(el, ...kids) { el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false)); return el; }
+
+/**
+ * The page's own dialog, instead of the browser's prompt/confirm boxes.
+ * field: { type: 'number' | 'text' | 'select', options: [{ value, label }], value, placeholder }
+ * confirmWord: the person must type it (for big, irreversible actions).
+ * Resolves to the entered value (or true when there is no field), or null when cancelled.
+ */
+function ask({ title, text, field = null, confirmWord = null, okLabel = 'OK', danger = false }) {
+  return new Promise((resolve) => {
+    const prev = document.activeElement;
+    let input = null;
+    if (field?.type === 'select') input = h('select', { class: 'field' }, field.options.map((o) => h('option', { value: o.value, selected: o.value === field.value }, o.label)));
+    else if (field) input = h('input', { class: 'field', type: field.type === 'number' ? 'number' : 'text', value: field.value ?? '', placeholder: field.placeholder ?? '' });
+    const word = confirmWord ? h('input', { class: 'field', type: 'text', placeholder: confirmWord, autocomplete: 'off' }) : null;
+    const ok = h('button', { class: danger ? 'danger' : '' }, okLabel);
+    const cancel = h('button', { class: 'ghost' }, 'Cancel');
+    const done = (v) => { back.remove(); document.removeEventListener('keydown', key); prev?.focus?.(); resolve(v); };
+    const value = () => (field ? (field.type === 'number' ? Number(input.value) : input.value) : true);
+    const valid = () => (!word || word.value === confirmWord) && (!field || field.type === 'select' || String(input.value).trim() !== '') && (field?.type !== 'number' || Number.isFinite(Number(input.value)));
+    const refresh = () => { ok.disabled = !valid(); };
+    const key = (e) => { if (e.key === 'Escape') done(null); if (e.key === 'Enter' && valid()) done(value()); };
+    ok.addEventListener('click', () => valid() && done(value()));
+    cancel.addEventListener('click', () => done(null));
+    for (const x of [input, word]) x?.addEventListener('input', refresh);
+    const back = h('div', { class: 'dialog-back', role: 'presentation' },
+      h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+        h('h3', {}, title), text ? h('p', { class: 'muted' }, text) : null, input,
+        word ? h('label', { class: 'small' }, `Type ${confirmWord} to confirm`) : null, word,
+        h('div', { class: 'dialog-buttons' }, cancel, ok)));
+    back.addEventListener('click', (e) => { if (e.target === back) done(null); });
+    document.addEventListener('keydown', key);
+    document.body.append(back);
+    refresh();
+    (input ?? word ?? ok).focus();
+  });
+}
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 // ---------------------------------------------------------------- sign-in and server list
@@ -86,8 +124,8 @@ async function loadGuild() {
 }
 
 // ---------------------------------------------------------------- pages and navigation
-const ICON = { moderation: '🛡', support: '🎫', community: '🏆', engagement: '💬', voice: '🔊', quotes: '❝', reminders: '⏰', roles: '🏷', integrations: '🔌', 'member-management': '👥', stats: '📊', achievements: '🏆', eclipseid: '🪪', partyfinder: '🎮', tempvoice: '🎙' };
-const TITLE = { moderation: 'Moderation', support: 'Support', community: 'Community', engagement: 'Engagement', voice: 'Voice', quotes: 'Quotes', reminders: 'Reminders', roles: 'Roles', integrations: 'Integrations', 'member-management': 'Members', stats: 'Statistics', achievements: 'Achievements', eclipseid: 'Member ID', partyfinder: 'Party Finder', tempvoice: 'Temporary voice' };
+const ICON = { moderation: '🛡', support: '🎫', community: '🏆', engagement: '💬', voice: '🔊', quotes: '❝', reminders: '⏰', roles: '🏷', integrations: '🔌', 'member-management': '👥', stats: '📊', achievements: '🏆', eclipseid: '🪪', partyfinder: '🎮', tempvoice: '🎙', economy: '🪙', games: '🎰', deadchat: '💬' };
+const TITLE = { moderation: 'Moderation', support: 'Support', community: 'Community', engagement: 'Engagement', voice: 'Voice', quotes: 'Quotes', reminders: 'Reminders', roles: 'Roles', integrations: 'Integrations', 'member-management': 'Members', stats: 'Statistics', achievements: 'Achievements', eclipseid: 'Member ID', partyfinder: 'Party Finder', tempvoice: 'Temporary voice', economy: 'Economy', games: 'Games', deadchat: 'Dead chat ping' };
 
 /** Every page this person can open. Panel-only people get just the tools they hold permission for. */
 function pages() {
@@ -166,18 +204,18 @@ function renderUpdates(ws) {
   const when = (t) => (t ? new Date(t).toLocaleString() : 'never');
   async function load(path = '/api/updates', body) {
     let r;
-    try { r = await api(path, body); } catch (e) { box.replaceChildren(h('h3', {}, 'Updates'), h('p', { class: e.status === 403 ? 'muted' : 'err' }, e.message)); return null; }
+    try { r = await api(path, body); } catch (e) { put(box, h('h3', {}, 'Updates'), h('p', { class: e.status === 403 ? 'muted' : 'err' }, e.message)); return null; }
     paint(r); return r;
   }
   function paint(r) {
-    if (!r.supervised) { box.replaceChildren(h('h3', {}, 'Updates'), h('p', { class: 'muted' }, r.message)); return; }
-    if (!r.ok) { box.replaceChildren(h('h3', {}, 'Updates'), h('p', { class: 'err' }, r.error || 'The supervisor did not answer.')); return; }
+    if (!r.supervised) { put(box, h('h3', {}, 'Updates'), h('p', { class: 'muted' }, r.message)); return; }
+    if (!r.ok) { put(box, h('h3', {}, 'Updates'), h('p', { class: 'err' }, r.error || 'The supervisor did not answer.')); return; }
     const st = r.status, u = st.update, found = u.lastCheck?.release;
     const rows = [['Running', `${st.version}${st.trial ? ' (on trial, not yet confirmed)' : ''}`], ['State', st.state], ['Channel', u.channel ?? 'updates not set up'], ['Last checked', when(u.lastCheck?.at)]];
     if (u.lastError) rows.push(['Problem', u.lastError]);
     if (u.lastResult) rows.push(['Last update', u.lastResult.ok ? `installed ${u.lastResult.version}` : `failed (${u.lastResult.reason || 'unknown'}); went back to the previous version`]);
     if (u.failed?.length) rows.push(['Rolled back before', u.failed.join(', ')]);
-    box.replaceChildren(h('h3', {}, 'Updates'),
+    put(box, h('h3', {}, 'Updates'),
       h('table', {}, h('tbody', {}, rows.map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v))))),
       found ? h('div', { class: 'card inset' }, h('strong', {}, `Version ${found.version} is available`), h('span', { class: 'badge' }, found.channel),
         found.blocked ? h('p', { class: 'err' }, `Cannot install: ${found.blocked}.`) : null,
@@ -193,7 +231,7 @@ function renderUpdates(ws) {
     if (!armed) { armed = true; const r = await load(); setTimeout(() => { armed = false; }, 6000); return r; }
     armed = false;
     try { const r = await api('/api/updates/apply', { confirm: true }); if (!r.ok) { toast(r.error, true); return; } } catch (e) { toast(e.message, true); return; }
-    box.replaceChildren(h('h3', {}, 'Updating...'), h('p', { class: 'muted' }, 'The bot is restarting. This page reconnects by itself.'));
+    put(box, h('h3', {}, 'Updating...'), h('p', { class: 'muted' }, 'The bot is restarting. This page reconnects by itself.'));
     clearInterval(polling);
     polling = setInterval(async () => { try { const r = await api('/api/updates'); if (r.ok && r.status.state === 'running') { clearInterval(polling); paint(r); toast('Update finished.'); } } catch { /* still restarting */ } }, 4000);
   }
@@ -218,34 +256,59 @@ function renderTool(ws, name) {
   for (const panel of m.panels ?? []) ws.append(panelBox(m, panel));
 }
 
-/** Generic management panel: a table from a module's view, row actions, and confirmed global actions. */
+/**
+ * Generic management panel: a table from a module's view, row actions, and confirmed global actions.
+ * Panel fields modules can use: description, empty (text when there are no rows), recentTitle, recentEmpty,
+ * columns[].hint (explains a column), columns[].kind 'member' (picture + name) or 'rank'.
+ * Row actions: prompt 'number' | 'text' | 'select' (with options [{ value, label }]), hint, confirm (text), danger.
+ */
+function cell(c, r) {
+  const v = r[c.key];
+  if (c.kind === 'member') return h('td', {}, h('span', { class: 'member' }, r.avatar ? h('img', { src: r.avatar, alt: '', loading: 'lazy' }) : h('span', { class: 'ph' }, String(v ?? '?').slice(0, 1)), h('span', {}, v ?? '')));
+  if (c.kind === 'rank') return h('td', { class: 'rank' }, ['🥇', '🥈', '🥉'][Number(v) - 1] ?? `#${v}`);
+  return h('td', {}, v ?? '—');
+}
+function legend(columns) {
+  const hints = columns.filter((c) => c.hint);
+  return hints.length ? h('dl', { class: 'legend' }, hints.flatMap((c) => [h('dt', {}, c.label), h('dd', {}, c.hint)])) : null;
+}
+
 function panelBox(m, panel) {
   const box = h('div', { class: 'card' }, h('h3', {}, panel.title), h('p', { class: 'muted' }, 'Loading…'));
   const base = `/api/guilds/${state.gid}/modules/${m.name}`;
   api(`${base}/views/${panel.view}`).then((data) => {
     const run = async (action, body, ok) => { try { await api(`${base}/actions/${action}`, body); toast(ok); box.replaceWith(panelBox(m, panel)); } catch (e) { toast(e.message, true); } };
-    const rows = (data.rows ?? []).map((r) => h('tr', {}, panel.columns.map((c) => h('td', {}, r[c.key] ?? '')),
-      (panel.rowActions ?? []).length ? h('td', {}, panel.rowActions.map((a) => h('button', { class: 'ghost', onclick: () => {
-        // Send the row's id under both names: modules read `id` or `userId`, whichever suits what the row is.
-        const body = { id: r.id, userId: r.id };
-        const who = r.name ?? r.id;
-        if (a.prompt) {
-          const v = window.prompt(`${a.label}: ${who}${a.hint ? ` (${a.hint})` : ` - enter a ${a.prompt}`}`);
-          if (v === null) return;
-          body[a.field] = a.prompt === 'number' ? Number(v) : v;
-        } else if (!window.confirm(`${a.label}: ${who}?`)) return;
-        run(a.action, body, 'Done');
-      } }, a.label))) : null));
-    box.replaceChildren(h('div', { class: 'row' }, h('h3', {}, panel.title),
-      h('div', {}, (panel.globalActions ?? []).map((a) => h('button', { class: 'danger', onclick: () => {
-        const w = window.prompt(`Type ${a.confirmWord} to confirm: ${a.label}`);
-        if (w !== a.confirmWord) { if (w !== null) toast('Confirmation did not match - nothing changed', true); return; }
-        run(a.action, { confirm: w }, 'Done');
+    const rowAction = (a, r) => async () => {
+      // Send the row's id under both names: modules read `id` or `userId`, whichever suits what the row is.
+      const body = { id: r.id, userId: r.id };
+      const who = r.name ?? r.id;
+      if (a.prompt) {
+        const field = a.prompt === 'select' ? { type: 'select', options: a.options ?? [], value: r[a.current] ?? a.options?.[0]?.value } : { type: a.prompt, placeholder: a.placeholder ?? '', value: a.current ? r[a.current] : '' };
+        const v = await ask({ title: `${a.label} · ${who}`, text: a.hint ?? null, field, okLabel: a.okLabel ?? 'Save', danger: !!a.danger });
+        if (v === null) return;
+        body[a.field] = v;
+      } else if (!(await ask({ title: `${a.label} · ${who}`, text: a.confirm ?? 'Are you sure?', okLabel: a.label, danger: a.danger !== false }))) return;
+      run(a.action, body, a.done ?? 'Done');
+    };
+    const actions = panel.rowActions ?? [];
+    const rows = (data.rows ?? []).map((r) => h('tr', {}, panel.columns.map((c) => cell(c, r)),
+      actions.length ? h('td', { class: 'actions' }, actions.map((a) => h('button', { class: a.danger ? 'ghost danger-text' : 'ghost', onclick: rowAction(a, r) }, a.label))) : null));
+    const recent = panel.recentColumns?.length ? h('div', { class: 'recent' }, h('h4', {}, panel.recentTitle ?? 'Recent activity'),
+      (data.recent ?? []).length ? h('table', {}, h('tr', {}, panel.recentColumns.map((c) => h('th', { title: c.hint ?? null }, c.label))),
+        data.recent.map((r) => h('tr', {}, panel.recentColumns.map((c) => h('td', {}, r[c.key] ?? '—')))))
+        : h('p', { class: 'empty-note' }, panel.recentEmpty ?? 'Nothing has happened here yet.')) : null;
+    put(box, h('div', { class: 'row' }, h('h3', {}, panel.title),
+      h('div', {}, (panel.globalActions ?? []).map((a) => h('button', { class: 'danger', onclick: async () => {
+        const w = await ask({ title: a.label, text: a.confirm ?? 'This changes everyone at once and cannot be undone from here. A backup is made first.', confirmWord: a.confirmWord, okLabel: a.label, danger: true });
+        if (w === null) return;
+        run(a.action, { confirm: a.confirmWord }, 'Done');
       } }, a.label)))),
-      rows.length ? h('table', {}, h('tr', {}, panel.columns.map((c) => h('th', {}, c.label)), (panel.rowActions ?? []).length ? h('th', {}, '') : null), rows) : h('p', { class: 'muted' }, 'Nothing to show yet.'),
-      (data.recent ?? []).length && panel.recentColumns ? h('div', {}, h('h3', { class: 'section-title' }, 'Recent activity'), h('table', {}, h('tr', {}, panel.recentColumns.map((c) => h('th', {}, c.label))),
-        data.recent.map((r) => h('tr', {}, panel.recentColumns.map((c) => h('td', {}, r[c.key] ?? '')))))) : null);
-  }).catch((e) => box.replaceChildren(h('h3', {}, panel.title), h('p', { class: 'muted' }, e.message)));
+      panel.description ? h('p', { class: 'muted' }, panel.description) : null,
+      rows.length ? h('table', {}, h('tr', {}, panel.columns.map((c) => h('th', { title: c.hint ?? null }, c.label, c.hint ? h('span', { class: 'q', 'aria-hidden': 'true' }, ' ⓘ') : null)), actions.length ? h('th', {}, '') : null), rows)
+        : h('p', { class: 'empty-note' }, panel.empty ?? 'Nothing here yet.'),
+      rows.length ? legend(panel.columns) : null,
+      recent);
+  }).catch((e) => put(box, h('h3', {}, panel.title), h('p', { class: 'muted' }, e.message)));
   return box;
 }
 
@@ -254,7 +317,7 @@ function renderModules(ws) {
   for (const m of state.data.modules) {
     const card = h('div', { class: 'card' });
     card.append(h('div', { class: 'row' },
-      h('div', {}, h('h3', {}, m.name, h('span', { class: 'badge' }, 'v' + m.version),
+      h('div', {}, h('h3', {}, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, ICON[m.name] ?? '◆'), ' ', TITLE[m.name] ?? cap(m.name), h('span', { class: 'badge' }, 'v' + m.version),
         m.type === 'addon' ? h('span', { class: 'badge' }, 'add-on for ' + m.requires.module) : null,
         m.enabled ? h('span', { class: 'badge ' + m.status }, m.status) : null),
         h('div', { class: 'muted' }, m.description)),
@@ -273,7 +336,7 @@ function settingsForm(m) {
   for (const s of m.settings) {
     const cur = m.values[s.key];
     let input, get;
-    if (s.type === 'toggle') { input = h('input', { type: 'checkbox', checked: cur === true }); get = () => input.checked; }
+    if (s.type === 'toggle') { input = h('input', { type: 'checkbox', class: 'switch', role: 'switch', checked: cur === true }); get = () => input.checked; }
     else if (s.type === 'number') { input = h('input', { type: 'number', value: cur ?? '', min: s.min, max: s.max }); get = () => input.value; }
     else if (s.type === 'select') {
       input = h('select', {}, s.options.map((o) => h('option', { value: o, selected: o === cur }, o))); get = () => input.value;
@@ -285,7 +348,7 @@ function settingsForm(m) {
     } else if (s.type === 'list') { input = h('textarea', {}, (cur ?? []).join(', ')); get = () => input.value.split(',').map((x) => x.trim()).filter(Boolean); }
     else { input = h('textarea', { maxlength: s.maxLength ?? 2000 }, cur ?? ''); get = () => input.value; }
     getters[s.key] = { get, original: JSON.stringify(cur ?? (s.type === 'list' ? [] : null)), type: s.type };
-    if (s.type === 'toggle') form.append(h('label', {}, input, ' ' + s.label));
+    if (s.type === 'toggle') form.append(h('label', { class: 'switch-row' }, h('span', {}, s.label), input));
     else form.append(h('label', {}, s.label, s.description ? h('span', { class: 'hint' }, ' — ' + s.description) : null), input);
   }
   form.append(h('p', {}, h('button', {
@@ -304,19 +367,38 @@ function settingsForm(m) {
   return form;
 }
 
+// Divider roles ("--- bots under -", "━━ Staff ━━") are only labels in the member list, never real permissions.
+const isDivider = (name) => /^[\s\-–—_=~*•·.|+#━─═▬■□▪▫<>[\](){}]{3,}/.test(name) || /^[^\p{L}\p{N}]+$/u.test(name);
+const LEVEL_WORDS = { everyone: 'Everyone', moderator: 'Moderators', admin: 'Admins (Manage Server)', owner: 'Only the server owner' };
+
 function renderPermissions(ws) {
-  const perms = [...(state.data.corePermissions ?? []).map((p) => ({ ...p, module: 'core' })), ...state.data.modules.filter((m) => m.enabled).flatMap((m) => m.permissions.map((p) => ({ ...p, module: m.name })))];
-  ws.append(h('p', { class: 'muted' }, "Pick roles to REPLACE a permission's default. Leave all unticked to use the default. The server owner and Administrators can always do everything."));
-  ws.append(h('p', { class: 'muted access-note' }, 'dashboard.access lets a role open this dashboard with limited access: only the tools whose own permission they also hold. Settings, permissions and logs always need Manage Server.'));
-  for (const p of perms) {
-    const boxes = state.data.roles.map((r) => {
-      const cb = h('input', { type: 'checkbox', value: r.id, checked: p.roles.includes(r.id) });
-      return h('label', {}, cb, ' @' + r.name);
-    });
-    ws.append(h('div', { class: 'card' },
-      h('div', { class: 'row' }, h('div', {}, h('h3', {}, p.key), h('div', { class: 'muted' }, p.label + ' · default: ' + p.default)),
-        h('button', { onclick: () => act(() => api(`/api/guilds/${state.gid}/permissions`, { key: p.key, roles: boxes.map((b) => b.firstChild).filter((c) => c.checked).map((c) => c.value) }), 'Permissions saved') }, 'Save')),
-      h('div', { class: 'checks' }, boxes)));
+  const roles = state.data.roles.filter((r) => !isDivider(r.name));
+  const hidden = state.data.roles.length - roles.length;
+  const groups = [{ name: 'core', title: 'Dashboard and bot', perms: state.data.corePermissions ?? [] },
+    ...state.data.modules.filter((m) => m.enabled && m.permissions.length).map((m) => ({ name: m.name, title: TITLE[m.name] ?? cap(m.name), perms: m.permissions }))];
+  ws.append(h('div', { class: 'card' }, h('h3', {}, 'Who can do what'),
+    h('p', { class: 'muted' }, 'Each line starts with its default. Add roles to a line to choose exactly who can do it instead. The server owner and Administrators can always do everything.'),
+    hidden ? h('p', { class: 'hint' }, `${hidden} divider role${hidden === 1 ? ' is' : 's are'} hidden. Bot roles are never shown.`) : null));
+  for (const g of groups) {
+    const list = h('div', { class: 'group' });
+    for (const p of g.perms) {
+      let chosen = [...p.roles];
+      const chips = h('div', { class: 'chips' });
+      const save = async () => { try { await api(`/api/guilds/${state.gid}/permissions`, { key: p.key, roles: chosen }); toast('Saved'); p.roles = [...chosen]; } catch (e) { toast(e.message, true); } };
+      const picker = h('select', { class: 'add-role', 'aria-label': `Add a role to: ${p.label}` });
+      const paint = () => {
+        put(chips, chosen.length ? chosen.map((id) => {
+          const r = state.data.roles.find((x) => x.id === id);
+          return h('span', { class: 'chip' }, '@' + (r?.name ?? 'deleted role'), h('button', { class: 'chip-x', title: 'Remove', 'aria-label': `Remove @${r?.name ?? id}`, onclick: () => { chosen = chosen.filter((x) => x !== id); paint(); save(); } }, '×'));
+        }) : h('span', { class: 'chip default' }, LEVEL_WORDS[p.default] ?? p.default));
+        put(picker, h('option', { value: '' }, chosen.length ? '+ Add another role' : '+ Choose roles instead'), roles.filter((r) => !chosen.includes(r.id)).map((r) => h('option', { value: r.id }, '@' + r.name)));
+      };
+      picker.addEventListener('change', () => { if (!picker.value) return; chosen.push(picker.value); paint(); save(); });
+      paint();
+      list.append(h('div', { class: 'perm' }, h('div', { class: 'perm-text' }, h('strong', {}, p.label), h('small', { class: 'hint', title: p.key }, chosen.length ? `Default would be: ${LEVEL_WORDS[p.default] ?? p.default}` : 'Using the default')),
+        h('div', { class: 'perm-roles' }, chips, picker)));
+    }
+    ws.append(h('div', { class: 'card' }, h('h3', {}, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, ICON[g.name] ?? '⚙'), ' ', g.title), list));
   }
 }
 

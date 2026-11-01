@@ -160,6 +160,7 @@ export default {
   ],
   commands: [{
     permission: 'eclipseid.use',
+    ownPopup: ['edit'], // opens its own popup when run with nothing filled in
     data: new SlashCommandBuilder().setName('id').setDescription('Your Eclipse ID gaming profile')
       .addSubcommand((s) => s.setName('show').setDescription('Show a card').addUserOption((o) => o.setName('member').setDescription('Whose')))
       .addSubcommand((s) => s.setName('edit').setDescription('Fill in your card'))

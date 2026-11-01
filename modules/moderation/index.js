@@ -5,9 +5,10 @@
  * Moderation suite: warn / timeout / kick / ban / unban / purge / history,
  * AutoMod (spam, words, links, mass mentions), raid protection, anti-nuke, logging.
  */
-import { SlashCommandBuilder, EmbedBuilder, AuditLogEvent, PermissionFlagsBits as P, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } from 'discord.js';
+import { SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType, EmbedBuilder, AuditLogEvent, PermissionFlagsBits as P, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonStyle } from 'discord.js';
 import { UserError, hierarchyError, parseDuration, formatDuration, truncate, escapeRegex, ts, SNOWFLAKE } from '../../src/util.js';
 import { formStore } from '../../src/forms.js';
+import { createPipeline } from '../../src/modalpipe.js';
 import { RULES, RULE_IDS, ACTIONS, ruleById, ruleEnabled, actionFor, isExempt, editExempt, countEmoji, capsRatio, recordRepeat, snippet, activityCounts } from '../../src/automod.js';
 
 const EPH = MessageFlags.Ephemeral;
@@ -40,9 +41,12 @@ async function modLog(ctx, embed) {
 }
 
 function caseEmbed(type, c, user, mod) {
-  return new EmbedBuilder().setColor(COLOR[type] ?? COLOR.info).setTitle(`${type[0].toUpperCase() + type.slice(1)} · case #${c.id}`)
+  const e = new EmbedBuilder().setColor(COLOR[type] ?? COLOR.info).setTitle(`${type[0].toUpperCase() + type.slice(1)} · case #${c.id}`)
     .addFields({ name: 'User', value: `${user.tag ?? user.username} (${user.id})`, inline: true }, { name: 'Moderator', value: mod ? `<@${mod}>` : 'AutoMod', inline: true },
       { name: 'Reason', value: truncate(c.reason, 1000) }).setTimestamp();
+  if (c.severity) e.addFields({ name: 'Severity', value: SEVERITY[c.severity]?.label ?? c.severity, inline: true });
+  if (c.notes) e.addFields({ name: 'Duration / notes', value: truncate(c.notes, 500), inline: true });
+  return e;
 }
 
 async function tellUser(ctx, user, guild, text) {
@@ -308,9 +312,9 @@ async function memberFor(i, user) {
   return member;
 }
 
-async function runWarn(ctx, i, user, reason) {
+async function runWarn(ctx, i, user, reason, details = {}) {
   const member = await memberFor(i, user);
-  const c = addCase(ctx, { type: 'warn', user, modId: i.user.id, reason });
+  const c = addCase(ctx, { type: 'warn', user, modId: i.user.id, reason, extra: details });
   await tellUser(ctx, user, i.guild, `you were warned: ${reason}`);
   await modLog(ctx, caseEmbed('warn', c, user, i.user.id));
   const warns = (ctx.data.get(`hist:${user.id}`) ?? []).filter((e) => e.type === 'warn').length;
@@ -322,6 +326,53 @@ async function runWarn(ctx, i, user, reason) {
   }
   await i.editReply({ embeds: [caseEmbed('warn', c, user, i.user.id).setFooter({ text: `${warns} warning(s) total` })], content: extra || undefined, allowedMentions: NOPING });
 }
+
+export const SEVERITY = {
+  low: { label: '🟢 Low', desc: 'A friendly reminder' },
+  medium: { label: '🟡 Medium', desc: 'A clear rule break' },
+  high: { label: '🟠 High', desc: 'Serious, next step is a timeout' },
+  critical: { label: '🔴 Critical', desc: 'Final warning before a ban' },
+};
+
+/** Checks that can run before the popup opens (a popup cannot be re-opened after a failed submit). */
+async function warnTargetCheck(i, targetId) {
+  if (!targetId) return null;
+  if (targetId === i.user.id) throw new UserError('You cannot warn yourself.');
+  const member = await i.guild.members.fetch(targetId).catch(() => null);
+  if (!member) throw new UserError('That user is not in this server.');
+  if (member.user?.bot) throw new UserError('Bots cannot be warned.');
+  guardTarget(i, member);
+  return member;
+}
+
+const modPipe = createPipeline({
+  ns: 'mpm',
+  forms: {
+    warn: {
+      title: 'Warn a member', permission: 'moderation.warn', color: COLOR.warn,
+      button: { label: 'Configure warning', emoji: '⚠️', style: ButtonStyle.Danger },
+      intro: (ctx, i, [target]) => `${target ? `Warning <@${target}>. ` : ''}Nothing is recorded until you submit the form.
+The member is told the reason${ctx.config.get('dmOnAction') ? ' by DM' : ' (DMs are off in settings)'}.`,
+      precheck: (ctx, i, [target]) => warnTargetCheck(i, target),
+      fields: (ctx, i, [target]) => [
+        ...(target ? [] : [{ id: 'user', kind: 'user', label: 'Member to warn' }]),
+        { id: 'reason', kind: 'paragraph', label: 'Warning reason', desc: 'Shown in the log and to the member', max: 500 },
+        { id: 'severity', kind: 'select', label: 'Severity', value: 'medium', options: Object.entries(SEVERITY).map(([value, v]) => ({ label: v.label, value, description: v.desc })) },
+        { id: 'notes', kind: 'paragraph', label: 'Duration / severity notes', desc: 'Optional, staff only. e.g. "counts for 30 days"', required: false, max: 300 },
+      ],
+      async submit(ctx, i, v, [target]) {
+        const targetId = target ?? v.user;
+        if (!targetId) throw new UserError('Pick a member to warn.');
+        if (!v.reason) throw new UserError('Please give a reason - it goes in the log.');
+        await warnTargetCheck(i, targetId); // again at submit: roles may have changed while the form was open
+        await i.deferReply();
+        const user = await i.client.users.fetch(targetId).catch(() => null);
+        if (!user) throw new UserError('I can\'t find that user any more.');
+        return runWarn(ctx, i, user, v.reason, { severity: SEVERITY[v.severity] ? v.severity : 'medium', notes: v.notes || undefined });
+      },
+    },
+  },
+});
 
 async function runTimeout(ctx, i, user, ms, reason) {
   const member = await memberFor(i, user);
@@ -365,6 +416,7 @@ const reasonOpt = (o) => o.setName('reason').setDescription('Reason - leave empt
 // ------------------------------------------------------------------ AutoMod: shared by /automod and the dashboard
 const ACTION_WORDS = { default: 'server default', delete: 'delete only', 'delete-warn': 'delete + warn', 'delete-timeout': 'delete + timeout' };
 
+const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
 function ruleRow(ctx, rule, counts) {
   const cfg = automodCfg(ctx);
   const on = ruleEnabled(cfg, rule);
@@ -372,8 +424,9 @@ function ruleRow(ctx, rule, counts) {
   const ex = ctx.data.get('automod:exempt') ?? {};
   const exNum = (ex[rule.id]?.roles?.length ?? 0) + (ex[rule.id]?.channels?.length ?? 0);
   return {
-    id: rule.id, name: rule.label, on, state: on ? 'On' : 'Off', action: ACTION_WORDS[own] ?? own, ownAction: own,
-    limit: rule.limit ? cfg[rule.limit] : null, last7: counts[rule.id] ?? 0, exemptions: exNum,
+    id: rule.id, name: rule.label, on, state: on ? '● On' : '○ Off',
+    action: own === 'default' ? `Server default (${ACTION_WORDS[cfg.automodAction] ?? cfg.automodAction})` : cap(ACTION_WORDS[own] ?? own), ownAction: own,
+    limit: rule.limit ? cfg[rule.limit] : null, last7: counts[rule.id] ? `${counts[rule.id]} caught` : 'None', exemptions: exNum ? `${exNum} role${exNum === 1 ? '' : 's'}/channel${exNum === 1 ? '' : 's'}` : 'None',
   };
 }
 
@@ -491,16 +544,16 @@ const automodCommand = {
 
 const commands = [
   {
+    // 2.2: no typed options. The command only serves the private "Configure warning" button (src/modalpipe.js).
     permission: 'moderation.warn',
-    data: new SlashCommandBuilder().setName('warn').setDescription('Warn a member')
-      .addUserOption((o) => userOpt(o, 'Who to warn')).addStringOption(reasonOpt),
-    async execute(ctx, i) {
-      const user = i.options.getUser('user', true);
-      const reason = i.options.getString('reason');
-      if (!reason) return askFor(i, 'warn', { userId: user.id }, [FIELD.reason()]);
-      await i.deferReply();
-      return runWarn(ctx, i, user, reason);
-    },
+    data: new SlashCommandBuilder().setName('warn').setDescription('Warn a member (opens a form)'),
+    execute: (ctx, i) => modPipe.launch(ctx, i, 'warn'),
+  },
+  {
+    // Right-click a member > Apps > Warn member: the target travels in the signed button token.
+    permission: 'moderation.warn',
+    data: new ContextMenuCommandBuilder().setName('Warn member').setType(ApplicationCommandType.User),
+    execute: (ctx, i) => modPipe.launch(ctx, i, 'warn', [i.targetUser.id]),
   },
   {
     permission: 'moderation.timeout',
@@ -605,7 +658,7 @@ const commands = [
 
 export default {
   name: 'moderation',
-  version: '1.2.0',
+  version: '1.3.0',
   description: 'Warn, timeout, kick, ban, purge, history, AutoMod (spam, words, links, mentions, repeats, caps, emoji), raid protection and anti-nuke.',
   settings: [
     { key: 'logChannel', type: 'channel', label: 'Mod log channel' },
@@ -680,12 +733,24 @@ export default {
   },
   panels: [{
     id: 'automod', title: 'AutoMod', view: 'automod', permission: 'moderation.automod',
-    columns: [{ key: 'name', label: 'Rule' }, { key: 'state', label: 'State' }, { key: 'action', label: 'Action' }, { key: 'limit', label: 'Limit' }, { key: 'last7', label: 'This week' }, { key: 'exemptions', label: 'Exemptions' }],
-    rowActions: [{ action: 'automod-toggle', label: 'Turn on/off' }, { action: 'automod-action', label: 'Set action', prompt: 'text', field: 'value', hint: 'default, delete, delete-warn or delete-timeout' }],
-    recentColumns: [{ key: 'when', label: 'When' }, { key: 'member', label: 'Member' }, { key: 'channel', label: 'Channel' }, { key: 'rule', label: 'Rule' }, { key: 'action', label: 'Action' }, { key: 'preview', label: 'Preview' }],
+    description: 'Rules that check every message. Turn a rule on, then choose what happens when someone breaks it.',
+    empty: 'No AutoMod rules are available.',
+    columns: [{ key: 'name', label: 'Rule' }, { key: 'state', label: 'State' },
+      { key: 'action', label: 'What happens', hint: 'What the bot does to a message that breaks the rule. "Server default" follows the AutoMod action setting.' },
+      { key: 'limit', label: 'Limit', hint: 'How much is allowed before the rule acts, e.g. messages in a few seconds or mentions in one message. "—" means the rule has no limit.' },
+      { key: 'last7', label: 'This week', hint: 'Messages this rule caught in the last 7 days.' },
+      { key: 'exemptions', label: 'Exemptions', hint: 'Roles and channels this rule ignores. Set them with /automod exempt.' }],
+    rowActions: [
+      { action: 'automod-toggle', label: 'Turn on/off', confirm: 'Switch this rule on or off?', danger: false, done: 'Rule updated' },
+      { action: 'automod-action', label: 'Set action', prompt: 'select', field: 'value', current: 'ownAction', hint: 'What should happen to a message that breaks this rule?',
+        options: [{ value: 'default', label: 'Server default' }, { value: 'delete', label: 'Delete it' }, { value: 'delete-warn', label: 'Delete + warn the member' }, { value: 'delete-timeout', label: 'Delete + time the member out' }], done: 'Action saved' },
+    ],
+    recentTitle: 'Recently caught',
+    recentEmpty: 'Nothing has been caught yet. When a rule removes a message it shows up here.',
+    recentColumns: [{ key: 'when', label: 'When' }, { key: 'member', label: 'Member' }, { key: 'channel', label: 'Channel' }, { key: 'rule', label: 'Rule' }, { key: 'action', label: 'What happened' }, { key: 'preview', label: 'Message' }],
   }],
   commands,
-  components: [{ prefix: 'modq:', execute: modPopupSubmit }],
+  components: [{ prefix: 'modq:', execute: modPopupSubmit }, modPipe.component],
   events: {
     messageCreate: onMessage,
     messageDelete: onDelete,

@@ -250,6 +250,7 @@ export default {
   ],
   commands: [{
     permission: 'partyfinder.create',
+    ownPopup: ['create'], // opens its own popup when run with nothing filled in
     data: new SlashCommandBuilder().setName('party').setDescription('Find players for a game')
       .addSubcommand((s) => s.setName('create').setDescription('Post a party')
         .addStringOption((o) => o.setName('game').setDescription('Which game (leave everything empty for a popup)').setMaxLength(60))

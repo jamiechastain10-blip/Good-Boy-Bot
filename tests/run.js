@@ -15,6 +15,7 @@ import { Database } from '../src/db.js';
 import { Permissions } from '../src/permissions.js';
 import { ApiQueue } from '../src/queue.js';
 import { ModuleManager } from '../src/moduleManager.js';
+import { firstButtonId, modalInfo, fakeFields } from './pipe-helpers.js';
 import { parseDuration, formatDuration, isPrivateIp, hierarchyError, fillTemplate, normalizeHex, sanitizeName, UserError } from '../src/util.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -353,7 +354,7 @@ const real = new ModuleManager({ db: new Database(':memory:'), perms: new Permis
 await real.discover(path.join(root, 'modules'));
 await test('every bundled module loads and validates', () => {
   assert.deepEqual([...real.loadErrors], [], 'load errors: ' + JSON.stringify([...real.loadErrors]));
-  const expected = ['achievements', 'community', 'eclipseid', 'engagement', 'integrations', 'member-management', 'moderation', 'partyfinder', 'quotes', 'reminders', 'roles', 'stats', 'support', 'support-html-transcripts', 'tempvoice', 'voice'];
+  const expected = ['achievements', 'community', 'deadchat', 'eclipseid', 'economy', 'engagement', 'games', 'integrations', 'member-management', 'moderation', 'partyfinder', 'quotes', 'reminders', 'roles', 'stats', 'support', 'support-html-transcripts', 'tempvoice', 'voice'];
   assert.deepEqual([...real.defs.keys()].sort(), expected);
 });
 await test('bundled modules stay under Discord command limits when all enabled', () => {
@@ -448,23 +449,31 @@ console.log('\nBundled modules - behaviour with simulated Discord events');
   await test('/warn records a case, auto-times-out at the threshold, and respects hierarchy', async () => {
     mm.setSetting('1', 'moderation', 'automodSpam', 'off'); mm.setSetting('1', 'moderation', 'automodWords', 'off'); mm.setSetting('1', 'moderation', 'automodLinks', 'off');
     mm.setSetting('1', 'moderation', 'warnTimeoutThreshold', '2');
-    const warn = (target) => {
-      const replies = [];
-      return { replies, i: { guildId: '1', commandName: 'warn', guild: g, member: mod, user: mod.user, replied: false, deferred: false,
-        options: { getUser: () => target.user, getString: () => 'being rude' }, reply: async (p) => { replies.push(p); }, deferReply: async () => { }, editReply: async (p) => { replies.push(p); } } };
+    // 2.2: right-click > Warn member -> private button -> popup -> submit. The target travels in the signed token.
+    const ix = (over) => { const replies = []; const i = { id: `w${Math.random()}`, guildId: '1', guild: g, member: mod, user: mod.user, replied: false, deferred: false, client: { users: { fetch: async (id) => people.get(id)?.user ?? null } },
+      reply: async (p) => { replies.push(p); i.replied = true; }, deferReply: async () => { i.deferred = true; }, editReply: async (p) => { replies.push(p); }, showModal: async (m) => { i.modal = m; }, ...over }; i.replies = replies; return i; };
+    const warn = async (target) => {
+      const cmd = ix({ commandName: 'Warn member', targetUser: target.user, options: {} });
+      await mm.handleCommand(cmd);
+      const bid = firstButtonId(cmd.replies[0]);
+      if (!bid) return cmd; // refused before any button (hierarchy etc.)
+      const click = ix({ customId: bid }); await mm.handleComponent(click);
+      const submit = ix({ customId: modalInfo(click.modal).customId, fields: fakeFields({ reason: 'being rude', severity: ['high'], notes: '' }) });
+      await mm.handleComponent(submit);
+      return submit;
     };
     victim.timedOut = null;
     const before = (mm.ctx('1', 'moderation').data.get('hist:victim') ?? []).filter((e) => e.type === 'warn').length;
-    const w1 = warn(victim); await mm.handleCommand(w1.i);
-    const w2 = warn(victim); await mm.handleCommand(w2.i);
-    const total = mm.ctx('1', 'moderation').data.get('hist:victim').filter((e) => e.type === 'warn').length;
-    assert.equal(total, before + 2);
+    await warn(victim); await warn(victim);
+    const hist = mm.ctx('1', 'moderation').data.get('hist:victim').filter((e) => e.type === 'warn');
+    assert.equal(hist.length, before + 2);
+    assert.equal(hist[0].severity, 'high', 'severity from the popup is kept on the case');
     assert.ok(victim.timedOut > 0, 'timed out once the threshold multiple was reached');
     const boss = person('boss', { pos: 9 });
-    const w3 = warn(boss); await mm.handleCommand(w3.i);
+    const w3 = await warn(boss);
     assert.match(w3.replies[0].content, /equal to or above yours/);
-    const w4 = warn({ user: { id: 'owner', tag: 'o#0' } }); people.set('owner', person('owner', { pos: 1 }));
-    await mm.handleCommand(w4.i);
+    people.set('owner', person('owner', { pos: 1 }));
+    const w4 = await warn({ user: { id: 'owner', tag: 'o#0' } });
     assert.match(w4.replies[0].content, /owner/);
   });
 
@@ -486,13 +495,15 @@ console.log('\nBundled modules - behaviour with simulated Discord events');
   await test('scheduling announcements: relative time accepted, junk and past times rejected', async () => {
     const ch = { id: '111111111111111111', isTextBased: () => true };
     g.channels.cache.set(ch.id, ch);
+    const admin = person('owner2', { bits: [P.Administrator] });
+    const ix = (over) => { const replies = []; const i = { id: `s${Math.random()}`, guildId: '1', guild: g, member: admin, user: admin.user, channelId: ch.id, replied: false, deferred: false,
+      reply: async (p) => { replies.push(p); i.replied = true; }, showModal: async (m) => { i.modal = m; }, ...over }; i.replies = replies; return i; };
     const run = async (when) => {
-      const replies = [];
-      const i = { guildId: '1', commandName: 'announce', guild: g, member: person('owner2', { bits: [P.Administrator] }), user: { id: 'owner2' }, replied: false, deferred: false,
-        options: { getSubcommand: () => 'schedule', getChannel: () => ch, getString: (n) => ({ message: 'Hello\\nworld', when, title: null, color: null, ping: null, repeat: null })[n] ?? null, getRole: () => null },
-        reply: async (p) => { replies.push(p); } };
-      await mm.handleCommand(i);
-      return replies[0].content;
+      const cmd = ix({ commandName: 'announce', options: { getSubcommand: () => 'schedule' } }); await mm.handleCommand(cmd);
+      const click = ix({ customId: firstButtonId(cmd.replies[0]) }); await mm.handleComponent(click);
+      const sub = ix({ customId: modalInfo(click.modal).customId, fields: fakeFields({ channel: [ch.id], when, repeat: ['none'], text: 'Hello\nworld', roles: [] }) });
+      await mm.handleComponent(sub);
+      return sub.replies[0].content ?? sub.replies[0].embeds?.[0]?.data?.description;
     };
     assert.match(await run('2h'), /Scheduled/);
     const stored = mm.ctx('1', 'engagement').data.list('sched:');
@@ -506,6 +517,7 @@ console.log('\nBundled modules - behaviour with simulated Discord events');
 }
 
 await (await import('./features.js')).default({ test, rejectsWith });
+await (await import('./v22.js')).default({ test, rejectsWith });
 await (await import('./update.js')).default({ test, rejectsWith });
 await (await import('./desktop.js')).default({ test, rejectsWith });
 await (await import('./defer.js')).default({ test, rejectsWith });

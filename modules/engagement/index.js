@@ -11,6 +11,7 @@ import {
 } from 'discord.js';
 import { UserError, parseDuration, parseWhen, pingProblem as sharedPingProblem, normalizeHex, hexToInt, truncate, progressBar, ts, SNOWFLAKE, getChannelOption, describeDiscordError } from '../../src/util.js';
 import { formStore } from '../../src/forms.js';
+import { createPipeline } from '../../src/modalpipe.js';
 import { PermissionFlagsBits as P } from 'discord.js';
 
 const EPH = MessageFlags.Ephemeral;
@@ -49,12 +50,6 @@ export function pingProblem(ctx, ch, ping, roleIds = []) { return sharedPingProb
 
 const forms = formStore('announce');
 
-function roleIdsFrom(i, ping) {
-  if (ping !== 'role') return [];
-  const ids = ['role', 'role2', 'role3'].map((n) => i.options.getRole(n)?.id).filter(Boolean);
-  if (!ids.length) throw new UserError('Choose which role to ping with the `role` option.');
-  return [...new Set(ids)];
-}
 
 function announceModal(token, sub, presetTitle) {
   return new ModalBuilder().setCustomId(`announce:form:${token}`).setTitle(sub === 'send' ? 'New announcement' : 'Schedule an announcement').addComponents(
@@ -86,52 +81,87 @@ export function richAnnounceModal(token, sub, { channelId = null } = {}) {
     new LabelBuilder().setLabel('Also ping these roles (optional)').setRoleSelectMenuComponent(roles));
 }
 
+// 2.2: /announce takes no typed options. send / schedule serve the private "Configure Announcement" button and
+// everything is entered in the popup (src/modalpipe.js). The old popups below (announce:form:) still finish if one
+// was open while the bot updated.
+const notifyFromRoles = (ctx, roleIds = []) => {
+  const everyone = roleIds.includes(ctx.guildId); // picking the @everyone role in the role picker means @everyone
+  const roles = roleIds.filter((r) => r !== ctx.guildId);
+  return everyone ? { ping: 'everyone', roleIds: [] } : roles.length ? { ping: 'role', roleIds: roles } : { ping: 'none', roleIds: [] };
+};
+const pingField = { id: 'roles', kind: 'roles', label: 'Ping (optional)', desc: 'Pick roles to notify. Pick @everyone to ping everyone.', required: false, maxValues: 5 };
+
+const annPipe = createPipeline({
+  ns: 'mpe',
+  forms: {
+    send: {
+      title: 'New announcement', permission: 'engagement.announce', color: 0x5865f2,
+      button: { label: 'Configure Announcement', emoji: '📣' },
+      intro: 'Write the announcement in the form: title, text, color, where it goes and who gets pinged.\nNothing is posted until you submit.',
+      fields: (ctx, i) => [
+        { id: 'channel', kind: 'channel', label: 'Post in', value: i.channelId ? [i.channelId] : undefined },
+        { id: 'title', label: 'Announcement title', desc: 'Optional. A title or color makes it a fancy embed', required: false, max: 250 },
+        { id: 'text', kind: 'paragraph', label: 'Main body text', placeholder: 'Write it exactly as it should appear. New lines work.', max: 1800 },
+        { id: 'color', label: 'Hex color code', placeholder: '#5865F2', required: false, max: 7 },
+        pingField,
+      ],
+      async submit(ctx, i, v) {
+        if (!v.text) throw new UserError('The message cannot be empty.');
+        const color = v.color ? normalizeHex(v.color) : null;
+        if (v.color && !color) throw new UserError('Colors look like `#5865F2`.');
+        const form = { sub: 'send', by: i.user.id, channelId: v.channel ?? i.channelId, color, ...notifyFromRoles(ctx, v.roles) };
+        return finishAnnouncement(ctx, i, form, v.text, v.title || undefined);
+      },
+    },
+    schedule: {
+      title: 'Schedule an announcement', permission: 'engagement.announce', color: 0x5865f2,
+      button: { label: 'Configure Announcement', emoji: '🗓️' },
+      intro: 'Pick when it goes out, whether it repeats, the text and who gets pinged.',
+      precheck: (ctx) => { if (ctx.data.list('sched:').length >= MAX_SCHEDULES) throw new UserError(`You can keep up to ${MAX_SCHEDULES} scheduled announcements.`); },
+      fields: (ctx, i) => [
+        { id: 'channel', kind: 'channel', label: 'Post in', value: i.channelId ? [i.channelId] : undefined },
+        { id: 'when', label: 'When', placeholder: '2h, 1d, or 2026-12-31 18:30', max: 40 },
+        { id: 'repeat', kind: 'select', label: 'Repeat', value: 'none', options: [{ label: 'Only once', value: 'none' }, { label: 'Every day', value: 'daily' }, { label: 'Every week', value: 'weekly' }] },
+        { id: 'text', kind: 'paragraph', label: 'Main body text', placeholder: 'Write it exactly as it should appear. New lines work.', max: 1800 },
+        pingField,
+      ],
+      async submit(ctx, i, v) {
+        if (!v.text) throw new UserError('The message cannot be empty.');
+        const at = parseWhen(v.when, ctx.config.get('timezoneOffset'));
+        if (!at || at < Date.now() + 30000) throw new UserError('That time is in the past (or too soon). Pick at least a minute ahead.');
+        if (at > Date.now() + 366 * DAY) throw new UserError('Schedule within the next year.');
+        const form = { sub: 'schedule', by: i.user.id, channelId: v.channel ?? i.channelId, at, repeat: ['daily', 'weekly'].includes(v.repeat) ? v.repeat : 'none', ...notifyFromRoles(ctx, v.roles) };
+        return finishAnnouncement(ctx, i, form, v.text, undefined);
+      },
+    },
+  },
+});
+
+/** The schedule list, with a picker to cancel one (no typing a number). */
+function scheduleList(ctx, i, note) {
+  const items = ctx.data.list('sched:').map(({ value: s }) => s).sort((a, b) => a.nextAt - b.nextAt);
+  const rows = items.map((s) => `**#${s.id}** ${ts(s.nextAt, 'f')} → <#${s.channelId}>${s.repeat !== 'none' ? ` (${s.repeat})` : ''} - ${truncate(s.text, 60)}`);
+  const components = items.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`announce:cancel:${i.user.id}`).setPlaceholder('Cancel one...')
+    .addOptions(items.slice(0, 25).map((s) => new StringSelectMenuOptionBuilder().setLabel(`#${s.id} · ${truncate(s.text.replace(/\s+/g, ' '), 80)}`).setValue(String(s.id)).setEmoji('🗑️'))))] : [];
+  return { content: [note, rows.join('\n') || 'Nothing scheduled.'].filter(Boolean).join('\n\n'), components, flags: EPH, allowedMentions: NOPING };
+}
+
 async function announceCmd(ctx, i) {
   const sub = i.options.getSubcommand();
-  if (sub === 'list') {
-    const rows = ctx.data.list('sched:').map(({ value: s }) => `**#${s.id}** ${ts(s.nextAt, 'f')} → <#${s.channelId}>${s.repeat !== 'none' ? ` (${s.repeat})` : ''} - ${truncate(s.text, 60)}`);
-    return i.reply({ content: rows.join('\n') || 'Nothing scheduled.', flags: EPH, allowedMentions: NOPING });
-  }
-  if (sub === 'cancel') {
-    const id = i.options.getInteger('id', true);
-    if (!ctx.data.get(`sched:${id}`)) throw new UserError('No scheduled announcement with that number.');
-    ctx.data.delete(`sched:${id}`);
-    return i.reply({ content: `Cancelled #${id}.`, flags: EPH });
-  }
-
-  // Nothing typed: everything in one popup.
-  if (!i.options.getChannel('channel') && !i.options.getString('message')) {
-    if (sub === 'schedule' && ctx.data.list('sched:').length >= MAX_SCHEDULES) throw new UserError(`You can keep up to ${MAX_SCHEDULES} scheduled announcements.`);
-    const colorRaw0 = i.options.getString('color'); const color0 = colorRaw0 ? normalizeHex(colorRaw0) : null;
-    if (colorRaw0 && !color0) throw new UserError('Colors look like `#5865F2`.');
-    const form = { sub, rich: true, by: i.user.id, color: color0, title: i.options.getString('title') ?? undefined, repeat: i.options.getString('repeat') ?? 'none' };
-    return i.showModal(richAnnounceModal(forms.put(form), sub, { channelId: i.channelId }));
-  }
-  const ch = await getChannelOption(i, 'channel', true);
-  if (!ch?.isTextBased()) throw new UserError('Pick a text channel.');
-  const colorRaw = i.options.getString('color');
-  const color = colorRaw ? normalizeHex(colorRaw) : null;
-  if (colorRaw && !color) throw new UserError('Colors look like `#5865F2`.');
-  const ping = i.options.getString('ping') ?? 'none';
-  const form = { sub, channelId: ch.id, color, ping, roleIds: roleIdsFrom(i, ping), by: i.user.id, title: i.options.getString('title') ?? undefined };
-  if (sub === 'schedule') {
-    if (ctx.data.list('sched:').length >= MAX_SCHEDULES) throw new UserError(`You can keep up to ${MAX_SCHEDULES} scheduled announcements.`);
-    const whenRaw = i.options.getString('when');
-    if (!whenRaw) throw new UserError('Say when with the `when` option, or run `/announce schedule` with nothing filled in to use the popup.');
-    form.at = parseWhen(whenRaw, ctx.config.get('timezoneOffset'));
-    if (form.at < Date.now() + 30000) throw new UserError('That time is in the past (or too soon). Pick at least a minute ahead.');
-    if (form.at > Date.now() + 366 * DAY) throw new UserError('Schedule within the next year.');
-    form.repeat = i.options.getString('repeat') ?? 'none';
-  }
-
-  const text = i.options.getString('message');
-  if (text) return finishAnnouncement(ctx, i, form, text, form.title);
-
-  // No text typed in the command: ask for it in a popup (Discord has no way to type a line break in a slash option).
-  return i.showModal(announceModal(forms.put(form), sub, form.title));
+  if (sub === 'list') return i.reply(scheduleList(ctx, i));
+  return annPipe.launch(ctx, i, sub === 'schedule' ? 'schedule' : 'send');
 }
 
 async function announceForm(ctx, i) {
+  if (i.customId.startsWith('announce:cancel:')) {
+    if (i.customId.split(':')[2] !== i.user.id) throw new UserError('That list belongs to someone else. Run `/announce list` yourself.');
+    need(ctx, i, 'engagement.announce');
+    const id = Number(i.values?.[0]);
+    if (!ctx.data.get(`sched:${id}`)) return i.update(scheduleList(ctx, i, 'That one was already gone.'));
+    ctx.data.delete(`sched:${id}`);
+    const { flags, ...msg } = scheduleList(ctx, i, `🗑️ Cancelled #${id}.`);
+    return i.update(msg);
+  }
   const form = forms.take(i.customId.split(':')[2], i.user.id);
   const text = i.fields.getTextInputValue('text').trim();
   if (!text) throw new UserError('The message cannot be empty.');
@@ -610,26 +640,12 @@ async function onMessageDelete(ctx, message) {
 
 // ------------------------------------------------------------------ definition
 const channelOpt = (o) => o.setName('channel').setDescription('Where to post').setRequired(true);
-const announceOptions = (s, { schedule = false } = {}) => {
-  // Everything is optional: with nothing filled in, one popup asks for it all.
-  s.addChannelOption((o) => o.setName('channel').setDescription('Where to post (leave empty to choose in the popup)'));
-  if (schedule) s.addStringOption((o) => o.setName('when').setDescription('e.g. 2h, 1d, or 2026-12-31 18:30 (or set it in the popup)'));
-  s.addStringOption((o) => o.setName('message').setDescription('The text. Leave this empty to write it in a popup instead').setMaxLength(1800))
-    .addStringOption((o) => o.setName('title').setDescription('Optional title (makes it an embed)').setMaxLength(250))
-    .addStringOption((o) => o.setName('color').setDescription('Hex color for the embed, e.g. #5865F2'))
-    .addStringOption((o) => o.setName('ping').setDescription('Notify people?').addChoices({ name: 'no ping', value: 'none' }, { name: '@everyone', value: 'everyone' }, { name: '@here', value: 'here' }, { name: 'role(s) chosen below', value: 'role' }))
-    .addRoleOption((o) => o.setName('role').setDescription('Role to ping'))
-    .addRoleOption((o) => o.setName('role2').setDescription('A second role to ping'))
-    .addRoleOption((o) => o.setName('role3').setDescription('A third role to ping'));
-  if (schedule) s.addStringOption((o) => o.setName('repeat').setDescription('Repeat?').addChoices({ name: 'no', value: 'none' }, { name: 'daily', value: 'daily' }, { name: 'weekly', value: 'weekly' }));
-  return s;
-};
 const statusChoices = Object.entries(STATUS).map(([value, v]) => ({ name: v.label, value }));
 const idOpt = (o) => o.setName('id').setDescription('Suggestion number').setRequired(true).setMinValue(1);
 
 export default {
   name: 'engagement',
-  version: '1.2.0',
+  version: '1.3.0',
   description: 'Announcements, polls and suggestions (one voting engine) and a configurable starboard.',
   settings: [
     { key: 'starEnabled', type: 'toggle', label: 'Starboard on', default: true },
@@ -656,14 +672,14 @@ export default {
   commands: [
     {
       permission: 'engagement.announce',
-      data: new SlashCommandBuilder().setName('announce').setDescription('Announcements')
-        .addSubcommand((s) => announceOptions(s.setName('send').setDescription('Post an announcement now')))
-        .addSubcommand((s) => announceOptions(s.setName('schedule').setDescription('Post an announcement later'), { schedule: true }))
-        .addSubcommand((s) => s.setName('list').setDescription('Show scheduled announcements'))
-        .addSubcommand((s) => s.setName('cancel').setDescription('Cancel a scheduled announcement').addIntegerOption((o) => o.setName('id').setDescription('Its number').setRequired(true))),
+      data: new SlashCommandBuilder().setName('announce').setDescription('Announcements (everything is entered in a form)')
+        .addSubcommand((s) => s.setName('send').setDescription('Post an announcement now'))
+        .addSubcommand((s) => s.setName('schedule').setDescription('Post an announcement later, once or repeating'))
+        .addSubcommand((s) => s.setName('list').setDescription('Show and cancel scheduled announcements')),
       execute: announceCmd,
     },
     {
+      ownPopup: ['create'], // opens its own popup when run with nothing filled in
       data: new SlashCommandBuilder().setName('poll').setDescription('Polls')
         .addSubcommand((s) => s.setName('create').setDescription('Start a poll in this channel')
           .addStringOption((o) => o.setName('question').setDescription('The question - leave empty to use a popup').setMaxLength(250))
@@ -745,7 +761,7 @@ export default {
       return { channel: ch.name, warning: problem ? `Posted without the ping: ${problem}` : null };
     },
   },
-  components: [{ prefix: 'poll:', execute: pollVote }, { prefix: 'sugg:', execute: suggestionVote }, { prefix: 'announce:', execute: announceForm }, { prefix: 'engform:', execute: engagementForm }],
+  components: [{ prefix: 'poll:', execute: pollVote }, { prefix: 'sugg:', execute: suggestionVote }, { prefix: 'announce:', execute: announceForm }, { prefix: 'engform:', execute: engagementForm }, annPipe.component],
   events: { messageReactionAdd: onStar, messageReactionRemove: onStar, messageDelete: onMessageDelete },
   tasks: [
     { name: 'scheduler', everyMs: 30000, run: schedulerTask },

@@ -60,8 +60,52 @@ export default {
 `guildMemberAdd, guildMemberRemove, messageCreate, messageDelete, messageUpdate, messageReactionAdd, messageReactionRemove,
 presenceUpdate, voiceStateUpdate, channelDelete, roleDelete, guildBanAdd, guildAuditLogEntryCreate`. Handlers get `(ctx, ...discordArgs)` and only fire for servers where the module is enabled.
 
-## Popups (modals) and half-finished commands
+## Popups (modals) and half-finished commands (2.1 style)
 Discord allows a popup only as the *first* response to an interaction, with at most 5 text fields, and not in answer to another popup. `src/forms.js` gives a small store for this: the command saves its simple options with `formStore('mymodule').put({ by: user.id, ... })`, shows the popup with the returned token in its `customId`, and the popup's submit handler calls `.take(token, user.id)` (single use, owner only, expires after 15 minutes). Because validation errors can't re-open a popup, check the cheap things *before* showing it.
+
+## Every command is a popup (2.2)
+Write commands with normal slash options (`addStringOption`, `addUserOption`, ...). The core registers them with Discord **without** those options and, when the command runs, opens a popup built from them; your `execute` then reads `i.options.getString(...)` etc. as usual. More than 5 options are asked in parts automatically. If your command shows its own, richer popup when run with nothing filled in, declare `ownPopup: ['subcommand']` (or `ownPopup: true`) and the core leaves it alone. Don't call `showModal` after reading options: Discord does not allow a popup in answer to a popup.
+
+## The modal pipeline (2.2): command -> button -> popup
+New commands should take **no typed options**. Anything typed goes in a popup, opened from a private button:
+
+```js
+import { createPipeline } from '../../src/modalpipe.js';
+
+const pipe = createPipeline({
+  ns: 'mph',                                  // short prefix, unique across modules
+  forms: {
+    greet: {
+      title: 'Send a greeting', permission: 'hello.use',
+      button: { label: 'Configure greeting', emoji: '👋' },
+      intro: 'Pick who to greet and what to say.',
+      precheck: async (ctx, i, args) => {},   // cheap checks, before the button AND before the popup
+      fields: (ctx, i, [targetId]) => [      // built when the popup opens; see src/modalkit.js for kinds
+        ...(targetId ? [] : [{ id: 'who', kind: 'user', label: 'Who' }]),
+        { id: 'text', kind: 'paragraph', label: 'Message', max: 500 },
+      ],
+      async submit(ctx, i, values, [targetId]) {
+        // throw new UserError('...') -> the member sees it with a "Try again" button that reopens the form pre-filled
+        await i.reply({ content: `👋 <@${targetId ?? values.who}> ${values.text}` });
+      },
+    },
+  },
+});
+
+// in the module definition
+commands: [
+  { permission: 'hello.use', data: new SlashCommandBuilder().setName('greet').setDescription('Greet someone'), execute: (ctx, i) => pipe.launch(ctx, i, 'greet') },
+  { permission: 'hello.use', data: new ContextMenuCommandBuilder().setName('Greet').setType(ApplicationCommandType.User), execute: (ctx, i) => pipe.launch(ctx, i, 'greet', [i.targetUser.id]) },
+],
+components: [pipe.component],
+```
+
+- `pipe.launch(ctx, i, form, args)`: from a command, posts the private button. `args` (ids, short words) travel in the signed token.
+- `pipe.open(ctx, i, form, args)`: opens the popup straight from a click on your own button or select.
+- `pipe.button(i, form, args, { label, emoji })`: a button for your own messages that opens a form.
+- Field kinds: `text`, `paragraph`, `number`, `select` (`options`, `value`), `user`, `role`, `roles`, `channel`. 5 fields at most, labels 45 characters at most (checked when the form is built).
+- Tokens are signed, owner-locked, expire after 15 minutes, can be submitted once, and survive hot reloads and restarts. Details: `docs/GAMES.md` section 0.
+- Set `trigger: 'direct'` on a form (or the pipeline) to skip the button. Discord allows a popup straight from a command.
 
 ## Dashboard panels
 A panel is a table (`view`) with optional row actions and confirmed global actions. The server only lets a person without Manage Server use a panel if they hold the dashboard-wide `dashboard.access` permission **and** the panel's own `permission`; a panel without a `permission` is admin-only. Row actions are sent `{ id, userId }` (both set to the row's `id`); read whichever suits.
@@ -91,5 +135,5 @@ Unique command names across modules; commands can't mix subcommands with plain o
 - Modules are **trusted code** running in the bot's process. Review anything you install.
 
 ## Developing
-- `/module reload name:<module>` (bot owner) hot-reloads your code in every server using it. If it fails to load or start, it rolls back to the previous version automatically, and a database backup is taken first.
+- `/module` → pick the module → **Reload from disk** (bot owner) hot-reloads your code in every server using it. If it fails to load or start, it rolls back to the previous version automatically, and a database backup is taken first.
 - `npm test` loads every module with the real discord.js and validates it. Add a test in `tests/run.js` using the fake-Discord helpers there.

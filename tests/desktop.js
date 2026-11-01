@@ -23,7 +23,7 @@ import { ensureBotCode, seedData, installedVersion } from '../desktop/lib/botins
 import { runTool } from '../desktop/lib/tools.js';
 import { editionConfig } from '../desktop/scripts/set-edition.js';
 import { bundleFiles } from '../desktop/scripts/bundle-bot.js';
-import { levelOf as toolLevel, summary as toolSummary, importDb, exportDb } from '../scripts/app-tools.js';
+import { levelOf as toolLevel, summary as toolSummary, importDb, exportDb, exportLevels, mergeLevels } from '../scripts/app-tools.js';
 import { blockedBy, processName, takeControl, isNodeName } from '../desktop/lib/takeover.js';
 import { updateMode, channelFor, compareVersions, readLatest, RELEASES } from '../desktop/lib/updater.js';
 import { verifySecret, addRedirectUri } from '../desktop/lib/discord.js';
@@ -424,6 +424,43 @@ export default async function ({ test }) {
     assert.ok(handler.indexOf('verifySecret') < handler.indexOf('vault.merge'), 'checked before it is saved');
   });
 
+  await test('levels files: export holds only XP and messages; merge keeps everyone\'s higher level, twice is harmless, full import refuses it', async () => {
+    const id = (n) => String(900000000000000000n + BigInt(n));
+    const live = tmp(); const db = new Database(path.join(live, 'eclipse.db'));
+    db.upsertGuild('9', 'Old Server'); db.setModuleState('9', 'community', true, '1');
+    db.dataSet('9', 'community', `user:${id(1)}`, { xp: 5000, messages: 300, rep: 7, lastXp: 123 });
+    db.dataSet('9', 'community', `user:${id(2)}`, { xp: 800, messages: 40 });
+    db.dataSet('9', 'moderation', 'hist:1', { secret: 'case notes' });
+    const file = path.join(tmp(), 'levels.goodboy');
+    const ex = await exportLevels(live, file); db.close();
+    assert.equal(ex.memberCount, 2);
+    const { DatabaseSync } = await import('node:sqlite'); const f = new DatabaseSync(file, { readOnly: true });
+    assert.deepEqual(f.prepare('SELECT DISTINCT module FROM module_data').all().map((r) => r.module), ['community'], 'nothing but levels in the file');
+    assert.deepEqual(JSON.parse(f.prepare('SELECT value FROM module_data WHERE key = ?').get(`user:${id(1)}`).value), { xp: 5000, messages: 300 }, 'no rep, no timestamps');
+    f.close();
+    // a new server with its own members: one is ahead, one is behind, one is new
+    const target = tmp(); const t = new Database(path.join(target, 'eclipse.db'));
+    t.upsertGuild('77', 'New Server');
+    t.dataSet('77', 'community', `user:${id(1)}`, { xp: 100, messages: 5, rep: 2 });
+    t.dataSet('77', 'community', `user:${id(3)}`, { xp: 9999, messages: 1 });
+    t.dataSet('77', 'moderation', 'hist:9', { keep: true }); t.close();
+    const m = await mergeLevels(file, target);
+    assert.deepEqual([m.added, m.raised, m.unchanged, m.guild.name], [1, 1, 0, 'New Server']);
+    assert.ok(fs.existsSync(m.backup), 'a backup was made first');
+    const after = new Database(path.join(target, 'eclipse.db'));
+    assert.deepEqual(after.dataGet('77', 'community', `user:${id(1)}`), { xp: 5000, messages: 300, rep: 2 }, 'raised, own reputation kept');
+    assert.equal(after.dataGet('77', 'community', `user:${id(2)}`).xp, 800, 'new member added');
+    assert.equal(after.dataGet('77', 'community', `user:${id(3)}`).xp, 9999, 'nobody goes down');
+    assert.deepEqual(after.dataGet('77', 'moderation', 'hist:9'), { keep: true }, 'nothing else changes'); after.close();
+    const again = await mergeLevels(file, target);
+    assert.deepEqual([again.added, again.raised, again.unchanged], [0, 0, 2], 'merging the same file twice changes nothing');
+    await assert.rejects(importDb(file, tmp()), /only holds levels/);
+    await assert.rejects(mergeLevels(file, tmp()), /Start the bot once/);
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    const mh = main.slice(main.indexOf("'gb:levels-merge'"), main.indexOf('// ---- app updates'));
+    assert.ok(mh.indexOf('runner.stop()') < mh.indexOf("'merge-levels'"), 'the bot is stopped before levels are merged');
+  });
+
   await test('data files: export makes one file a fresh install can import, with every row; other files and damaged ones are refused and nothing is lost', async () => {
     const live = tmp(); const db = new Database(path.join(live, 'eclipse.db'));
     db.upsertGuild('9', 'A Basic Discord Server'); db.setModuleState('9', 'community', true, '1');
@@ -691,7 +728,7 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
     const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
     const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'updateCheck', 'updateInstall', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'updateCheck', 'updateInstall', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
     assert.match(main, /const ownerOnly = \(\) =>/); for (const h of ['gb:lic-keygen', 'gb:lic-create', 'gb:lic-revoke']) assert.match(main.slice(main.indexOf(`'${h}'`), main.indexOf(`'${h}'`) + 200), /ownerOnly\(\)/, `${h} only works in the Owner version`);
     assert.ok(!/privateKey/.test(main.slice(main.indexOf("'gb:lic-state'"), main.indexOf("'gb:lic-keygen'"))), 'the signing key is never sent to the window');
     assert.match(main, /url && url\.startsWith\('https:\/\/discord\.com\/'\)/, 'setup only ever opens discord.com pages');

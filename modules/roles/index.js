@@ -181,6 +181,7 @@ export default {
   commands: [
     {
       permission: 'roles.manage',
+      ownPopup: ['create'], // opens its own popup when run with nothing filled in
       data: new SlashCommandBuilder().setName('rolemenu').setDescription('Post a self-service role menu in this channel')
         .addSubcommand((s) => roleOpts(s.setName('create').setDescription('Create a menu (up to 10 roles)')
           .addStringOption((o) => o.setName('title').setDescription('Menu title')))
