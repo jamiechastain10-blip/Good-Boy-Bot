@@ -1,5 +1,28 @@
+<div align="center">
+
+<img src="src/dashboard/public/good-boy-logo.png" alt="Good Boy logo" width="110">
+
 # Good Boy
 **Basic Ghost Labs** · modular Discord bot platform
+
+### ⬇️ Download
+
+[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Setup.exe)
+
+[![Windows portable](https://img.shields.io/badge/Windows-Portable_.exe-3A6EA5?style=flat-square&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Portable.exe)
+[![Mac](https://img.shields.io/badge/Mac-.dmg_(Apple_silicon)-555555?style=flat-square&logo=apple&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Mac.dmg)
+[![Android](https://img.shields.io/badge/Android-phone_app-3DDC84?style=flat-square&logo=android&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Android.apk)
+[![All downloads](https://img.shields.io/github/v/release/jamiechastain10-blip/Good-Boy-Bot?style=flat-square&label=latest&color=F2A93B)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest)
+
+The **installer** is the one to pick on Windows: it sets everything up and updates itself when a new version comes out.
+The portable `.exe` runs without installing (and tells you about updates instead). The Mac app is not signed yet:
+right-click it and choose **Open** the first time.
+
+</div>
+
+---
+
+**Prefer to run it from the code?** That works too, as described below.
 
 Moderation, member management, roles, tickets, polls, leveling, voice TTS, feeds and image quotes, built as
 independent **modules** you switch on or off per server. It runs on your own computer: **`npm install`, `npm start`, nothing else** (no Docker, no database server, no build step).
@@ -108,7 +131,7 @@ The bot is online only while `npm start` is running. Close the window → it goe
 
 **Supervisor and self-updates (optional):** `npm run supervised` runs the bot under a watcher that restarts it after a crash and can install signed updates with automatic rollback. Updates are **off** until you publish signed releases and set `UPDATE_MANIFEST_URL`; see [`docs/UPDATES.md`](docs/UPDATES.md). **Desktop app** (Windows/macOS control panel): built by GitHub Actions, and the built Windows app is started and checked on each build. See [`docs/DESKTOP.md`](docs/DESKTOP.md). The legal pages are served at `/terms` and `/privacy` on the dashboard address (set `LEGAL_OPERATOR` and `LEGAL_CONTACT` in `.env`).
 
-**Updating by hand:** replace the project files (keep `.env` and `data/`), run `npm install`, restart. The database upgrades itself and a backup is saved to `data/backups/` first. To update one module without restarting: replace its folder, then `/module reload name:<module>` (bot owner only). If the new code is broken, it **rolls back automatically** and keeps running the old version.
+**Updating by hand:** replace the project files (keep `.env` and `data/`), run `npm install`, restart. The database upgrades itself and a backup is saved to `data/backups/` first. To update one module without restarting: replace its folder, then `/module` → pick it → **Reload from disk** (bot owner only). If the new code is broken, it **rolls back automatically** and keeps running the old version.
 
 ---
 
@@ -135,7 +158,7 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 - **Dashboard** listens on `127.0.0.1` only by default. Reaching it from elsewhere is explained in [`docs/HOSTING.md`](docs/HOSTING.md). Inbound webhooks follow the same rule.
 - **Goodbye messages** can't tell a leave from a kick/ban (Discord doesn't say); the moderation log covers kicks and bans.
 - **Roblox lookup** (`/id roblox`, off by default) was written from memory of Roblox's public API and has never been run against it. Linked game accounts are only format-checked and always shown as *not verified*.
-- **Updates** are tested against a local update server only; nothing has been published or installed from a real host, and the supervisor has not been run on Windows. **The desktop app has not been built or started** (no `.exe` or `.dmg` exists yet).
+- **The bot's own signed updates** (`npm run supervised`) are tested against a local update server only, and the supervisor has not been run on Windows. The **desktop app** is built, started and checked by GitHub for every release and published under Releases; installed Windows apps update themselves from there.
 - **Statistics** start counting when the module is turned on; the backfill reads recent history only and is labelled as such.
 - **Not built:** Twitch/Steam/Spotify integrations, a module marketplace, updates that install without a click, achievement role rewards, the Minecraft launcher and server manager. **Deliberately excluded:** giveaways, AI, anything that sells coins for real money.
 - One SQLite file (`data/eclipse.db`, the name is kept so existing data carries over) is plenty for personal and mid-sized communities.
@@ -154,7 +177,7 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 11. Optional: `npm run supervised` and open Dashboard → Updates (as the bot owner); it should say updates are off.
 
 ## Security notes
-Secrets live only in `.env` (never commit it; it's in `.gitignore`). Permissions are enforced centrally by the core (the bot also checks role hierarchy, so a moderator can't act on someone above them). The bot refuses to hand out roles that carry dangerous permissions through menus/rewards/auto-roles. `@everyone`/role pings are off unless a feature explicitly needs them. Outbound feed fetches block private/internal addresses. The dashboard re-checks the person's rights with Discord on every request, and panels are enforced on the server, not just hidden in the page. Settings changes and permission edits are written to the security log.
+Secrets live only in `.env` (never commit it; it's in `.gitignore`). Permissions are enforced centrally by the core (the bot also checks role hierarchy, so a moderator can't act on someone above them). The bot refuses to hand out roles that carry dangerous permissions through menus/rewards/auto-roles. `@everyone`/role pickers are off unless a feature explicitly needs them. Outbound feed fetches block private/internal addresses. The dashboard re-checks the person's rights with Discord on every request, and panels are enforced on the server, not just hidden in the page. Settings changes and permission edits are written to the security log.
 
 ---
 © 2026 Basic Ghost Labs. All rights reserved. · Good Boy

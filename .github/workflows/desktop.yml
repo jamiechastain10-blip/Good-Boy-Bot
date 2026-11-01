@@ -183,12 +183,23 @@ jobs:
           if [ "$THIS_REPO" = "$REPO" ]; then export GH_TOKEN="$OWN_TOKEN"; else export GH_TOKEN="$CROSS_TOKEN"; fi
           if [ -z "${GH_TOKEN}" ]; then echo "::error::The RELEASES_TOKEN secret is missing. Add it in Settings > Secrets and variables > Actions, or build from Good-Boy-Bot."; exit 1; fi
           v=$(node -p "require('./desktop/package.json').version")
-          if gh release view "v$v" -R "$REPO" >/dev/null 2>&1; then echo "Version $v is already published. Raise the version in desktop/package.json to publish again."; exit 0; fi
+          # Copies without the version in the name, so a download button can always point at
+          # releases/latest/download/Good-Boy-Setup.exe and never go out of date. The updater keeps using latest.yml.
+          mkdir -p out/stable
+          cp "out/consumer/Good-Boy-Setup-$v.exe" out/stable/Good-Boy-Setup.exe
+          cp "out/consumer/Good-Boy-Portable-$v.exe" out/stable/Good-Boy-Portable.exe
+          cp "$(ls out/mac/*.dmg | head -1)" out/stable/Good-Boy-Mac.dmg
+          cp "$(ls out/android/*.apk | head -1)" out/stable/Good-Boy-Android.apk
+          if gh release view "v$v" -R "$REPO" >/dev/null 2>&1; then
+            echo "Version $v is already published. Adding any missing download-button files, nothing else changes."
+            gh release upload "v$v" out/stable/* -R "$REPO" --clobber
+            exit 0
+          fi
           # release notes: this version's part of CHANGELOG.md
           awk -v v="## $v" '$0==v{on=1;next} /^## /{if(on)exit} on' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "Good Boy $v" > notes.md
           ls -la out/*
-          files=$(ls out/consumer/* out/developer/* out/mac/*.dmg out/android/*.apk)
+          files=$(ls out/consumer/* out/developer/* out/mac/*.dmg out/android/*.apk out/stable/*)
           gh release create "v$v" $files -R "$REPO" --title "Good Boy $v" --notes-file notes.md
           echo "Published https://github.com/$REPO/releases/tag/v$v"
 
