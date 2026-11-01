@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Connect</title>
+<style>
+:root{--bg:#F2F4F8;--card:#fff;--ink:#0E1726;--ink2:#4A5A72;--ink3:#8593A8;--blue:#1A6BFF;--red:#F0525C}
+@media (prefers-color-scheme:dark){:root{--bg:#0B1220;--card:#141D2E;--ink:#EEF2F8;--ink2:#A9B6CC;--ink3:#6F7E96}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif;padding:48px 20px}
+.wrap{max-width:440px;margin:0 auto;text-align:center}img{width:120px;height:120px}
+h1{font-size:28px;margin:10px 0 6px}p{color:var(--ink2);margin:0 0 22px}
+.card{background:var(--card);border-radius:16px;padding:16px;text-align:left}
+label{font-size:13px;font-weight:600;color:var(--ink2)}
+input{width:100%;margin-top:6px;border:0;background:var(--bg);color:var(--ink);border-radius:10px;padding:13px 12px;font:inherit;outline:none}
+button{width:100%;margin-top:16px;border:0;border-radius:14px;padding:15px;background:var(--blue);color:#fff;font:600 17px system-ui,sans-serif}
+.err{color:var(--red);font-size:14px;margin-top:10px;min-height:20px}.help{font-size:13px;color:var(--ink3);margin-top:18px;text-align:left}
+</style></head><body><div class="wrap">
+<img src="logo.png" alt=""><h1>Good Boy</h1>
+<p>Connect to your bot. It needs your dashboard link once.</p>
+<div class="card"><label for="link">Dashboard link</label>
+<input id="link" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://basic-pc.tail1234.ts.net">
+<div class="err" id="err" role="alert"></div>
+<button id="go" type="button">Connect</button></div>
+<div class="help">Where to find it: open the Good Boy app on the computer that runs your bot, go to <b>Settings &gt; Dashboard link</b>, press <b>Share dashboard</b>, then copy the link.</div>
+</div>
+<script>
+var input = document.getElementById('link'), err = document.getElementById('err');
+try { var had = window.GoodBoyAndroid && GoodBoyAndroid.link(); if (had) input.value = had; } catch (e) {}
+function go() {
+  var v = input.value.trim().replace(/\/app\/?$/, '').replace(/\/+$/, '');
+  if (!v) { err.textContent = 'Paste your dashboard link.'; return; }
+  if (/^http:\/\//i.test(v)) { err.textContent = 'The link must start with https:// (use the link from Share dashboard).'; return; }
+  var ok = false; try { ok = window.GoodBoyAndroid && GoodBoyAndroid.connect(v); } catch (e) {}
+  if (!ok) err.textContent = 'That does not look like a dashboard link. It looks like https://your-computer.something.ts.net';
+}
+document.getElementById('go').addEventListener('click', go);
+input.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+</script></body></html>

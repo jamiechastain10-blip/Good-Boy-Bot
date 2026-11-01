@@ -26,9 +26,20 @@ const STATIC = {
   '/glass.css': ['glass.css', 'text/css; charset=utf-8'],
   '/good-boy-logo.png': ['good-boy-logo.png', 'image/png'],
   '/favicon.ico': ['good-boy-logo.png', 'image/png'],
+  // the phone app (iPhone: Add to Home Screen; Android: the Good Boy app opens /app)
+  '/app': ['app.html', 'text/html; charset=utf-8'],
+  '/mobile.js': ['mobile.js', 'text/javascript; charset=utf-8'],
+  '/mobile.css': ['mobile.css', 'text/css; charset=utf-8'],
+  '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'],
+  '/icon-192.png': ['icon-192.png', 'image/png'],
+  '/icon-512.png': ['icon-512.png', 'image/png'],
+  '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
+  '/fonts/Inter-Regular.woff': ['fonts/Inter-Regular.woff', 'font/woff'],
+  '/fonts/Inter-SemiBold.woff': ['fonts/Inter-SemiBold.woff', 'font/woff'],
+  '/fonts/InterDisplay-Bold.woff': ['fonts/InterDisplay-Bold.woff', 'font/woff'],
 };
 // Files that never change between releases can be cached by the browser; the rest are re-checked every load.
-const CACHEABLE = new Set(['/good-boy-logo.png', '/favicon.ico']);
+const CACHEABLE = new Set(['/good-boy-logo.png', '/favicon.ico', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/fonts/Inter-Regular.woff', '/fonts/Inter-SemiBold.woff', '/fonts/InterDisplay-Bold.woff']);
 const MANAGE_GUILD = 0x20n, ADMIN = 0x8n;
 const SESSION_MS = 12 * 3600 * 1000;
 const STATE_MS = 10 * 60 * 1000;
@@ -187,7 +198,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
     res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'");
 
     // Browsers treat localhost and 127.0.0.1 as different sites; keep everyone on the configured one so cookies line up.
-    if (req.method === 'GET' && ['/', '/login', '/auth/diagnose'].includes(p) && requestHost(req) && requestHost(req) !== new URL(base).host) {
+    if (req.method === 'GET' && ['/', '/app', '/login', '/auth/diagnose'].includes(p) && requestHost(req) && requestHost(req) !== new URL(base).host) {
       return send(res, 302, '', { Location: `${base}${p}${url.search}` });
     }
 

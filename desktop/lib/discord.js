@@ -109,3 +109,24 @@ export async function verifySecret(appId, secret, fetchFn = fetch) {
     return { ok: false, kind: 'other', error: `Discord could not check the secret right now (HTTP ${r.status}).` };
   } catch { return { ok: false, kind: 'network', error: 'Could not reach Discord to check the secret.' }; }
 }
+
+/**
+ * Puts the dashboard's login address on the bot's OAuth2 Redirects list, so the dashboard login works from that
+ * address. Keeps every address already there. If Discord does not allow this for the bot, says so, and the app shows
+ * the address to add by hand instead.
+ */
+export async function addRedirectUri(token, uri, fetchFn = fetch) {
+  const t = String(token ?? '').trim();
+  const headers = { Authorization: `Bot ${t}`, 'Content-Type': 'application/json', 'User-Agent': 'GoodBoy (https://basicghostlabs.com, 2.1)' };
+  try {
+    const g = await fetchFn(`${API}/applications/@me`, { headers, signal: AbortSignal.timeout(10000) });
+    if (!g.ok) return { ok: false, error: `Discord answered ${g.status}.` };
+    const app = await g.json();
+    const list = Array.isArray(app?.redirect_uris) ? app.redirect_uris.map(String) : [];
+    if (list.includes(uri)) return { ok: true, already: true };
+    const p = await fetchFn(`${API}/applications/@me`, { method: 'PATCH', headers, body: JSON.stringify({ redirect_uris: [...list, uri].slice(-10) }), signal: AbortSignal.timeout(10000) });
+    const after = p.ok ? await p.json().catch(() => null) : null;
+    if (Array.isArray(after?.redirect_uris) && after.redirect_uris.includes(uri)) return { ok: true, added: true };
+    return { ok: false, error: 'Discord did not let the app add it automatically.' };
+  } catch { return { ok: false, error: 'Could not reach Discord.' }; }
+}

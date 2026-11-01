@@ -450,6 +450,16 @@ export default {
   ],
   components: [{ prefix: 'rep:', execute: repComponent }],
   views: {
+    /** For the phone app: the leaderboard with names and pictures. */
+    async levels(ctx) {
+      const all = ranking(ctx, 'xp').filter((x) => x.xp > 0);
+      const rows = all.slice(0, 100).map((x, n) => {
+        const m = ctx.guild?.members.cache.get(x.id);
+        const l = levelOf(x.xp);
+        return { rank: n + 1, id: x.id, name: m?.displayName ?? `Member …${x.id.slice(-4)}`, avatar: m?.displayAvatarURL?.({ size: 64, extension: 'png' }) ?? null, xp: x.xp, level: l.level, into: l.into, needed: l.needed };
+      });
+      return { total: all.length, rows };
+    },
     async reputation(ctx) {
       const name = (id) => ctx.guild?.members.cache.get(id)?.displayName ?? id;
       const rows = ranking(ctx, 'rep').filter((x) => x.rep !== 0).slice(0, 100).map((x) => ({ id: x.id, name: name(x.id), rep: x.rep }));

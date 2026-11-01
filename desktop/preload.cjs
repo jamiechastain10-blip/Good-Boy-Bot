@@ -47,6 +47,12 @@ contextBridge.exposeInMainWorld('goodBoy', {
   updateCheck: () => ipcRenderer.invoke('gb:update-check'),
   updateOpen: () => ipcRenderer.invoke('gb:update-open'),
   updateInstall: () => ipcRenderer.invoke('gb:update-install'),
+  shareState: () => ipcRenderer.invoke('gb:share-state'),
+  shareOn: () => ipcRenderer.invoke('gb:share-on'),
+  shareOff: () => ipcRenderer.invoke('gb:share-off'),
+  shareSetup: () => ipcRenderer.invoke('gb:share-setup'),
+  onShareStep: listen('share-step'),
+  shareLink: (url) => ipcRenderer.invoke('gb:share-link', String(url ?? '')),
   onState: listen('state'),
   onLog: listen('log'),
 });

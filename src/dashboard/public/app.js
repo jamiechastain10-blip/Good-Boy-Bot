@@ -15,6 +15,8 @@ function applyAppearance() {
   document.body.classList.toggle('motion-off', !state.motion);
 }
 applyAppearance();
+// Back to the phone app after logging in from it.
+if (pref.get('gb-return', '') === '/app') { pref.set('gb-return', ''); location.replace('/app'); }
 
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);

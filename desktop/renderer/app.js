@@ -221,6 +221,7 @@ const PAGES = {
             el('button', { class: 'btn quiet', onclick: async () => { const i = document.getElementById('new-secret'); const v = i.value.trim(); if (!v) return toast('Paste the new client secret first.', true); const r = await gb.setupSecret(v); i.value = ''; toast(r.ok ? 'Client secret checked with Discord and saved. Restart the bot to use it.' : r.error, !r.ok); } }, 'Check and save')),
             el('span', { class: 'meta' }, 'Developer Portal > your app > OAuth2 > Reset Secret.')),
           el('div', { class: 'row' }, el('button', { class: 'btn quiet', onclick: () => { forceSetup = true; W.step = 'welcome'; setupFound = null; render(); } }, 'Run setup again'))),
+          shareGroup(),
           el('div', { class: 'section-title' }, 'Server data'), el('div', { class: 'group' },
             el('div', { class: 'row inset' }, tile('folder', 'teal'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Move or back up your data'), el('span', { class: 'meta' }, 'Levels, settings, tickets and everything else, in one .goodboy file. The token is never included.'))),
             el('div', { class: 'row' }, el('div', { class: 'row-btns' },
@@ -271,6 +272,55 @@ const PAGES = {
   },
 };
 let forceSetup = false;
+
+// ---------------------------------------------------------------- dashboard link (works from anywhere)
+const SH = { st: null, at: 0, busy: false, fix: null, manual: null, steps: null, qr: null };
+const SETUP_STEPS = [['install', 'Install Tailscale'], ['login', 'Sign in to Tailscale'], ['funnel', 'Turn on the link'], ['discord', 'Add it to Discord login'], ['phone', 'Pair your phone']];
+gb.onShareStep?.((m) => { SH.steps = { ...(SH.steps ?? {}), [m.id]: m }; render(); });
+async function refreshShare(force = false) {
+  if (SH.busy || (!force && Date.now() - SH.at < 15000)) return;
+  SH.at = Date.now(); SH.st = await gb.shareState(); if (SH.st?.qr) SH.qr = SH.st.qr; render();
+}
+async function runShareSetup() {
+  SH.busy = true; SH.steps = {}; SH.fix = null; render();
+  const r = await gb.shareSetup();
+  SH.busy = false; SH.at = 0;
+  if (r.ok) { SH.manual = r.redirectAdded ? null : r.redirectUri; SH.qr = r.qr ?? SH.qr; toast('Your dashboard link is on. It turns itself on whenever Good Boy starts.'); }
+  else { SH.fix = r.link ? { link: r.link, text: r.error } : null; toast(r.error, true); }
+  refreshShare(true);
+}
+function shareSteps() {
+  if (!SH.steps) return null;
+  const icon = { busy: '…', done: '✓', error: '!', manual: '→' };
+  return el('div', { class: 'group steps' }, SETUP_STEPS.map(([id, label]) => {
+    const m = SH.steps[id];
+    return el('div', { class: 'row inset' }, el('span', { class: `stepdot ${m?.state ?? 'todo'}`, 'aria-hidden': 'true' }, icon[m?.state] ?? ''),
+      el('div', { class: 'two' }, el('span', { class: 'lab' }, label), m?.text ? el('span', { class: 'meta' }, m.text) : null),
+      m?.state === 'error' && m.link ? el('button', { class: 'btn quiet', onclick: () => gb.shareLink(m.link) }, 'Open the page') : null);
+  }));
+}
+function shareGroup() {
+  if (!S.bundled) return null;
+  refreshShare();
+  const st = SH.st, rows = [];
+  const act = async (fn) => { SH.busy = true; render(); const r = await fn(); SH.busy = false; SH.at = 0; return r; };
+  const head = (label, meta, tag) => el('div', { class: 'row inset' }, tile('chart', 'violet'), el('div', { class: 'two' }, el('span', { class: 'lab' }, label), meta ? el('span', { class: 'meta' }, meta) : null), tag ? el('span', { class: 'val' }, el('span', { class: tag[0] }, tag[1])) : null);
+  const setupBtn = (label) => el('div', { class: 'row' }, el('button', { class: 'btn', disabled: SH.busy, onclick: runShareSetup }, SH.busy ? 'Setting up...' : label));
+  if (!st) rows.push(head('Dashboard link', 'Checking...'));
+  else if (st.state === 'on') {
+    rows.push(head('Your dashboard link', st.auto ? 'Works from anywhere while this computer and Good Boy are on. Turns itself back on at every start.' : 'Works from anywhere while this computer and Good Boy are on.', ['tag ok', 'Shared']),
+      el('div', { class: 'row' }, el('div', { class: 'copyrow' }, el('code', { class: 'key' }, st.url), el('button', { class: 'btn quiet', onclick: async () => { await gb.copy(st.url); toast('Link copied.'); } }, 'Copy'))),
+      SH.qr ? el('div', { class: 'row qrrow' }, el('img', { class: 'qr', src: SH.qr, alt: 'QR code for the phone app', width: '180', height: '180' }),
+        el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Pair your phone'), el('span', { class: 'meta' }, 'Scan with your phone\'s camera. iPhone: open it in Safari, then Share > Add to Home Screen. Android: tap "Open in the Good Boy app".'))) : null,
+      opt('keepAwake', 'Keep this computer awake while the bot runs'),
+      el('div', { class: 'row' }, el('button', { class: 'btn quiet', disabled: SH.busy, onclick: async () => { const r = await act(() => gb.shareOff()); toast(r.ok ? 'Stopped sharing. The dashboard is on this computer only again.' : r.error, !r.ok); SH.steps = null; refreshShare(true); } }, 'Stop sharing')));
+  } else rows.push(head('A link that works from anywhere', st.state === 'off' && st.url ? `Your link will be ${st.url}` : 'Use the dashboard and the phone app from anywhere. One button sets it all up with Tailscale (free); you only sign in once.', ['tag off', 'Off']),
+    setupBtn(st.state === 'missing' ? 'Set up' : 'Turn on'));
+  if (SH.fix && !SH.steps) rows.push(el('div', { class: 'row' }, el('span', { class: 'meta' }, SH.fix.text), el('button', { class: 'btn quiet', onclick: () => gb.shareLink(SH.fix.link) }, 'Open the page')));
+  return [el('div', { class: 'section-title' }, 'Dashboard link'), el('div', { class: 'group' }, rows), st?.state !== 'on' || SH.busy ? shareSteps() : null,
+    SH.manual ? el('div', { class: 'redirect' }, el('b', {}, 'Add this to your bot\'s Redirects'), el('p', {}, 'Discord only lets you log in from addresses on the Redirects list. Copy it, open the OAuth2 page, click Add Redirect, paste, then Save Changes.'),
+      el('div', { class: 'copyrow' }, el('code', { class: 'key' }, SH.manual), el('button', { class: 'btn quiet', onclick: async () => { await gb.copy(SH.manual); gb.openLink('oauth'); } }, 'Copy and open OAuth2'))) : null];
+}
 
 // ---------------------------------------------------------------- first-run setup: one question per screen
 const W = { step: 'welcome', token: '', verify: null, checking: false, secret: '', imported: null };

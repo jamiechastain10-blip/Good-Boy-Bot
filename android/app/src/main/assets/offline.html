@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Offline</title>
+<style>
+:root{--bg:#F2F4F8;--card:#fff;--ink:#0E1726;--ink2:#4A5A72;--blue:#1A6BFF}
+@media (prefers-color-scheme:dark){:root{--bg:#0B1220;--card:#141D2E;--ink:#EEF2F8;--ink2:#A9B6CC}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif;padding:64px 20px;text-align:center}
+img{width:110px;height:110px;opacity:.85}h1{font-size:26px;margin:10px 0 6px}p{color:var(--ink2);max-width:420px;margin:0 auto 22px}
+button{display:block;width:100%;max-width:420px;margin:12px auto 0;border:0;border-radius:14px;padding:15px;background:var(--blue);color:#fff;font:600 17px system-ui,sans-serif}
+button.quiet{background:var(--card);color:var(--blue)}
+</style></head><body>
+<img src="logo.png" alt=""><h1>Can't reach your bot</h1>
+<p>The computer running Good Boy may be off or asleep, sharing may be turned off, or this phone has no internet right now.</p>
+<button id="retry" type="button">Try again</button>
+<button id="change" class="quiet" type="button">Change dashboard link</button>
+<script>
+document.getElementById('retry').addEventListener('click', function () { try { GoodBoyAndroid.retry(); } catch (e) {} });
+document.getElementById('change').addEventListener('click', function () { try { GoodBoyAndroid.changeLink(); } catch (e) {} });
+</script></body></html>

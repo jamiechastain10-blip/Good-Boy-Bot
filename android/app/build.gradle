@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The version follows the desktop app (desktop/package.json), so every release says the same number everywhere.
+def appVersion = new groovy.json.JsonSlurper().parse(file('../../desktop/package.json')).version
+def parts = appVersion.tokenize('.').collect { it.replaceAll(/\D.*/, '').toInteger() }
+
+android {
+    namespace 'com.basicghostlabs.goodboy'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.basicghostlabs.goodboy'
+        minSdk 24
+        targetSdk 34
+        versionCode parts[0] * 10000 + parts[1] * 100 + parts[2]
+        versionName appVersion
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+}

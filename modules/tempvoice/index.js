@@ -377,16 +377,40 @@ async function newEventForm(ctx, i) {
   evForms.take(i.customId.split(':')[2], i.user.id);
   const v = readForm(i, eventFields(i.channelId));
   if (!v.name) throw new UserError('Give the event a name.');
-  const panel = ctx.guild.channels.cache.get(v.channel ?? i.channelId);
-  if (!panel?.isTextBased?.()) throw new UserError('Pick a text channel for the sign-up panel.');
-  const id = String(ctx.data.update('evcounter', (x) => x + 1, 0));
-  const ev = EH.newEvent({ id, name: v.name, size: Number(v.size ?? 2), maxTeams: v.maxTeams ?? 10, by: i.user.id, channelId: panel.id, categoryId: v.category ?? null });
   await i.deferReply({ flags: EPH });
+  const ev = await createEvent(ctx, { name: v.name, size: v.size ?? 2, maxTeams: v.maxTeams ?? 10, by: i.user.id, channelId: v.channel ?? i.channelId, categoryId: v.category ?? null });
+  return i.editReply(`**${ev.name}** is open in <#${ev.channelId}>. Teams of ${ev.size}, up to ${ev.maxTeams} teams. Use the panel's buttons to lock sign-ups or end the event.`);
+}
+
+/** Posts a new event's sign-up panel (from the popup, the dashboard or the phone app). */
+async function createEvent(ctx, { name, size, maxTeams, by, channelId, categoryId = null }) {
+  if (!String(name ?? '').trim()) throw new UserError('Give the event a name.');
+  const panel = ctx.guild.channels.cache.get(String(channelId ?? ''));
+  if (!panel?.isTextBased?.()) throw new UserError('Pick a text channel for the sign-up panel.');
+  if (categoryId && ctx.guild.channels.cache.get(String(categoryId))?.type !== ChannelType.GuildCategory) categoryId = null;
+  let ev;
+  try { ev = EH.newEvent({ id: 'new', name, size: Number(size), maxTeams: Number(maxTeams), by, channelId: panel.id, categoryId }); } catch (e) { throw new UserError(e.message); }
+  ev.id = String(ctx.data.update('evcounter', (x) => x + 1, 0));
   const msg = await panel.send(panelFor(ev)).catch(() => null);
-  if (!msg) return i.editReply(`I can't post in <#${panel.id}>. I need View Channel, Send Messages and Embed Links there.`);
+  if (!msg) throw new UserError(`I can't post in #${panel.name}. I need View Channel, Send Messages and Embed Links there.`);
   ev.messageId = msg.id;
-  ctx.data.set(`ev:${id}`, ev);
-  return i.editReply(`**${ev.name}** is open in <#${panel.id}>. Teams of ${ev.size}, up to ${ev.maxTeams} teams. Use the panel's buttons to lock sign-ups or end the event.`);
+  ctx.data.set(`ev:${ev.id}`, ev);
+  return ev;
+}
+async function lockEvent(ctx, id) {
+  return withEvent(ctx, id, async (ev) => { ev.locked = !ev.locked; if (!ev.locked) await fillFromQueue(ctx, ev); await refreshPanel(ctx, ev); return ev.locked; });
+}
+async function endEvent(ctx, id) {
+  const ended = await withEvent(ctx, id, async (ev) => { ev.ended = true; await refreshPanel(ctx, ev); return ev; });
+  // rooms with people in them stay until they empty, like any temporary room; empty ones go now
+  for (const t of ended.teams) {
+    const room = t.roomId && roomOf(ctx, t.roomId);
+    if (!room) continue;
+    delete room.event; delete room.graceUntil; ctx.data.set(`room:${room.id}`, room);
+    await removeIfEmpty(ctx, room, { force: true, ignoreGrace: true });
+  }
+  ctx.data.delete(`ev:${id}`);
+  return ended;
 }
 
 async function eventComponent(ctx, i) {
@@ -408,18 +432,10 @@ async function eventComponent(ctx, i) {
   if (action === 'lock' || action === 'end') {
     if (!ctx.perms.check(i.member, 'tempvoice.manage') && evNow.by !== i.user.id) throw new UserError('Only the event host or staff can do that.');
     if (action === 'lock') {
-      const locked = await withEvent(ctx, id, async (ev) => { ev.locked = !ev.locked; if (!ev.locked) await fillFromQueue(ctx, ev); await refreshPanel(ctx, ev); return ev.locked; });
+      const locked = await lockEvent(ctx, id);
       return done(locked ? 'Sign-ups are locked. Teams already made keep their rooms.' : 'Sign-ups are open again.');
     }
-    const ended = await withEvent(ctx, id, async (ev) => { ev.ended = true; await refreshPanel(ctx, ev); return ev; });
-    // rooms with people in them stay until they empty, like any temporary room; empty ones go now
-    for (const t of ended.teams) {
-      const room = t.roomId && roomOf(ctx, t.roomId);
-      if (!room) continue;
-      delete room.event; delete room.graceUntil; ctx.data.set(`room:${room.id}`, room);
-      await removeIfEmpty(ctx, room, { force: true, ignoreGrace: true });
-    }
-    ctx.data.delete(`ev:${id}`);
+    const ended = await endEvent(ctx, id);
     return done(`**${ended.name}** has ended. Empty team rooms were removed; the others go when their players leave.`);
   }
 
@@ -549,6 +565,25 @@ export default {
   ],
   events: { voiceStateUpdate: onVoice, channelDelete: async (ctx, ch) => { const r = roomOf(ctx, ch.id); if (r) forgetRoom(ctx, r); if (ctx.data.get(`lobby:${ch.id}`)) ctx.data.delete(`lobby:${ch.id}`); } },
   components: [{ prefix: 'tvev:', execute: eventComponent }],
+  views: {
+    /** For the phone app and dashboard: running event hubs and where they can be posted. */
+    async events(ctx) {
+      const name = (id) => ctx.guild?.members.cache.get(id)?.displayName ?? `Member …${String(id).slice(-4)}`;
+      const list = events(ctx).filter((e) => !e.ended).map((e) => ({ id: e.id, name: e.name, size: e.size, maxTeams: e.maxTeams, locked: e.locked, channel: ctx.guild?.channels.cache.get(e.channelId)?.name ?? null,
+        teams: e.teams.map((t) => ({ n: t.n, members: t.members.map(name), open: t.open, room: !!t.roomId })), waiting: e.queue.map(name) }));
+      const channels = [...(ctx.guild?.channels.cache.values() ?? [])].filter((c) => [0, 5].includes(c.type)).sort((x, y) => x.rawPosition - y.rawPosition).map((c) => ({ id: c.id, name: c.name }));
+      const categories = [...(ctx.guild?.channels.cache.values() ?? [])].filter((c) => c.type === ChannelType.GuildCategory).map((c) => ({ id: c.id, name: c.name }));
+      return { events: list, channels, categories, sizes: EH.SIZES };
+    },
+  },
+  actions: {
+    async 'event-create'(ctx, body, actor) {
+      const ev = await createEvent(ctx, { name: body.name, size: body.size ?? 2, maxTeams: body.maxTeams ?? 10, by: actor.userId, channelId: body.channelId, categoryId: body.categoryId || null });
+      return { id: ev.id, name: ev.name };
+    },
+    async 'event-lock'(ctx, body) { if (!ctx.data.get(`ev:${body.id}`)) throw new UserError('That event is gone.'); return { locked: await lockEvent(ctx, String(body.id)) }; },
+    async 'event-end'(ctx, body) { if (!ctx.data.get(`ev:${body.id}`)) throw new UserError('That event is gone.'); const e = await endEvent(ctx, String(body.id)); return { name: e.name }; },
+  },
   tasks: [{ name: 'sweep', everyMs: 30000, runOnEnable: true, run: sweep }],
   async destroy(ctx) { for (const r of rooms(ctx)) cancelRemoval(r.id); },
 };

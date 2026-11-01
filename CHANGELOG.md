@@ -1,9 +1,16 @@
 # Changelog
 
+## 2.1.3
+**Dashboard link in one button:** Settings > Dashboard link > Set up does everything. It installs Tailscale (through winget, or Tailscale's own installer, which is only run when Windows confirms it is signed by Tailscale Inc.), opens Tailscale's sign-in page, opens the page to allow public links, turns the link on and adds it to your bot's Discord login. Each step shows a check mark as it finishes, and the steps that need you open by themselves and carry on when you are done. After that the link turns itself back on whenever Good Boy starts.
+**Pair your phone:** once the link is on, Settings shows a code to scan. On iPhone it opens the phone page with a reminder to add it to the Home Screen. On Android it offers "Open in the Good Boy app", and the app asks before connecting, showing the address.
+**Keep awake:** a switch stops the computer sleeping while the bot runs, so the link keeps working.
+
 ## 2.1.2
 **App updates from GitHub:** the installed Windows app checks the public Good-Boy-Bot repository, downloads new versions by itself (each file is checked against its SHA-512 before installing) and installs them when you restart. The Updates page shows what is happening and has Check now and Restart and update buttons. The portable app, the Mac app and the Owner build tell you a new version is out instead. Your settings, token and server data are kept.
 **Take control:** re-running setup no longer loses track of a running bot. If an older copy is still running in the background, or another Good Boy app on this computer runs the same bot, the app says so and offers Take control, which stops the old copy safely (only if it really is the bot) and starts fresh. Two installs on one computer can no longer run the same bot at once.
 **Client Secret check:** setup and Settings ask Discord whether the Client Secret is right before saving it, and Open dashboard warns you before a login that would fail with "invalid_client". Settings has a Change client secret field.
+**Dashboard link (works from anywhere):** Settings > Dashboard link > Share dashboard gives the dashboard a public https link with Tailscale Funnel (free; no router changes, your home IP stays hidden). The app adds the link to your bot's login Redirects when Discord allows it, or shows exactly what to paste. Discord login still decides who can do anything.
+**Phone app:** the dashboard has a phone page at /app: bot status, the levels leaderboard with names and pictures, announcements (channel, title, ping), event hubs (start, lock, end) and module switches. On iPhone, open your dashboard link + /app in Safari and choose Share > Add to Home Screen. On Android, install the Good Boy app (.apk) and paste your dashboard link once.
 **Data files:** Settings > Server data can export everything to one .goodboy file and import one back (the current data is backed up first). The token is never included.
 
 ## 2.1.1

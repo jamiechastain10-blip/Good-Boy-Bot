@@ -2265,8 +2265,8 @@ export default async function runFeatureTests({ test, rejectsWith }) {
   console.log('\nDashboard: moderator access, per-panel permissions, design assets');
   const DG = '100000000000000001';
   const gp = (s = '') => `/api/guilds/${DG}${s}`;
-  const dashWorld = async (env = {}, updates = null) => {
-    const w = await makeWorld(['moderation', 'support'], { guildId: DG }).load();
+  const dashWorld = async (env = {}, updates = null, mods = ['moderation', 'support']) => {
+    const w = await makeWorld(mods, { guildId: DG }).load();
     const saveEnv = {}; for (const [k, v] of Object.entries(env)) { saveEnv[k] = process.env[k]; process.env[k] = v; }
     const logs = [];
     w.dash = await startDashboard({ manager: w.mm, client: w.client, db: w.db, logger: { info: (m) => logs.push(m), warn: (m) => logs.push(m), error: (m) => logs.push(m) }, perms: w.perms, port: 0, host: '127.0.0.1', version: '2.1.0', updates });
@@ -2286,6 +2286,43 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     return w;
   };
   const closeDash = (w) => w.dash.close();
+
+  await test('phone app: /app and its files are served, and it can read levels, post announcements and run event hubs with the same login checks', async () => {
+    const w = await dashWorld({}, null, ['community', 'engagement', 'tempvoice']);
+    for (const [p, type] of [['/app', /text\/html/], ['/mobile.js', /javascript/], ['/mobile.css', /text\/css/], ['/manifest.webmanifest', /manifest\+json/], ['/icon-192.png', /image\/png/], ['/apple-touch-icon.png', /image\/png/], ['/fonts/Inter-Regular.woff', /font\/woff/]]) {
+      const r = await w.req('GET', p); assert.equal(r.status, 200, p); assert.match(r.headers['content-type'], type, p);
+    }
+    const page = (await w.req('GET', '/app')).text;
+    assert.match(page, /apple-mobile-web-app-capable/); assert.match(page, /rel="manifest"/); assert.ok(!/<script>/.test(page), 'no inline script (the page CSP allows none)');
+    const js = (await w.req('GET', '/mobile.js')).text;
+    assert.ok(!/innerHTML|insertAdjacentHTML|document\.write/.test(js), 'built from DOM nodes only');
+    assert.equal(JSON.parse((await w.req('GET', '/manifest.webmanifest')).text).start_url, '/app');
+    // levels: names and levels, best first
+    w.mm.ctx(DG, 'community').data.set('user:dadmin', { xp: 1671 }); w.mm.ctx(DG, 'community').data.set('user:dplain', { xp: 120 });
+    const lv = (await w.req('GET', gp('/modules/community/views/levels'), { cookie: w.session(w.admin) })).json();
+    assert.equal(lv.total, 2); assert.deepEqual(lv.rows.map((r) => [r.name, r.level]), [['dadmin', 6], ['dplain', 1]]);
+    assert.equal((await w.req('GET', gp('/modules/community/views/levels'), { cookie: w.session(w.plain) })).status, 403, 'members without access cannot read it');
+    // announce: posts with the same rules as /announce
+    const news = w.channel('news');
+    const targets = (await w.req('GET', gp('/modules/engagement/views/announce-targets'), { cookie: w.session(w.admin) })).json();
+    assert.ok(targets.channels.some((c) => c.id === news.id));
+    const ann = (await w.req('POST', gp('/modules/engagement/actions/announce'), { cookie: w.session(w.admin), body: { channelId: news.id, title: 'Tonight', message: 'Scrims at 8', ping: 'none' } })).json();
+    assert.equal(ann.ok, true); assert.equal(ann.result.channel, 'news'); assert.equal(news.sent.at(-1).embeds[0].data.title, 'Tonight');
+    assert.match((await w.req('POST', gp('/modules/engagement/actions/announce'), { cookie: w.session(w.admin), body: { channelId: news.id, message: '' } })).json().error, /Write the announcement/);
+    assert.equal((await w.req('POST', gp('/modules/engagement/actions/announce'), { cookie: w.session(w.plain), body: { channelId: news.id, message: 'hi' } })).status, 403);
+    assert.equal((await w.req('POST', gp('/modules/engagement/actions/announce'), { cookie: w.session(w.admin), body: { channelId: news.id, message: 'hi' }, headers: { origin: 'https://evil.example' } })).status, 403, 'another site cannot post through your login');
+    // event hubs: create, lock, list, end
+    const evs = w.channel('events');
+    const made = (await w.req('POST', gp('/modules/tempvoice/actions/event-create'), { cookie: w.session(w.admin), body: { name: 'Fortnite Duos', size: 2, maxTeams: 10, channelId: evs.id } })).json();
+    assert.equal(made.ok, true); assert.equal(evs.sent.at(-1).embeds[0].data.title, 'Fortnite Duos · Duos (2)');
+    assert.match((await w.req('POST', gp('/modules/tempvoice/actions/event-create'), { cookie: w.session(w.admin), body: { name: 'x', size: 7, channelId: evs.id } })).json().error, /Team size/);
+    assert.equal((await w.req('POST', gp('/modules/tempvoice/actions/event-lock'), { cookie: w.session(w.admin), body: { id: made.result.id } })).json().result.locked, true);
+    const list = (await w.req('GET', gp('/modules/tempvoice/views/events'), { cookie: w.session(w.admin) })).json();
+    assert.deepEqual(list.events.map((e) => [e.name, e.locked]), [['Fortnite Duos', true]]); assert.ok(list.channels.length && list.sizes.includes(4));
+    assert.equal((await w.req('POST', gp('/modules/tempvoice/actions/event-end'), { cookie: w.session(w.admin), body: { id: made.result.id } })).json().result.name, 'Fortnite Duos');
+    assert.equal((await w.req('GET', gp('/modules/tempvoice/views/events'), { cookie: w.session(w.admin) })).json().events.length, 0);
+    closeDash(w);
+  });
 
   await test('admins get the full dashboard, with real server numbers and the platform permission listed', async () => {
     const w = await dashWorld();

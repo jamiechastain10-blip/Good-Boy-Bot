@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -25,7 +26,8 @@ import { bundleFiles } from '../desktop/scripts/bundle-bot.js';
 import { levelOf as toolLevel, summary as toolSummary, importDb, exportDb } from '../scripts/app-tools.js';
 import { blockedBy, processName, takeControl, isNodeName } from '../desktop/lib/takeover.js';
 import { updateMode, channelFor, compareVersions, readLatest, RELEASES } from '../desktop/lib/updater.js';
-import { verifySecret } from '../desktop/lib/discord.js';
+import { verifySecret, addRedirectUri } from '../desktop/lib/discord.js';
+import { Share, shareSettings, isTailscaleLink } from '../desktop/lib/share.js';
 import { levelOf as communityLevel } from '../modules/community/index.js';
 import { Database } from '../src/db.js';
 import { verifyToken, inviteUrl as appInvite, linkFor, intentsFrom, avatarUrl, PERMISSIONS } from '../desktop/lib/discord.js';
@@ -125,7 +127,7 @@ export default async function ({ test }) {
     const r = path.join(root, 'desktop', 'renderer');
     const splash = fs.readFileSync(path.join(r, 'splash.html'), 'utf8'), index = fs.readFileSync(path.join(r, 'index.html'), 'utf8');
     for (const html of [splash, index]) { assert.match(html, /default-src 'none'/); assert.match(html, /font-src 'self'/); assert.ok(!/<script>|unsafe-inline|unsafe-eval|https?:\/\/(?!www\.w3|cdn\.discordapp\.com;)/.test(html), 'no inline script; the only outside address is Discord\'s image server, for the bot\'s picture'); assert.match(html, /app\.css/); }
-    assert.match(index, /img-src 'self' https:\/\/cdn\.discordapp\.com;/); assert.match(index, /script-src 'self'"/, 'scripts only from the app itself');
+    assert.match(index, /img-src 'self' data: https:\/\/cdn\.discordapp\.com;/); assert.match(index, /script-src 'self'"/, 'scripts only from the app itself');
     assert.match(splash, /class="orb" data-state="starting"/);
     const css = fs.readFileSync(path.join(r, 'app.css'), 'utf8');
     for (const f of ['Inter-Regular', 'Inter-Medium', 'Inter-SemiBold', 'InterDisplay-SemiBold', 'InterDisplay-Bold']) { assert.match(css, new RegExp(`fonts/${f}\\.woff`)); assert.ok(fs.existsSync(path.join(r, 'fonts', `${f}.woff`)), `${f} bundled`); }
@@ -463,6 +465,138 @@ export default async function ({ test }) {
     void spawnFn;
   });
 
+  // a child_process.spawn stand-in built on a fake execFile: streams its output, then exits
+  const spawnFrom = (execFile) => (cmd, args) => {
+    const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter();
+    setImmediate(() => execFile(cmd, args, {}, (err, out = '', errOut = '') => { if (out) c.stdout.emit('data', out); if (errOut) c.stderr.emit('data', errOut); c.emit('exit', err ? 1 : 0); }));
+    return c;
+  };
+  await test('dashboard link setup is one button: installs Tailscale (winget, else a download only kept when signed by Tailscale), opens the sign-in and Funnel pages, and keeps the link on', async () => {
+    const { loginLinkIn, msiUrl } = await import('../desktop/lib/share.js');
+    assert.equal(loginLinkIn('To authenticate, visit:\n\n\thttps://login.tailscale.com/a/1b2c3d4\n'), 'https://login.tailscale.com/a/1b2c3d4');
+    assert.equal(loginLinkIn('visit https://login.tailscale.com.evil.io/a/1'), null, 'look-alike hosts are ignored');
+    assert.equal(msiUrl('x64'), 'https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi');
+    // winget installs it
+    let installed = false; const calls = [];
+    const exec = (cmd, args, _o, cb) => {
+      calls.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'winget') { installed = true; return cb(null, 'Successfully installed'); }
+      if (args[0] === 'version') return installed ? cb(null, '1.76.0') : cb(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      cb(new Error('?'));
+    };
+    const mk = (o = {}) => new Share({ platform: 'win32', env: {}, execFile: exec, exists: () => installed, fetchFn: async () => { throw new Error('no network in tests'); }, ...o });
+    const a = mk(); a.waitForBin = async () => !!(await a.find());
+    assert.deepEqual(await a.install(), { ok: true, via: 'winget' });
+    assert.ok(calls.some((c) => c.startsWith('winget install --id Tailscale.Tailscale --exact --silent')));
+    // no winget: download the .msi, check the signature, refuse an unsigned file
+    installed = false; let ran = [];
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-ts-'));
+    const exec2 = (cmd, args, _o, cb) => {
+      ran.push(cmd);
+      if (cmd === 'winget') return cb(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      if (args[0] === 'version') return installed ? cb(null, '1.76.0') : cb(new Error('missing'));
+      if (cmd === 'powershell.exe' && args.at(-1).includes('Get-AuthenticodeSignature')) return cb(null, signed ? 'Valid|CN="Tailscale Inc.", O="Tailscale Inc.", C=US\r\n' : 'NotSigned|\r\n');
+      if (cmd === 'powershell.exe' && args.at(-1).includes('msiexec')) { installed = true; return cb(null, ''); }
+      cb(new Error('?'));
+    };
+    let signed = false;
+    const b = mk({ execFile: exec2, tmp, fetchFn: async (u) => ({ ok: u.startsWith('https://pkgs.tailscale.com/'), status: 200, arrayBuffer: async () => new ArrayBuffer(8) }) });
+    b.waitForBin = async () => !!(await b.find());
+    const bad = await b.install(); assert.equal(bad.ok, false); assert.match(bad.error, /not signed by Tailscale/); assert.ok(!ran.some((c, k) => c === 'powershell.exe' && k > 0 && false));
+    assert.equal(installed, false, 'an unsigned download is never run');
+    assert.deepEqual(fs.readdirSync(tmp), [], 'and it is deleted');
+    signed = true; assert.deepEqual(await b.install(), { ok: true, via: 'msi' });
+    // Mac: the download page
+    const m = new Share({ platform: 'darwin', env: {}, execFile: (c, a2, o, cb) => cb(new Error('no')), exists: () => false });
+    const mac = await m.install(); assert.equal(mac.ok, false); assert.equal(mac.link, 'https://tailscale.com/download');
+    // sign-in: the page comes back as soon as Tailscale prints it
+    const { EventEmitter: EE } = await import('node:events');
+    const s2 = mk(); s2.bin = 'tailscale';
+    s2.spawn = () => { const c = new EE(); c.stdout = new EE(); c.stderr = new EE(); setImmediate(() => c.stderr.emit('data', '\nTo authenticate, visit:\n\n\thttps://login.tailscale.com/a/xyz\n\n')); return c; };
+    assert.deepEqual(await s2.login(), { ok: true, link: 'https://login.tailscale.com/a/xyz' });
+    let n = 0; assert.equal(await s2.waitFor(async () => ++n >= 3, { every: 1, seconds: 5 }), true);
+    assert.equal(await s2.waitFor(async () => false, { every: 1, seconds: 0.05 }), false);
+    // the app: one setup button, the link back on at every start, the phone code opens the phone page
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    for (const k of ["ipcMain.handle('gb:share-setup'", "step('install'", "step('login'", "step('funnel'", "step('discord'", 'openTailscale(l.link ?? st.link)', 'openTailscale(on.link)', 'if (isTailscaleLink(u)) shell.openExternal(u)']) assert.ok(main.includes(k), k);
+    assert.match(main, /if \(!smokeDir && settings\.shareAuto\) \{ setTimeout\(\(\) => keepShared\(\)/);
+    assert.match(main, /const phoneLink = \(url\) => `\$\{url\}\/app\?pair=1`/);
+    assert.match(main, /powerSaveBlocker\.start\('prevent-app-suspension'\)/);
+    const { normalize: norm } = await import('../desktop/lib/settings.js');
+    assert.equal(norm({}).shareAuto, false); assert.equal(norm({ shareAuto: true, keepAwake: 'yes' }).keepAwake, false);
+    // the phone page and the Android app: pairing uses only the page's own address, and Android asks first
+    const mob = fs.readFileSync(path.join(root, 'src', 'dashboard', 'public', 'mobile.js'), 'utf8');
+    assert.match(mob, /intent:\/\/pair\?url=\$\{encodeURIComponent\(location\.origin\)\}/);
+    const act = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'basicghostlabs', 'goodboy', 'MainActivity.java'), 'utf8');
+    assert.match(act, /Connect to this bot\?/); assert.match(act, /cleanBase\(d\.getQueryParameter\("url"\)\)/);
+    assert.match(fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8'), /android:scheme="goodboy" android:host="pair"/);
+  });
+
+  await test('share dashboard: finds Tailscale, turns on a public https link for the dashboard port only, explains each thing that is missing, and opens only Tailscale pages', async () => {
+    const ts = { installed: true, running: true, funnel: false, allowed: true, calls: [] };
+    const execFile = (cmd, args, _o, cb) => {
+      ts.calls.push(args.join(' '));
+      if (!ts.installed) return cb(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      if (args[0] === 'version') return cb(null, '1.76.0\n');
+      if (args[0] === 'status') return cb(null, ts.running ? JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'basic-pc.tail1234.ts.net.' } }) : JSON.stringify({ BackendState: 'NeedsLogin', AuthURL: 'https://login.tailscale.com/a/abc' }));
+      if (args[0] === 'funnel' && args[1] === 'status') return cb(null, ts.funnel ? JSON.stringify({ Web: { 'basic-pc.tail1234.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3000' } } } }, AllowFunnel: { 'basic-pc.tail1234.ts.net:443': true } }) : '{}');
+      if (args[0] === 'funnel' && args[1] === '--bg') { if (!ts.allowed) return cb(null, 'Funnel is not enabled on your tailnet.\nTo enable, visit:\n\n         https://login.tailscale.com/f/funnel?node=nXYZ\n', ''); ts.funnel = true; return cb(null, 'Available on the internet'); }
+      if (args[0] === 'funnel' && args[1] === '--https=443') { ts.funnel = false; return cb(null, ''); }
+      cb(new Error('unknown'));
+    };
+    const mk = () => new Share({ platform: 'win32', env: { ProgramFiles: 'C:\\Program Files' }, execFile, spawn: spawnFrom(execFile), exists: () => true });
+    ts.installed = false; assert.equal((await mk().status(3000)).state, 'missing'); ts.installed = true;
+    ts.running = false; const login = await mk().status(3000); assert.equal(login.state, 'login'); assert.equal(login.link, 'https://login.tailscale.com/a/abc'); ts.running = true;
+    const sh = mk();
+    assert.deepEqual(await sh.status(3000), { state: 'off', url: 'https://basic-pc.tail1234.ts.net', host: 'basic-pc.tail1234.ts.net' });
+    ts.allowed = false;
+    const ask = await sh.on(3000); assert.equal(ask.ok, false); assert.equal(ask.state, 'approve'); assert.equal(ask.link, 'https://login.tailscale.com/f/funnel?node=nXYZ');
+    ts.allowed = true;
+    assert.deepEqual(await sh.on(3000), { ok: true, url: 'https://basic-pc.tail1234.ts.net' });
+    assert.ok(ts.calls.includes('funnel --bg --yes http://127.0.0.1:3000'), 'only the dashboard port is shared');
+    assert.equal((await sh.status(3000)).state, 'on'); assert.equal((await sh.status(4000)).state, 'off', 'a different port is not mistaken for ours');
+    assert.deepEqual(await sh.off(), { ok: true }); assert.equal((await sh.status(3000)).state, 'off');
+    assert.deepEqual(shareSettings('https://basic-pc.tail1234.ts.net'), { DASHBOARD_BASE_URL: 'https://basic-pc.tail1234.ts.net', DASHBOARD_TRUST_PROXY: '1' });
+    assert.deepEqual(shareSettings(null), { DASHBOARD_BASE_URL: '', DASHBOARD_TRUST_PROXY: '' });
+    assert.equal(redirectUriFor(shareSettings('https://basic-pc.tail1234.ts.net')), 'https://basic-pc.tail1234.ts.net/callback', 'the login comes back to the shared link');
+    assert.equal(redirectUriFor(shareSettings(null)), 'http://localhost:3000/callback');
+    for (const [u, ok] of [['https://tailscale.com/download', true], ['https://login.tailscale.com/f/funnel?node=1', true], ['http://login.tailscale.com/x', false], ['https://tailscale.com.evil.io/', false], ['javascript:alert(1)', false]]) assert.equal(isTailscaleLink(u), ok, u);
+    // adding the redirect keeps what is there
+    const sent = [];
+    const fetchFn = async (url, o = {}) => { sent.push(o); if (!o.method) return { ok: true, status: 200, json: async () => ({ redirect_uris: ['http://localhost:3000/callback'] }) }; const b = JSON.parse(o.body); return { ok: true, status: 200, json: async () => b }; };
+    assert.deepEqual(await addRedirectUri('t', 'https://basic-pc.tail1234.ts.net/callback', fetchFn), { ok: true, added: true });
+    assert.deepEqual(JSON.parse(sent[1].body).redirect_uris, ['http://localhost:3000/callback', 'https://basic-pc.tail1234.ts.net/callback']);
+    const refuse = async (url, o = {}) => (o.method ? { ok: false, status: 400, json: async () => ({}) } : { ok: true, status: 200, json: async () => ({ redirect_uris: [] }) });
+    assert.equal((await addRedirectUri('t', 'https://x.ts.net/callback', refuse)).ok, false, 'when Discord refuses, the app shows the address to add by hand');
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    assert.match(main, /if \(!isTailscaleLink\(u\)\) return false;/);
+  });
+
+  await test('android app: only https dashboard links, only the dashboard and Discord login inside the app, only the app\'s own page can set the link, no extra permissions', async () => {
+    const A = path.join(root, 'android', 'app', 'src', 'main');
+    const java = fs.readFileSync(path.join(A, 'java', 'com', 'basicghostlabs', 'goodboy', 'MainActivity.java'), 'utf8');
+    assert.match(java, /if \(!"https"\.equals\(u\.getScheme\(\)\)/, 'only https links are accepted');
+    assert.match(java, /if \(!onOwnPage\) return false;/, 'a web page cannot change which bot the app connects to');
+    assert.match(java, /if \(isMine\(u\) \|\| \("https"\.equals\(scheme\) && isDiscord\(u\.getHost\(\)\)\)\) return false;/, 'everything else opens in the browser');
+    assert.match(java, /host\.equals\("discord\.com"\) \|\| host\.endsWith\("\.discord\.com"\)/);
+    for (const x of ['setAllowFileAccess(false)', 'setAllowUniversalAccessFromFileURLs(false)', 'MIXED_CONTENT_NEVER_ALLOW']) assert.ok(java.includes(x), x);
+    const manifest = fs.readFileSync(path.join(A, 'AndroidManifest.xml'), 'utf8');
+    assert.deepEqual([...manifest.matchAll(/uses-permission android:name="([^"]+)"/g)].map((m) => m[1]), ['android.permission.INTERNET'], 'internet only');
+    assert.match(manifest, /usesCleartextTraffic="false"/); assert.match(manifest, /allowBackup="false"/);
+    for (const f of ['connect.html', 'offline.html']) {
+      const html = fs.readFileSync(path.join(A, 'assets', f), 'utf8');
+      assert.ok(!/(src|href)="https?:/.test(html), `${f} loads nothing from the internet`);
+      assert.match(html, /Content-Security-Policy" content="default-src 'none'/);
+      assert.ok(!/innerHTML/.test(html));
+    }
+    const gradle = fs.readFileSync(path.join(root, 'android', 'app', 'build.gradle'), 'utf8');
+    assert.match(gradle, /desktop\/package\.json/, 'the app version follows the desktop app');
+    const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'desktop.yml'), 'utf8');
+    assert.match(wf, /gradle assembleDebug/); assert.match(wf, /Good-Boy-Android-\$v\.apk/);
+    const mobile = fs.readFileSync(path.join(root, 'src', 'dashboard', 'public', 'mobile.js'), 'utf8');
+    assert.match(mobile, /window\.GoodBoyAndroid\.changeLink\(\)/, 'the phone page offers the way back to the link screen in the Android app');
+  });
+
   await test('desktop build workflow: builds the .exe and .dmg, then starts the built app and fails the build if the window did not draw', async () => {
     const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'desktop.yml'), 'utf8');
     for (const must of ['windows-latest', 'macos-latest', 'npm run dist:win', 'npm run dist:mac', 'GOODBOY_SMOKE_DIR', 'GOODBOY_SMOKE_SEED', 'make-fixture.js', 'win-unpacked', '*-Setup-*.exe', '*-Portable-*.exe', '*.dmg', 'workflow_dispatch', 'edition: [owner, consumer, developer]', 'set-edition.js', 'bundle-bot.js', 'desktop/bundle/node/node.exe']) assert.ok(wf.includes(must), must);
@@ -471,7 +605,7 @@ export default async function ({ test }) {
     assert.ok(release, 'there is a release job');
     assert.ok(!/secrets\.|GITHUB_TOKEN|contents:\s*write/.test(build), 'the builds use no secrets and cannot write to the repo');
     assert.deepEqual([...wf.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]), ['RELEASES_TOKEN'], 'the only secret is the releases token, used only to publish');
-    assert.match(release, /needs: \[windows, mac\]/, 'nothing is published unless every build and its self-check passed');
+    assert.match(release, /needs: \[windows, mac, android\]/, 'nothing is published unless every build and its self-check passed');
     assert.match(release, /REPO: jamiechastain10-blip\/Good-Boy-Bot/); assert.match(release, /gh release view "v\$v"/, 'a version is published once');
     assert.ok(!/Windows-owner/.test(release), 'the Owner build is never published');
     for (const f of ['desktop/dist/latest.yml', 'desktop/dist/developer.yml', '*-Setup-*.exe.blockmap']) assert.ok(build.includes(f), `${f} is kept for the update feed`);
@@ -556,7 +690,7 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
     const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
     const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'updateCheck', 'updateInstall', 'updateOpen', 'verifyToken'].sort());
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'updateCheck', 'updateInstall', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
     assert.match(main, /const ownerOnly = \(\) =>/); for (const h of ['gb:lic-keygen', 'gb:lic-create', 'gb:lic-revoke']) assert.match(main.slice(main.indexOf(`'${h}'`), main.indexOf(`'${h}'`) + 200), /ownerOnly\(\)/, `${h} only works in the Owner version`);
     assert.ok(!/privateKey/.test(main.slice(main.indexOf("'gb:lic-state'"), main.indexOf("'gb:lic-keygen'"))), 'the signing key is never sent to the window');
     assert.match(main, /url && url\.startsWith\('https:\/\/discord\.com\/'\)/, 'setup only ever opens discord.com pages');
@@ -585,7 +719,7 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.ok(fs.readFileSync(path.join(root, 'desktop', 'renderer', 'good-boy-logo.png')).equals(fs.readFileSync(path.join(pub, 'good-boy-logo.png'))), 'run "npm run sync" in desktop/ after changing the logo');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'package.json'), 'utf8'));
     assert.equal(pkg.main, 'boot.cjs'); assert.equal(pkg.build.mac.identity, null); assert.ok(pkg.devDependencies.electron && pkg.devDependencies['electron-builder']);
-    assert.deepEqual(Object.keys(pkg.dependencies ?? {}), ['electron-updater'], 'the only runtime package is the updater');
+    assert.deepEqual(Object.keys(pkg.dependencies ?? {}).sort(), ['electron-updater', 'qrcode'], 'the only runtime packages are the updater and the phone pairing code');
     assert.deepEqual(pkg.build.publish, [{ provider: 'github', owner: 'jamiechastain10-blip', repo: 'Good-Boy-Bot', releaseType: 'release' }]);
     assert.match(pkg.scripts['dist:win'], /--publish never/, 'electron-builder never publishes by itself: the release job does');
     const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

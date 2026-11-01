@@ -14,7 +14,7 @@ import { signManifest, CHANNELS } from './manifest.js';
 
 /** Top-level names that are never shipped. */
 export const EXCLUDE_TOP = new Set([
-  'node_modules', 'data', '.env', '.git', '.github', 'dist', 'releases', 'downloads', 'backups', '_to_delete', 'desktop',
+  'node_modules', 'data', '.env', '.git', '.github', 'dist', 'releases', 'downloads', 'backups', '_to_delete', 'desktop', 'android',
   'current.json', 'update.log', 'supervisor.lock', 'update-public-key.pem', 'package-lock.json',
 ]);
 const EXCLUDE_ANYWHERE = [/\.pem$/i, /\.key$/i, /^\.env(\..*)?$/i, /\.log$/i, /\.zip$/i, /\.db(-wal|-shm)?$/i, /\.tmp$/i, /^\.DS_Store$/, /^Thumbs\.db$/i];

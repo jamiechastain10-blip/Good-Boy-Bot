@@ -6,7 +6,8 @@
  * set up once, done. The token and other bot settings are kept encrypted by the operating system (safeStorage),
  * never in a plain .env file. Running from the source folder (no bundle) still works with a chosen Good Boy folder.
  */
-import { app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell, nativeImage, safeStorage, clipboard } from 'electron';
+import { app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell, nativeImage, safeStorage, clipboard, powerSaveBlocker } from 'electron';
+import QRCode from 'qrcode';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,8 +20,9 @@ import { parseEnv, safeBotSettings, looksLikeToken } from './lib/envfile.js';
 import { readEdition } from './lib/edition.js';
 import { ensureBotCode, seedData } from './lib/botinstall.js';
 import { runTool } from './lib/tools.js';
-import { verifyToken, verifySecret, linkFor, isSnowflake, appIdFromToken, redirectUriFor } from './lib/discord.js';
+import { verifyToken, verifySecret, addRedirectUri, linkFor, isSnowflake, appIdFromToken, redirectUriFor } from './lib/discord.js';
 import { takeControl } from './lib/takeover.js';
+import { Share, shareSettings, isTailscaleLink } from './lib/share.js';
 import { updateMode, channelFor, readLatest, latestApi, releasesPage } from './lib/updater.js';
 import { brandStatus, applyBrand, applyCustom } from './lib/brand.js';
 import { createLicense, verifyLicense, generateKeyPair, hasFeature, FEATURES } from './lib/license.js';
@@ -104,7 +106,7 @@ function recheck() {
   // in the background with no way to stop it from the app). New settings apply the next time it starts.
   if (runner) { Object.assign(runner, { botDir: botDir(), script: path.join(botDir(), 'scripts', 'supervise.js'), nodePath: nodePath(), env: childEnv() }); return; }
   runner = new BotRunner({ botDir: botDir(), nodePath: nodePath(), env: childEnv() });
-  runner.on('state', (s) => { send('state', snapshot()); refreshTray(); if (s.state === 'running' && settings.dashboardOnStart && !runner.openedDashboard) { runner.openedDashboard = true; openDashboard(); } });
+  runner.on('state', (s) => { send('state', snapshot()); refreshTray(); keepAwake(s.state); if (s.state === 'running' && settings.dashboardOnStart && !runner.openedDashboard) { runner.openedDashboard = true; openDashboard(); } });
   runner.on('log', (line) => send('log', line));
 }
 
@@ -153,6 +155,7 @@ async function prepare() {
   } catch (e) { prep = { ...prep, done: false, error: `Could not set up the bot: ${e.message}` }; log(prep.error); }
   recheck(); send('state', snapshot()); refreshTray();
   if (settings.startBotWithApp && ready() && !smokeDir) startBot();
+  if (!smokeDir && settings.shareAuto) { setTimeout(() => keepShared().catch((e) => log(`share: ${e.message}`)), 8000); setInterval(() => keepShared().catch(() => {}), 30 * 60000).unref?.(); }
   if (!smokeDir) { setTimeout(() => keepBrand().catch(() => {}), 20000); setInterval(() => keepBrand().catch(() => {}), 6 * 3600000).unref?.(); }
 }
 
@@ -495,6 +498,110 @@ ipcMain.handle('gb:takeover', async () => {
   return { ...r, started: true };
 });
 function lockFilesForBot() { const id = appIdFromToken(savedToken()); return id ? [path.join(os.tmpdir(), 'good-boy-locks', `${id}.lock`)] : []; }
+
+// ---- share the dashboard: a public https link (Tailscale Funnel) for phones and other computers
+const share = new Share();
+const restartIfRunning = async () => { if (['running', 'starting'].includes(runner.status().state)) await runner.restart(); };
+ipcMain.handle('gb:share-state', async () => {
+  if (!bundled) return { state: 'unsupported' };
+  try { const st = await share.status(folder.port); return { ...st, redirectUri, auto: settings.shareAuto, qr: st.state === 'on' ? await qrFor(st.url) : null }; } catch (e) { return { state: 'error', error: e.message }; }
+});
+/** Link is on: the dashboard uses it, Discord's Redirects get it, the bot restarts to pick it up if it changed. */
+async function useSharedLink(url) {
+  const changed = vault.setting('DASHBOARD_BASE_URL') !== url;
+  vault.merge(shareSettings(url)); recheck();
+  const added = await addRedirectUri(savedToken(), redirectUri);
+  if (changed) await restartIfRunning();
+  send('state', snapshot());
+  return { ok: true, url, redirectUri, redirectAdded: added.ok, appId: knownAppId, qr: await qrFor(url) };
+}
+/** What the phone scans: the phone page; the Android app picks the link up from there. */
+const phoneLink = (url) => `${url}/app?pair=1`;
+const qrFor = (url) => QRCode.toDataURL(phoneLink(url), { margin: 1, width: 360, errorCorrectionLevel: 'M' }).catch(() => null);
+ipcMain.handle('gb:share-on', async () => {
+  if (!bundled) return { ok: false, error: 'Sharing works with the built-in bot.' };
+  const r = await share.on(folder.port);
+  if (!r.ok) return r;
+  return useSharedLink(r.url);
+});
+
+/**
+ * One button for everything: install Tailscale, sign in, allow Funnel, turn the link on, add it to Discord. Each step
+ * is shown in the window as it happens; the steps that need the person (Windows' "allow", the sign-in page, the Funnel
+ * approval) open by themselves and the setup carries on when they are done.
+ */
+let shareSetup = null;
+/** Opens a page only when it is one of Tailscale's own (sign-in, Funnel approval, download). */
+function openTailscale(link) { const u = String(link ?? ''); if (isTailscaleLink(u)) shell.openExternal(u); }
+const step = (id, state, text, extra = {}) => send('share-step', { id, state, text, ...extra });
+ipcMain.handle('gb:share-setup', async () => {
+  if (!bundled) return { ok: false, error: 'Sharing works with the built-in bot.' };
+  if (shareSetup) return shareSetup;
+  shareSetup = (async () => {
+    const port = folder.port;
+    step('install', 'busy', 'Checking for Tailscale...');
+    const inst = await share.install({ onStep: (t) => step('install', 'busy', t) });
+    if (!inst.ok) { step('install', 'error', inst.error, { link: inst.link }); return inst; }
+    step('install', 'done', 'Tailscale is installed.');
+
+    let st = await share.status(port);
+    if (st.state === 'stopped') { await share.waitFor(async () => (st = await share.status(port)).state !== 'stopped', { seconds: 30, every: 2000 }); }
+    if (st.state === 'login') {
+      step('login', 'busy', 'Sign in to Tailscale in your browser. Good Boy carries on when you are done.');
+      const l = await share.login();
+      openTailscale(l.link ?? st.link);
+      const ok = await share.waitFor(async () => !['login', 'stopped'].includes((st = await share.status(port)).state), { seconds: 600 });
+      if (!ok) { step('login', 'error', 'Sign-in did not finish. Press Set up to try again.'); return { ok: false, error: 'Tailscale sign-in did not finish.' }; }
+    }
+    if (st.state === 'error' || st.state === 'stopped') { step('login', 'error', st.error); return { ok: false, error: st.error }; }
+    step('login', 'done', 'Signed in to Tailscale.');
+
+    step('funnel', 'busy', 'Turning on your dashboard link...');
+    let on = await share.on(port);
+    if (!on.ok && on.state === 'approve') {
+      step('funnel', 'busy', 'Approve public links for your Tailscale account in your browser. Good Boy carries on when you do.');
+      openTailscale(on.link);
+      await share.waitFor(async () => (on = await share.on(port)).ok || on.state !== 'approve', { seconds: 600, every: 5000 });
+    }
+    if (!on.ok) { step('funnel', 'error', on.error, { link: on.link }); return on; }
+    step('funnel', 'done', `Your link: ${on.url}`);
+
+    step('discord', 'busy', 'Adding the link to your bot\'s login Redirects...');
+    const r = await useSharedLink(on.url);
+    step('discord', r.redirectAdded ? 'done' : 'manual', r.redirectAdded ? 'Discord login works from the link.' : 'Discord needs you to add the link once (below).');
+    settings = normalize({ ...settings, shareAuto: true }); saveSettings();
+    step('phone', 'done', 'Scan the code with your phone.');
+    return r;
+  })().finally(() => { shareSetup = null; });
+  return shareSetup;
+});
+
+/** At every start (and now and then) put the link back if it went off, without asking anything. */
+async function keepShared() {
+  if (!bundled || !settings.shareAuto) return;
+  const st = await share.status(folder.port);
+  if (st.state === 'on') { if (vault.setting('DASHBOARD_BASE_URL') !== st.url) await useSharedLink(st.url); return; }
+  if (st.state !== 'off') { log(`share: ${st.state}`); return; }
+  const r = await share.on(folder.port);
+  if (r.ok) { await useSharedLink(r.url); log('share: dashboard link is on'); }
+}
+
+let awakeId = null;
+function keepAwake(state) {
+  const want = settings.keepAwake && ['running', 'starting'].includes(state);
+  if (want && awakeId == null) awakeId = powerSaveBlocker.start('prevent-app-suspension');
+  if (!want && awakeId != null) { powerSaveBlocker.stop(awakeId); awakeId = null; }
+}
+ipcMain.handle('gb:share-off', async () => {
+  if (!bundled) return { ok: false, error: 'Sharing works with the built-in bot.' };
+  const r = await share.off();
+  settings = normalize({ ...settings, shareAuto: false }); saveSettings();
+  vault.merge(shareSettings(null)); recheck();
+  await restartIfRunning();
+  send('state', snapshot());
+  return r;
+});
+ipcMain.handle('gb:share-link', (_e, link) => { const u = String(link ?? ''); if (!isTailscaleLink(u)) return false; shell.openExternal(u); return true; });
 
 // ---- data: one file to move the bot's data between computers or keep as a backup
 ipcMain.handle('gb:data-export', async () => {

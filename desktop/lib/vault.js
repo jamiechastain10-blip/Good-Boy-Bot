@@ -29,6 +29,8 @@ export class Vault {
   }
   merge(patch) { return this.write({ ...this.read(), ...patch }); }
   has(key) { return !!this.read()[key]; }
+  /** A plain setting (never a token, secret, key or password). */
+  setting(key) { return /TOKEN|SECRET|KEY|PASSWORD/i.test(key) ? undefined : this.read()[key]; }
   /** What the window may see: which settings exist, never their values. */
   describe() { const m = this.read(); return { hasToken: !!m.DISCORD_TOKEN, hasClientSecret: !!m.DISCORD_CLIENT_SECRET, keys: Object.keys(m).filter((k) => !/TOKEN|SECRET|KEY|PASSWORD/i.test(k)).sort() }; }
 }

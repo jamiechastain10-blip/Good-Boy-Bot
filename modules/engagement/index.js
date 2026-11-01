@@ -718,6 +718,33 @@ export default {
       execute: starboardCmd,
     },
   ],
+  views: {
+    /** For the phone app: where announcements can go. */
+    async 'announce-targets'(ctx) {
+      const channels = [...(ctx.guild?.channels.cache.values() ?? [])].filter((c) => [0, 5].includes(c.type)).sort((x, y) => x.rawPosition - y.rawPosition).map((c) => ({ id: c.id, name: c.name }));
+      const roles = [...(ctx.guild?.roles.cache.values() ?? [])].filter((r) => r.id !== ctx.guildId && !r.managed).sort((x, y) => y.position - x.position).map((r) => ({ id: r.id, name: r.name }));
+      return { channels, roles };
+    },
+  },
+  actions: {
+    /** Post an announcement from the phone app or dashboard. Same rules as /announce send. */
+    async announce(ctx, body, actor) {
+      const ch = textChannel(ctx, String(body.channelId ?? ''));
+      if (!ch) throw new UserError('Pick a text channel.');
+      const text = String(body.message ?? '').trim();
+      if (!text) throw new UserError('Write the announcement.');
+      if (text.length > 3800) throw new UserError('That is too long (3800 characters at most).');
+      const ping = ['none', 'here', 'everyone', 'role'].includes(body.ping) ? body.ping : 'none';
+      const roleIds = ping === 'role' ? [...new Set([].concat(body.roleIds ?? []).map(String).filter((r) => ctx.guild?.roles.cache.has(r)))].slice(0, 3) : [];
+      if (ping === 'role' && !roleIds.length) throw new UserError('Pick a role to ping.');
+      const problem = pingProblem(ctx, ch, ping, roleIds);
+      const title = String(body.title ?? '').trim().slice(0, 250) || undefined;
+      try { await ch.send(announcePayload({ text, title, ping: problem ? 'none' : ping, roleIds })); }
+      catch (e) { throw new UserError(describeDiscordError(e, `post in #${ch.name}`)); }
+      ctx.log.info(`Announcement posted in #${ch.name} by ${actor?.username ?? 'the dashboard'}`);
+      return { channel: ch.name, warning: problem ? `Posted without the ping: ${problem}` : null };
+    },
+  },
   components: [{ prefix: 'poll:', execute: pollVote }, { prefix: 'sugg:', execute: suggestionVote }, { prefix: 'announce:', execute: announceForm }, { prefix: 'engform:', execute: engagementForm }],
   events: { messageReactionAdd: onStar, messageReactionRemove: onStar, messageDelete: onMessageDelete },
   tasks: [

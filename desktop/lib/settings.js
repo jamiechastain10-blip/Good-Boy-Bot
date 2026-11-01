@@ -14,6 +14,8 @@ export const DEFAULTS = Object.freeze({
   license: '',             // a licence key someone was given (checked every start; not a secret)
   brandApplied: null,      // picture IDs Discord returned when the Good Boy look was applied
   theme: 'system',         // 'system' follows Windows/macOS light or dark
+  shareAuto: false,        // keep the public dashboard link on: checked at every start and fixed if it went off
+  keepAwake: false,        // stop the computer sleeping while the bot runs (the screen can still turn off)
 });
 const CLOSE = ['minimize', 'quit'];
 const THEMES = ['system', 'light', 'dark'];
@@ -33,5 +35,7 @@ export function normalize(raw) {
     license: typeof r.license === 'string' && r.license.length <= 2048 && /^[A-Za-z0-9._-]*$/.test(r.license.trim()) ? r.license.trim() : DEFAULTS.license,
     brandApplied: r.brandApplied && typeof r.brandApplied === 'object' ? Object.fromEntries(['avatar', 'banner', 'icon'].map((k) => [k, typeof r.brandApplied[k] === 'string' && /^[a-z0-9_]{1,64}$/i.test(r.brandApplied[k]) ? r.brandApplied[k] : null])) : DEFAULTS.brandApplied,
     theme: THEMES.includes(r.theme) ? r.theme : DEFAULTS.theme,
+    shareAuto: bool(r.shareAuto, DEFAULTS.shareAuto),
+    keepAwake: bool(r.keepAwake, DEFAULTS.keepAwake),
   };
 }

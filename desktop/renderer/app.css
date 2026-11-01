@@ -212,3 +212,14 @@ img.mini{width:26px;height:26px;object-fit:contain;flex:none}
 .guide li{margin:4px 0}
 .titlerow{display:flex;align-items:flex-start;gap:16px;justify-content:space-between;flex-wrap:wrap}
 .titlerow .actions{margin-top:6px}
+/* dashboard link setup: one dot per step, and the phone pairing code */
+.stepdot{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:600;background:var(--hair);color:var(--ink-2)}
+.stepdot.busy{background:color-mix(in srgb,var(--accent,#1a73ff) 18%,transparent);color:var(--accent,#1a73ff);animation:stepPulse 1.4s ease-in-out infinite}
+.stepdot.done{background:#22c55e;color:#fff}
+.stepdot.error{background:#ef4444;color:#fff}
+.stepdot.manual{background:#f59e0b;color:#fff}
+@keyframes stepPulse{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.stepdot.busy{animation:none}}
+.qrrow{gap:16px;align-items:center}
+.qr{flex:none;width:180px;height:180px;border-radius:12px;background:#fff;padding:8px;image-rendering:pixelated}
+.group.steps{margin-top:10px}

@@ -18,3 +18,7 @@ _to_delete/
 .DS_Store
 Thumbs.db
 desktop/bundle/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
