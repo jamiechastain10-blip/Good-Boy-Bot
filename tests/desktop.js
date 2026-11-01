@@ -604,7 +604,8 @@ export default async function ({ test }) {
     const [build, release] = wf.split(/^  release:$/m);
     assert.ok(release, 'there is a release job');
     assert.ok(!/secrets\.|GITHUB_TOKEN|contents:\s*write/.test(build), 'the builds use no secrets and cannot write to the repo');
-    assert.deepEqual([...wf.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]), ['RELEASES_TOKEN'], 'the only secret is the releases token, used only to publish');
+    assert.deepEqual([...wf.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]).sort(), ['GITHUB_TOKEN', 'RELEASES_TOKEN'], 'only the publishing tokens, used only to publish');
+    assert.match(release, /if: github\.ref == 'refs\/heads\/main'/, 'test branches are built but never published');
     assert.match(release, /needs: \[windows, mac, android\]/, 'nothing is published unless every build and its self-check passed');
     assert.match(release, /REPO: jamiechastain10-blip\/Good-Boy-Bot/); assert.match(release, /gh release view "v\$v"/, 'a version is published once');
     assert.ok(!/Windows-owner/.test(release), 'the Owner build is never published');

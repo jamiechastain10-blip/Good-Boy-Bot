@@ -2,15 +2,17 @@
 # everyone, Developer) and the Mac app. Each Windows build is then started once on a clean machine with a made-up
 # server, every page is photographed, and the build fails if a page did not draw or the bundled bot cannot run.
 # Run it from the Actions tab: "Desktop app" > Run workflow. No real server's data is ever used here.
-# When every build passes, the Good Boy and Developer editions are published as a release in the public repository
-# jamiechastain10-blip/Good-Boy-Bot (needs the RELEASES_TOKEN secret), where installed apps find their updates.
+# When every build on the main branch passes, the Good Boy and Developer editions are published as a release in the
+# public repository jamiechastain10-blip/Good-Boy-Bot, where installed apps find their updates. Running in that
+# repository it uses its own built-in token; running anywhere else it needs the RELEASES_TOKEN secret.
+# Other branches (for example test/2.2) are built and checked but never published, so test builds reach no one.
 # A version is published once: raise "version" in desktop/package.json to publish a new one. The Owner build is never published.
 name: Desktop app
 
 on:
   workflow_dispatch:
   push:
-    branches: [good-boy-2.1.1]
+    branches: [main, good-boy-2.1.1, 'test/**']
     paths: ['desktop/**', 'android/**', 'src/**', 'modules/**', 'scripts/**', 'package.json', '.github/workflows/desktop.yml']
 
 permissions:
@@ -153,6 +155,10 @@ jobs:
 
   release:
     needs: [windows, mac, android]
+    # Only finished versions are published: main in the public repo, or the old private branch.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/good-boy-2.1.1'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -167,11 +173,15 @@ jobs:
         with: { name: Android, path: out/android }
       - name: Publish the release to Good-Boy-Bot
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          OWN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CROSS_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          THIS_REPO: ${{ github.repository }}
           REPO: jamiechastain10-blip/Good-Boy-Bot
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN}" ]; then echo "::error::The RELEASES_TOKEN secret is missing. Add it in ProjectEclipse > Settings > Secrets and variables > Actions."; exit 1; fi
+          # In Good-Boy-Bot itself the built-in token can publish; from another repository a personal token is needed.
+          if [ "$THIS_REPO" = "$REPO" ]; then export GH_TOKEN="$OWN_TOKEN"; else export GH_TOKEN="$CROSS_TOKEN"; fi
+          if [ -z "${GH_TOKEN}" ]; then echo "::error::The RELEASES_TOKEN secret is missing. Add it in Settings > Secrets and variables > Actions, or build from Good-Boy-Bot."; exit 1; fi
           v=$(node -p "require('./desktop/package.json').version")
           if gh release view "v$v" -R "$REPO" >/dev/null 2>&1; then echo "Version $v is already published. Raise the version in desktop/package.json to publish again."; exit 0; fi
           # release notes: this version's part of CHANGELOG.md
