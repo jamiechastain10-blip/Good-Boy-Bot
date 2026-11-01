@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Redis isn't used at beta scale — the DiscordApiManager fairness queue
+  # currently runs in-memory. Re-add Redis when the platform needs shared
+  # state across multiple bot instances.
+
+volumes:
+  pgdata:

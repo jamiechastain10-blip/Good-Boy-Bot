@@ -1,0 +1,21 @@
+{
+  "name": "discord-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "modules/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:core": "npm run dev --workspace=@platform/core",
+    "dev:web-api": "npm run dev --workspace=@platform/web-api",
+    "db:generate": "npm run generate --workspace=@platform/database",
+    "db:migrate": "npm run migrate --workspace=@platform/database"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0",
+    "ts-node-dev": "^2.0.0"
+  }
+}

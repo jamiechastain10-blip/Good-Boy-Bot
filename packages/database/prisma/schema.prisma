@@ -1,0 +1,106 @@
+// Basic Ghost Labs — Project Eclipse
+// Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Guild {
+  id            String            @id // Discord guild snowflake
+  name          String
+  ownerId       String
+  createdAt     DateTime          @default(now())
+  moduleConfigs GuildModuleConfig[]
+  permissions   GuildPermission[]
+  moduleData    ModuleData[]
+  logs          AuditLog[]
+}
+
+model User {
+  id        String   @id // Discord user snowflake
+  username  String
+  createdAt DateTime @default(now())
+}
+
+/// A module or add-on as known to the platform (not per-guild — this is the catalog).
+model Module {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  type          String   // "module" | "addon"
+  latestVersion String
+  requiresModule String?  // for add-ons: name of the module they extend
+  requiresRange  String?  // for add-ons: semver range on that module
+  createdAt     DateTime @default(now())
+
+  guildConfigs  GuildModuleConfig[]
+  dependents    ModuleDependency[]   @relation("dependent")
+  dependencies  ModuleDependency[]   @relation("dependency")
+}
+
+/// Explicit dependency edges — lets us answer "what depends on X" without
+/// re-parsing every manifest at query time.
+model ModuleDependency {
+  id             String  @id @default(cuid())
+  dependentId    String
+  dependent      Module  @relation("dependent", fields: [dependentId], references: [id])
+  dependencyId   String
+  dependency     Module  @relation("dependency", fields: [dependencyId], references: [id])
+  versionRange   String
+
+  @@unique([dependentId, dependencyId])
+}
+
+/// Per-guild, per-module state: enabled/disabled + arbitrary dashboard config.
+model GuildModuleConfig {
+  id        String   @id @default(cuid())
+  guildId   String
+  guild     Guild    @relation(fields: [guildId], references: [id])
+  moduleId  String
+  module    Module   @relation(fields: [moduleId], references: [id])
+  enabled   Boolean  @default(false)
+  version   String   // version currently active for this guild
+  config    Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@unique([guildId, moduleId])
+}
+
+/// Namespaced key-value storage for module-private runtime data
+/// (e.g. ticket counters, XP totals). Keeps modules from touching
+/// each other's rows.
+model ModuleData {
+  id        String   @id @default(cuid())
+  guildId   String
+  guild     Guild    @relation(fields: [guildId], references: [id])
+  moduleName String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@unique([guildId, moduleName, key])
+}
+
+model GuildPermission {
+  id             String @id @default(cuid())
+  guildId        String
+  guild          Guild  @relation(fields: [guildId], references: [id])
+  permissionKey  String // e.g. "moderation.warn"
+  roleId         String // Discord role snowflake granted this permission
+
+  @@unique([guildId, permissionKey, roleId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  guildId   String?
+  guild     Guild?   @relation(fields: [guildId], references: [id])
+  actorId   String?  // user or "system"
+  action    String
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+}

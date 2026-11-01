@@ -1,0 +1,15 @@
+{
+  "name": "@platform/module-sdk",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p ."
+  },
+  "dependencies": {
+    "semver": "^7.6.0"
+  },
+  "devDependencies": {
+    "@types/semver": "^7.5.0"
+  }
+}
