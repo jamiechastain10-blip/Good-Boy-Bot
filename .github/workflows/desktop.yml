@@ -1,0 +1,123 @@
+# Builds the Good Boy desktop app with the bot and its own Node inside: three Windows editions (Owner, Good Boy for
+# everyone, Developer) and the Mac app. Each Windows build is then started once on a clean machine with a made-up
+# server, every page is photographed, and the build fails if a page did not draw or the bundled bot cannot run.
+# Run it from the Actions tab: "Desktop app" > Run workflow. Nothing here uses secrets or a real server's data.
+name: Desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [good-boy-2.1.1]
+    paths: ['desktop/**', 'src/**', 'modules/**', 'scripts/**', 'package.json', '.github/workflows/desktop.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [owner, consumer, developer]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Bot packages for the build scripts
+        run: npm install --omit=optional --no-audit --no-fund --ignore-scripts
+      - name: Choose the edition and put the bot inside the app
+        shell: pwsh
+        run: |
+          node desktop/scripts/set-edition.js ${{ matrix.edition }}
+          node desktop/scripts/bundle-bot.js
+          Push-Location desktop/bundle/bot
+          npm install --omit=dev --no-audit --no-fund
+          Pop-Location
+          Copy-Item (Get-Command node).Source desktop/bundle/node/node.exe
+          & desktop/bundle/node/node.exe --version
+      - name: Install the app's packages
+        run: npm install --no-audit --no-fund
+        working-directory: desktop
+      - name: Build the installer and portable .exe
+        run: npm run dist:win
+        working-directory: desktop
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+      - name: Start the built app on a made-up server and photograph every page
+        shell: pwsh
+        env: { ELECTRON_ENABLE_LOGGING: '1' }
+        run: |
+          $dir = Join-Path $PWD 'smoke'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          node desktop/scripts/make-fixture.js "$dir\seed.db"
+          $env:GOODBOY_SMOKE_DIR = $dir
+          $env:GOODBOY_SMOKE_SEED = "$dir\seed.db"
+          $exe = Get-ChildItem 'desktop\dist\win-unpacked' -Filter '*.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'Built app not found.' }
+          $p = Start-Process -FilePath $exe.FullName -PassThru -RedirectStandardOutput "$dir\stdout.txt" -RedirectStandardError "$dir\stderr.txt"
+          $done = $p.WaitForExit(150000)
+          if (-not $done) {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("$dir\screen-at-timeout.png")
+            Get-Process | Where-Object { $_.Path -like '*win-unpacked*' } | Stop-Process -Force
+          }
+          foreach ($f in 'boot.log', 'smoke.json', 'stderr.txt') { if (Test-Path "$dir\$f") { "---- $f"; Get-Content "$dir\$f" -Tail 80 } }
+          if (-not $done) { throw 'The app did not finish its self-check in time.' }
+          if ($p.ExitCode -ne 0) { throw "The app's self-check failed (exit $($p.ExitCode))." }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-windows-${{ matrix.edition }}
+          path: |
+            smoke/*.png
+            smoke/*.json
+            smoke/*.log
+            smoke/*.txt
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-${{ matrix.edition }}
+          path: |
+            desktop/dist/*-Setup-*.exe
+            desktop/dist/*-Portable-*.exe
+          if-no-files-found: error
+      # The Owner test build gets the owner's server data added afterwards, outside GitHub, so it is uploaded unpacked too.
+      - uses: actions/upload-artifact@v4
+        if: matrix.edition == 'owner'
+        with:
+          name: Windows-owner-unpacked
+          path: desktop/dist/win-unpacked/
+          if-no-files-found: error
+
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Bot packages for the build scripts
+        run: npm install --omit=optional --no-audit --no-fund --ignore-scripts
+      - name: Put the bot inside the app
+        run: |
+          node desktop/scripts/set-edition.js consumer
+          node desktop/scripts/bundle-bot.js
+          (cd desktop/bundle/bot && npm install --omit=dev --no-audit --no-fund)
+          cp "$(command -v node)" desktop/bundle/node/node
+          desktop/bundle/node/node --version
+      - name: Install the app's packages
+        run: npm install --no-audit --no-fund
+        working-directory: desktop
+      - name: Build the .dmg files
+        run: npm run dist:mac
+        working-directory: desktop
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mac
+          path: desktop/dist/*.dmg
+          if-no-files-found: error

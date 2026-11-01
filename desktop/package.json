@@ -1,0 +1,101 @@
+{
+  "name": "good-boy-desktop",
+  "productName": "Good Boy",
+  "version": "2.1.1",
+  "description": "Good Boy desktop app - control panel for the Good Boy Discord bot (Windows and macOS)",
+  "author": "Basic Ghost Labs",
+  "private": true,
+  "type": "module",
+  "main": "boot.cjs",
+  "scripts": {
+    "sync": "node scripts/sync-assets.js",
+    "start": "npm run sync && electron .",
+    "dist:win": "npm run sync && electron-builder --win",
+    "dist:mac": "npm run sync && electron-builder --mac",
+    "bundle": "node scripts/bundle-bot.js"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.basicghostlabs.goodboy",
+    "productName": "Good Boy",
+    "copyright": "Copyright (c) 2026 Basic Ghost Labs",
+    "files": [
+      "boot.cjs",
+      "main.js",
+      "preload.cjs",
+      "edition.json",
+      "lib/**",
+      "renderer/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Good-Boy-Setup-${version}.${ext}",
+      "shortcutName": "Good Boy",
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "icon": "build/icon-512.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "identity": null,
+      "artifactName": "Good-Boy-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Good-Boy-Portable-${version}.${ext}"
+    },
+    "extraResources": [
+      {
+        "from": "bundle/bot",
+        "to": "bot"
+      },
+      {
+        "from": "bundle/node",
+        "to": "node"
+      },
+      {
+        "from": "bundle/owner-seed",
+        "to": "owner-seed",
+        "filter": [
+          "eclipse.db"
+        ]
+      }
+    ]
+  }
+}

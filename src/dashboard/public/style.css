@@ -1,0 +1,66 @@
+/* Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* Layout and components. Colours come from the variables in glass.css, which also owns all the motion. */
+*{box-sizing:border-box}
+html{min-height:100%}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,Segoe UI,sans-serif}
+button,input,select,textarea{font:inherit}
+button,.btn{cursor:pointer;background:linear-gradient(110deg,#1269ed,#1555b9);color:#fff;border:1px solid rgba(112,171,255,.34);border-radius:11px;padding:9px 14px;text-decoration:none;display:inline-block}
+button:disabled{opacity:.5;cursor:default}
+h2{margin:0 0 12px}h3{margin:0 0 4px}
+.topbar{position:relative;margin:14px 16px 0;border-radius:17px;display:flex;align-items:center;justify-content:space-between;padding:11px 17px;gap:12px}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:inherit}
+.brand img{width:47px;height:47px;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.25))}
+.brand strong,.brand small{display:block}.brand strong{font-size:18px}.brand small{font-size:11px;color:var(--muted)}
+#who{font-size:12px}#who a{margin-left:8px}
+main{max-width:1550px;margin:0 auto;padding:18px 16px 32px}
+.muted,.hint{color:var(--muted)}.hint{font-size:12px}
+.card{border-radius:16px;padding:17px;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:13px}
+.guild{cursor:pointer;text-align:center}
+.guild img,.guild .ph{width:62px;height:62px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;background:#134f9d;font-weight:700;font-size:22px}
+.shell{display:grid;grid-template-columns:225px minmax(0,1fr);gap:15px;align-items:start}
+.side{position:sticky;top:15px;border-radius:18px;padding:13px}
+.side-label{font-size:10px;letter-spacing:.14em;color:var(--muted);padding:8px}
+.nav-item{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;text-align:left;background:transparent;border:0;color:#b6d0f1;margin-bottom:4px}
+.theme-light .nav-item{color:#35557d}
+.nav-item.active{background:linear-gradient(95deg,#1268ed,#17448b);color:#fff}
+.nav-icon{width:19px;text-align:center;font-size:17px}
+.workspace{min-width:0}
+.hero{display:flex;align-items:center;gap:17px;padding:22px;margin-bottom:13px}
+.hero img{width:82px;height:82px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 6px 14px rgba(0,0,0,.25))}.hero h2{font-size:27px;margin:0}.hero p{margin:4px 0 0}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.stat{min-width:0}.stat strong{display:block;font-size:25px;margin-top:8px}
+.section-title{margin:14px 0 10px}
+.quick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.quick{display:flex;gap:10px;text-align:left;align-items:center;padding:15px;background:rgba(21,65,125,.62);color:inherit}
+.quick .nav-icon{background:#1252ae;border-radius:9px;width:37px;height:37px;display:grid;place-items:center;flex-shrink:0;color:#fff}
+.quick strong,.quick small{display:block}.quick small{color:var(--muted);font-size:11px}
+.badge{font-size:11px;padding:2px 8px;border:1px solid var(--line);border-radius:30px;margin-left:6px}
+.healthy{color:var(--ok)}.warning{color:var(--warn)}.failing{color:var(--bad)}
+.ghost{background:rgba(255,255,255,.055);border:1px solid var(--line);color:var(--text)}
+.on{background:#087d68}.danger{background:#a8323a}
+label{display:block;font-weight:600;margin:12px 0 5px}
+input[type=text],input[type=number],select,textarea{width:100%;background:rgba(3,17,43,.7);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:9px}
+.theme-light input[type=text],.theme-light input[type=number],.theme-light select,.theme-light textarea{background:rgba(255,255,255,.8)}
+textarea{min-height:65px}
+.checks{display:flex;flex-wrap:wrap;gap:8px 15px}.checks label{font-weight:400;margin:0}
+table{width:100%;border-collapse:collapse;display:block;overflow-x:auto}
+td,th{padding:9px;border-bottom:1px solid var(--line);text-align:left;font-size:12px;vertical-align:top}
+#toast{position:fixed;right:20px;bottom:20px;background:#103765;color:#fff;border:1px solid var(--line);padding:12px 18px;border-radius:12px;opacity:0;pointer-events:none;z-index:10}
+#toast.show{opacity:1}#toast.err{border-color:var(--bad)}
+.appearance{display:flex;gap:8px;flex-wrap:wrap}.appearance button{min-width:100px}
+.empty{padding:20px}
+.welcome{max-width:620px;margin:9vh auto}.welcome img{width:78px;height:78px;object-fit:contain;filter:drop-shadow(0 6px 14px rgba(0,0,0,.25))}
+.access-note{border-left:3px solid var(--warn);padding-left:12px}
+@media(max-width:850px){.stats{grid-template-columns:repeat(2,1fr)}.quick-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){
+  .shell{grid-template-columns:55px minmax(0,1fr);gap:8px}
+  .side{padding:6px}.side-label,.nav-name{display:none}.nav-item{justify-content:center;padding:10px 4px}
+  .hero{padding:14px}.hero img{width:55px;height:55px}.hero h2{font-size:20px}
+  .quick-grid{grid-template-columns:1fr}.topbar{margin:8px 8px 0}.topbar .brand img{width:35px;height:35px}
+  main{padding:10px 8px}.card{padding:12px}.stat strong{font-size:20px}
+}
+
+.legal{max-width:820px}.legal h1{margin:0 0 10px}.legal h2{margin:20px 0 6px;font-size:16px}.legal p,.legal li{color:var(--text)}.legal ul{padding-left:20px}.legal a{color:#9ecbff}
+#legal-links{margin-top:18px;text-align:center;font-size:12px}#legal-links a{margin:0 8px}

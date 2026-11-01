@@ -1,0 +1,45 @@
+/* Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* ==========================================================================================
+   LIQUID GLASS LAYER - the one place for the look and every animation. Layout lives in style.css.
+   Carried over from the liquid-glass design, nothing dropped:
+     1. Glass surfaces ........ .glass .card .side .topbar : translucent fill, 22px backdrop blur, inset top highlight, soft shadow
+     2. Aurora background ..... .aurora i (three blurred colour blobs) drifting with @keyframes drift:
+                                blob 1 18s, blob 2 24s in reverse, blob 3 21s - each moves 13vw/8vh and grows to 1.22x
+     3. Card hover lift ....... .guild / .quick : rise 2px and brighten the border, .2s
+     4. Button hover .......... brightness(1.13) on every button
+     5. Focus ring ............ 2px light-blue outline on keyboard focus
+     6. Toast fade ............ #toast opacity .2s
+     7. Themes ................ dark (default), light, blue - switch the same variables
+     8. Motion switch ......... .motion-off stops the aurora; prefers-reduced-motion also stops every animation and transition
+   ========================================================================================== */
+
+/* ---- tokens (1, 7) */
+:root{--bg:#061127;--card:rgba(12,36,79,.68);--line:rgba(109,168,255,.24);--text:#ecf4ff;--muted:#9dbbe1;--accent:#1267ed;--ok:#31e5b0;--warn:#ffc168;--bad:#ff777e;--blur:blur(22px)}
+.theme-light{--bg:#dceafb;--card:rgba(255,255,255,.72);--line:rgba(36,95,161,.2);--text:#153052;--muted:#516f95}
+.theme-blue{--bg:#073775;--card:rgba(8,54,123,.62)}
+
+/* ---- glass surfaces (1) */
+.glass,.card,.side,.topbar{background:var(--card);border:1px solid var(--line);box-shadow:inset 0 1px rgba(255,255,255,.06),0 12px 35px rgba(0,0,0,.12);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)}
+
+/* ---- aurora (2) */
+.aurora{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.aurora i{position:absolute;border-radius:50%;filter:blur(80px);opacity:.42;animation:drift 18s ease-in-out infinite alternate}
+.aurora i:nth-child(1){width:55vw;height:55vw;background:#076eff;top:-30vw;left:10%}
+.aurora i:nth-child(2){width:44vw;height:44vw;background:#00a8ed;bottom:-28vw;right:-15vw;animation-duration:24s;animation-direction:alternate-reverse}
+.aurora i:nth-child(3){width:36vw;height:36vw;background:#3349cc;top:28%;right:5%;animation-duration:21s}
+@keyframes drift{to{transform:translate(13vw,8vh) scale(1.22)}}
+
+/* ---- hover lift (3) */
+.guild,.quick{transition:transform .2s,border-color .2s}
+.guild:hover,.quick:hover{transform:translateY(-2px);border-color:#58a7ff}
+
+/* ---- buttons and focus (4, 5) */
+button:hover,.btn:hover{filter:brightness(1.13)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #7dc3ff;outline-offset:2px}
+
+/* ---- toast (6) */
+#toast{transition:opacity .2s}
+
+/* ---- motion switch (8) */
+.motion-off .aurora i{animation:none!important}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}

@@ -1,0 +1,233 @@
+/**
+ * Basic Ghost Labs - Good Boy
+ * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Client, GatewayIntentBits, Partials, Events } from 'discord.js';
+import { logger } from './logger.js';
+import { Database } from './db.js';
+import { Permissions } from './permissions.js';
+import { ApiQueue } from './queue.js';
+import { ModuleManager, EVENT_GUILD } from './moduleManager.js';
+import { builtins } from './builtins.js';
+import { withVersionLine } from './about.js';
+import { startDashboard } from './dashboard/server.js';
+import { sleep } from './util.js';
+import { connectSupervisor } from './ipc.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+// Data lives outside the code so a release can be replaced without touching it. The supervisor sets this; by default it is ./data.
+const dataDir = path.resolve(process.env.GOODBOY_DATA_DIR || path.join(root, 'data'));
+
+// ---- preflight -----------------------------------------------------------
+const [major, minor] = process.versions.node.split('.').map(Number);
+if (major < 22 || (major === 22 && minor < 13)) {
+  console.error(`\nGood Boy needs Node.js 22.13 or newer (you have ${process.versions.node}).\nInstall the current LTS from https://nodejs.org and try again.\n`);
+  process.exit(1);
+}
+const token = process.env.DISCORD_TOKEN?.trim();
+if (!token) {
+  console.error('\nNo DISCORD_TOKEN found. Run "npm run setup" to create your .env file, or copy .env.example to .env and fill it in.\n');
+  process.exit(1);
+}
+
+// ---- core services ---------------------------------------------------------
+const db = new Database(path.join(dataDir, 'eclipse.db'));
+const perms = new Permissions(db);
+let liveClient = null;
+let stopping = false;
+// When started by the supervisor (npm run supervised) this reports health to it and listens for "stop". Otherwise null.
+const link = connectSupervisor({
+  version,
+  getStatus: () => ({ ready: !!liveClient?.isReady?.(), guilds: liveClient?.guilds?.cache?.size ?? 0, rss: process.memoryUsage().rss, uptime: Math.round(process.uptime()), pingMs: liveClient?.ws?.ping ?? null }),
+  onShutdown: (why) => shutdown(why),
+  onControl: (action, payload) => control(action, payload),
+});
+// Modules someone added from the desktop app live outside the bot's own folder, so app updates never remove them.
+const extraModules = process.env.GOODBOY_EXTRA_MODULES ? path.resolve(process.env.GOODBOY_EXTRA_MODULES) : null;
+
+/** Requests from the desktop app (through the supervisor). Only these few actions exist. */
+async function control(action, p = {}) {
+  const guilds = [...(liveClient?.guilds?.cache?.values?.() ?? [])];
+  const pickGuild = () => (p.guildId ? guilds.find((g) => g.id === String(p.guildId)) : guilds[0]) ?? null;
+  if (action === 'modules') {
+    const g = pickGuild();
+    if (!g) return { ok: false, error: 'The bot is not in a server yet.' };
+    return { ok: true, guildId: g.id, guildName: g.name, guilds: guilds.map((x) => ({ id: x.id, name: x.name })),
+      modules: manager.describeForGuild(g.id).map((d) => ({ name: d.name, version: d.version, description: d.description, enabled: d.enabled, type: d.type ?? 'module', requires: d.requires?.module ?? null, status: d.status, commands: d.commands })),
+      loadErrors: Object.fromEntries(manager.loadErrors) };
+  }
+  if (action === 'module-set') {
+    const g = pickGuild();
+    if (!g) return { ok: false, error: 'The bot is not in a server yet.' };
+    const name = String(p.name ?? '');
+    if (!manager.defs.has(name)) return { ok: false, error: `There is no module called ${name}.` };
+    try {
+      if (p.enabled) await manager.enable(g.id, name); else await manager.disable(g.id, name, { cascade: true });
+      return { ok: true, name, enabled: !!p.enabled };
+    } catch (e) { return { ok: false, error: e.code === 'REQUIREMENT' ? `${e.message}` : e.message }; }
+  }
+  if (action === 'module-inspect') {
+    if (!extraModules) return { ok: false, error: 'Adding modules is not set up for this bot.' };
+    const dir = path.resolve(extraModules, String(p.folder ?? ''));
+    if (path.dirname(dir) !== extraModules) return { ok: false, error: 'That module is not in the added-modules folder.' };
+    return manager.inspect(dir);
+  }
+  if (action === 'modules-load') {
+    if (!extraModules) return { ok: false, error: 'Adding modules is not set up for this bot.' };
+    return { ok: true, ...(await manager.loadNew(extraModules)) };
+  }
+  return { ok: false, error: 'Unknown request.' };
+}
+const queue = new ApiQueue();
+const manager = new ModuleManager({ db, perms, queue, builtins });
+manager.version = version;
+manager.rootDir = root;
+
+// ---- intents: try everything, fall back gracefully if privileged ones are off ----
+const BASE = ['Guilds', 'GuildModeration', 'GuildMessages', 'GuildMessageReactions', 'GuildVoiceStates'];
+const ATTEMPTS = [
+  ['GuildMembers', 'MessageContent', 'GuildPresences'],
+  ['GuildMembers', 'MessageContent'],
+  ['GuildMembers'],
+  [],
+];
+
+function wire(client) {
+  liveClient = client;
+  client.once(Events.ClientReady, () => onReady(client).catch((e) => logger.error(`Startup error: ${e.stack ?? e.message}`)));
+
+  client.on(Events.GuildCreate, async (guild) => {
+    try {
+      db.upsertGuild(guild.id, guild.name);
+      await manager.restoreGuild(guild.id);
+      await manager.syncCommands(guild.id);
+      logger.info(`Joined server "${guild.name}"`);
+    } catch (e) { logger.error(`GuildCreate failed: ${e.message}`); }
+  });
+
+  client.on(Events.GuildDelete, async (guild) => {
+    if (guild.available === false) return; // outage, not a removal
+    await manager.unloadGuild(guild.id);
+    logger.info(`Removed from server "${guild.name}" (data kept in case you re-add me)`);
+  });
+
+  client.on(Events.InteractionCreate, async (i) => {
+    try {
+      if (!i.guildId) {
+        if (i.isRepliable()) await i.reply({ content: 'This bot only works inside servers.', flags: 64 }).catch(() => {});
+        return;
+      }
+      if (i.isAutocomplete()) return await manager.handleAutocomplete(i);
+      if (i.isChatInputCommand() || i.isContextMenuCommand()) return await manager.handleCommand(i);
+      if (i.isMessageComponent() || i.isModalSubmit()) return await manager.handleComponent(i);
+    } catch (e) { logger.error(`Interaction error: ${e.stack ?? e.message}`); }
+  });
+
+  for (const [eventName, resolve] of Object.entries(EVENT_GUILD)) {
+    client.on(eventName, async (...args) => {
+      try {
+        if (eventName.startsWith('messageReaction')) {
+          const [reaction, user] = args;
+          if (reaction.partial) await reaction.fetch();
+          if (reaction.message.partial) await reaction.message.fetch();
+          if (user.partial) await user.fetch();
+        }
+        const guildId = resolve(...args);
+        if (guildId) await manager.dispatch(eventName, guildId, ...args);
+      } catch (e) { logger.warn(`Event ${eventName} dropped: ${e.message}`); }
+    });
+  }
+
+  client.on(Events.Error, (e) => logger.error(`Discord client error: ${e.message}`));
+}
+
+/** Keeps a "Good Boy vX · Basic Ghost Labs" line at the end of the bot's Discord description; the owner's own text is left alone. */
+async function syncDescription(app) {
+  if (/^(0|false|off|no)$/i.test(process.env.GOODBOY_VERSION_IN_DESCRIPTION ?? '')) return;
+  try {
+    const next = withVersionLine(app.description, version);
+    if (next !== (app.description ?? '')) { await app.edit({ description: next }); logger.info(`Bot description now ends with the version line (v${version}).`); }
+  } catch (e) { logger.warn(`Could not update the bot description: ${e.message}`); }
+}
+
+async function onReady(client) {
+  logger.info(`Logged in as ${client.user.tag} - in ${client.guilds.cache.size} server(s)`);
+
+  try {
+    const app = await client.application.fetch();
+    await syncDescription(app);
+    const o = app.owner;
+    if (o?.members) { manager.ownerIds.add(o.ownerId); for (const id of o.members.keys()) manager.ownerIds.add(id); }
+    else if (o?.id) manager.ownerIds.add(o.id);
+  } catch (e) { logger.warn(`Could not read application owner: ${e.message}`); }
+
+  for (const [, guild] of client.guilds.cache) {
+    try {
+      db.upsertGuild(guild.id, guild.name);
+      await manager.restoreGuild(guild.id);
+      await manager.syncCommands(guild.id);
+      await sleep(200);
+    } catch (e) { logger.error(`Startup for "${guild.name}" failed: ${e.message}`); }
+  }
+
+  manager.startTasks();
+  const missing = ['MessageContent', 'GuildMembers', 'GuildPresences'].filter((n) => !manager.intents.has(n));
+  if (missing.length) {
+    logger.warn(`Running without privileged intent(s): ${missing.join(', ')}. Some features are reduced. ` +
+      'Enable them at https://discord.com/developers/applications > your app > Bot > Privileged Gateway Intents, then restart.');
+  }
+  logger.info('Ready. In Discord, run /module list to turn features on.');
+  link?.ready();
+}
+
+async function login() {
+  await manager.discover(path.join(root, 'modules'));
+  if (extraModules) await manager.discover(extraModules);
+  logger.info(`Loaded ${manager.defs.size} module(s): ${[...manager.defs.keys()].join(', ') || 'none'}`);
+
+  for (const priv of ATTEMPTS) {
+    const names = [...BASE, ...priv];
+    const client = new Client({
+      intents: names.map((n) => GatewayIntentBits[n]),
+      partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User, Partials.GuildMember],
+      allowedMentions: { parse: [], repliedUser: false }, // modules opt in to pings explicitly
+    });
+    manager.attach(client, names);
+    wire(client);
+    try {
+      await client.login(token);
+      return client;
+    } catch (err) {
+      client.destroy();
+      if (/disallowed intents/i.test(err.message) || err.code === 'DisallowedIntents') {
+        logger.warn(`Discord rejected privileged intents (${priv.join(', ') || 'none'}). Retrying with fewer...`);
+        continue;
+      }
+      if (/invalid token|TokenInvalid/i.test(err.message) || err.code === 'TokenInvalid') {
+        logger.error('Discord says your bot token is invalid. Check DISCORD_TOKEN in .env (reset it in the Developer Portal if unsure).');
+      } else logger.error(`Login failed: ${err.message}`);
+      process.exit(1);
+    }
+  }
+  logger.error('Could not log in with any intent set.');
+  process.exit(1);
+}
+
+const client = await login();
+const dashboard = await startDashboard({ manager, client, db, logger, perms, version, dataDir, updates: link }).catch((e) => { logger.warn(`Dashboard not started: ${e.message}`); return null; });
+
+async function shutdown(signal) {
+  if (stopping) return;
+  stopping = true;
+  logger.info(`${signal} received - shutting down cleanly`);
+  try { dashboard?.close(); await manager.shutdown(); await client.destroy(); db.close(); } catch { /* ignore */ }
+  process.exit(0);
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('unhandledRejection', (e) => logger.error(`Unhandled rejection: ${e?.stack ?? e}`));
+process.on('uncaughtException', (e) => logger.error(`Uncaught exception: ${e?.stack ?? e}`));

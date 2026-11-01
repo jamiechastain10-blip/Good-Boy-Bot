@@ -1,103 +1,64 @@
 # Architecture
 
-## 1. Technology stack
-- TypeScript across all packages.
-- Bot: Node.js + discord.js v14.
-- Database: PostgreSQL via Prisma.
-- Cache / queue / pub-sub: Redis.
-- Web API: Fastify.
-- Web App: Next.js (Phase 2).
-- Monorepo: npm workspaces (`packages/*`, `modules/*`).
-
-## 2. Repository structure
 ```
-discord-platform/
-  packages/
-    module-sdk/   # Types + contracts every module/add-on is built against
-    core/         # Bot process: ModuleManager, DiscordApiManager, event wiring
-    database/     # Prisma schema + generated client
-    web-api/      # REST API, Discord OAuth, config validation
-    web-app/      # (Phase 2) Next.js dashboard
-  modules/
-    test-module/  # Phase 1 acceptance module
-  docs/
+                 ┌────────────── Discord Gateway / REST ──────────────┐
+                 │                         │                          │
+        slash commands, buttons,      events (members,            outbound calls
+        modals, autocomplete          messages, reactions…)       (via fairness queue)
+                 │                         │                          ▲
+        ┌────────▼─────────────────────────▼──────────────────────────┴───────┐
+        │  src/index.js   client + intent fallback + event wiring             │
+        │  ┌───────────────────────────────────────────────────────────────┐  │
+        │  │ ModuleManager  discover · validate · enable/disable per server │  │
+        │  │ dispatch events/commands/components → ONLY enabled modules     │  │
+        │  │ health · error isolation · hot reload + rollback · tasks       │  │
+        │  └──────────┬──────────────┬──────────────┬──────────────────────┘  │
+        │   Permissions        ApiQueue          Database (SQLite)            │
+        │   (role mapping)   (priority + per-    guilds · module_state ·      │
+        │                     module caps)       config · module_data ·       │
+        │                                        permissions · logs · backups │
+        └──────────────────────────────┬───────────────────────────────────────┘
+                                       │ loads
+             modules/  moderation · member-management · roles · support
+                       (+ support-html-transcripts add-on) · engagement ·
+                       community · voice · reminders · integrations · quotes ·
+                       stats · achievements · eclipseid · tempvoice · partyfinder
+        src/          pure logic shared by modules and tests: tickets · automod · gif · forms · util
+        src/dashboard/  web UI (Discord OAuth, liquid-glass design) → same ModuleManager API
 ```
 
-## 3. Core/Module interface
-See `packages/module-sdk/src/types.ts`. A module exports a `ModuleManifest`
-(`name`, `version`, `type`, optional `commands`/`events`/`permissions`/
-`dashboard`, and `init`/`destroy`/`update` lifecycle hooks). The Core never
-imports feature-specific logic — it only calls these hook functions.
+## Principles
+- **The core has no feature logic.** It never says "if tickets…": it routes to whatever modules are enabled in that server.
+- **Per-server everything.** Enabled state, settings, permissions and data are keyed by server; one server's configuration can never leak into another's.
+- **One source of truth.** Slash commands (`/config`, `/module`, `/permissions`) and the dashboard call the same `ModuleManager` methods, so validation and logging are identical.
+- **Failure isolation.** Every handler runs inside a guard. Errors are logged, counted into module health, and the user sees a generic message. A module that fails 15 times in 2 minutes is automatically reloaded (rate-limited). A module that fails to start never becomes active.
+- **Commands are registered per server, only for enabled modules** (instant updates, tidy command lists, and it stays under Discord's 100-command limit).
 
-## 4. Module lifecycle
-`INSTALL -> VALIDATE -> ENABLE -> LOAD -> RUN -> UPDATE -> RELOAD -> DISABLE -> UNLOAD -> UNINSTALL`,
-implemented in `ModuleManager`. Each guild has independent enable/disable
-state; a module can be `running` for guild A and `disabled` for guild B
-simultaneously. Errors during `init`/`update` are caught, logged, and do not
-propagate to crash the bot process.
+## Mapping to the original specification
+| Spec item | Where |
+|---|---|
+| Custom module system, lifecycle, no module limit | `ModuleManager` (install = folder present; enable/disable per server; update hook; reload; unload on disable; uninstall = remove folder) |
+| Add-ons with version & dependency checks, removal warning | `type: 'addon'`, `requires`, cascade-disable rule |
+| Module SDK | the module contract + `ctx` ([`MODULES.md`](MODULES.md)) |
+| Discord API manager (limits, queue, priorities) | discord.js enforces Discord's real rate limits; `ApiQueue` adds priority and per-module fairness caps |
+| Update system | DB migrations (auto, with backup), per-module `update()` hook on version change, hot reload with rollback, **plus** signed whole-bot updates through a supervisor with a trial period and automatic rollback ([`UPDATES.md`](UPDATES.md)). Off unless configured; installs only on a click |
+| Desktop app | `desktop/` Electron control panel that runs the supervisor ([`DESKTOP.md`](DESKTOP.md)); written, not yet built or run |
+| Web app, Discord OAuth, dynamic module forms | `src/dashboard/` renders settings straight from each module's `settings` definition. Two access levels, checked live with Discord on every request: **admin** (Manage Server) and **panel** (`dashboard.access` + the panel's own permission). Design: `glass.css` holds the whole liquid-glass look and every animation; `style.css` is layout only |
+| Per-server config, permissions | `module_config`, `permissions` tables; `/permissions`, dashboard tab |
+| Database | SQLite (`node:sqlite`), versioned migrations, namespaced module data |
+| Security | central permission checks, hierarchy checks, dangerous-role refusal, SSRF-safe fetch, CSRF + origin checks, localhost-only dashboard by default (see `HOSTING.md`), panel permissions enforced server-side, security log |
+| Health display | `/health`, dashboard Logs tab |
+| Marketplace / sandboxing of third-party code | **not built**: modules are trusted code |
 
-## 5. Add-on / dependency model
-Add-ons declare `requires: { module, version }` (a semver range). The
-`ModuleManager` verifies the required module is installed and
-version-compatible before allowing install. Dependency edges are also
-persisted in `ModuleDependency` rows so "N add-ons depend on this module"
-warnings survive a restart, not just an in-memory check.
+## Data
+`data/eclipse.db` (+ `-wal`/`-shm` while running). Backups in `data/backups/` (last 10) are taken before schema migrations, module version upgrades and reloads.
 
-## 6. Web App <-> Bot communication
-- **Config writes** go Web App -> Web API -> Postgres. Postgres is the single
-  source of truth.
-- **Propagation to the running bot** happens over Redis pub/sub
-  (`module.enable`, `module.config.updated`, etc.) — the bot subscribes and
-  reloads only the affected module/guild.
-- **Status reads** (health, request rates) are published by the bot to Redis
-  on an interval; the Web API reads from Redis, never calls into the bot
-  process directly.
-- The Web API never holds the Discord bot token; only the Core process does.
-
-## 7. Database architecture
-See `packages/database/prisma/schema.prisma`: `Guild`, `User`, `Module`,
-`ModuleDependency`, `GuildModuleConfig` (per-guild enable state + JSON
-config), `ModuleData` (namespaced per-module key-value storage so modules
-can't see each other's rows), `GuildPermission`, `AuditLog`.
-
-## 8. Discord API Manager
-`DiscordApiManager` is a **fairness/priority queue in front of discord.js**,
-not a reimplementation of Discord's rate limits — discord.js's REST manager
-already implements Discord's documented per-route and global limits
-correctly. This layer adds: request priority (`high`/`normal`/`low`), and a
-per-module concurrency cap so one module flooding requests can't starve
-others' requests from ever being sent.
-
-## 9. Security model
-- Modules never receive the raw discord.js `Client`, database connection, or
-  another module's data — everything goes through `ModuleContext`, which the
-  Core controls.
-- Phase 1–5 modules are first-party/trusted, loaded like normal packages.
-- **Open item, deliberately deferred**: true sandboxing of arbitrary
-  third-party marketplace code (Phase 6) is a separate design problem
-  (process isolation, static analysis on submission, a much narrower
-  `ModuleContext` surface for untrusted code) and should get its own design
-  pass before Phase 6 starts, not be assumed to fall out of the Phase 1
-  loader.
-- Config submitted from the Web App is validated against each module's own
-  `validateConfig` before being persisted — the Web API does not trust
-  client input as-is.
-
-## 10. Updates and rollback
-`ModuleManager.update()`:
-1. Refuses the update if the new version isn't semver-greater.
-2. For each guild the module is active in: `destroy()` old version ->
-   `update()` hook (if provided) -> `init()` new version.
-3. If any step throws, the manager reverts its in-memory manifest reference
-   to the previous version and re-raises — the module keeps running on the
-   old code. Phase 3 adds file-system snapshotting so a full binary/package
-   rollback (not just the in-memory reference) is possible after a
-   catastrophic update.
-
-## Deliberate deviations from a literal reading of the spec
-- The Discord API Manager wraps discord.js's rate limiting rather than
-  reimplementing it, to avoid two independent rate-limit calculators
-  disagreeing (see section 8 above).
-- The marketplace's "arbitrary third-party code" security model is
-  explicitly called out as unsolved by the Phase 1 loader and deferred to
-  its own design pass before Phase 6.
+## Notes on newer parts
+- **Tickets** (`modules/support`, rules in `src/tickets.js`): `support_history` is one row per ticket (opened, first reply, closed, how it was closed, resolution, staff-only reason/action/notes, outcome); `support_watch` is the staff-only watch log. Staff-only text is only ever sent to the watch/log channels and the dashboard, never into the member's ticket channel.
+- **AutoMod** (`modules/moderation`, rules in `src/automod.js`): all rule settings are ordinary module settings, so `/config`, `/automod` and the dashboard share one validated path; exemptions and the recent-activity list (capped at 200) are module data.
+- **Animated quotes** (`modules/quotes`, codec in `src/gif.js`): a dependency-free GIF reader/writer; frames are painted with the canvas library and re-encoded, thinning frames until the file fits Discord's limit, otherwise falling back to the still image.
+- **Popups**: `src/forms.js` (see `MODULES.md`).
+- **Supervisor and updates** (`src/supervisor.js`, `src/update/*`, `src/ipc.js`): the supervisor starts `src/index.js` as a child with `GOODBOY_SUPERVISED`, `GOODBOY_DATA_DIR` and `GOODBOY_BASE_DIR`. Releases unpack to `releases/<version>/` beside the data folder, `current.json` says which one runs (`trial` until the bot reports `ready` over IPC, then `ok`), and a failed trial rolls back and is remembered. The bot talks to the supervisor only through `src/ipc.js`; the dashboard's Updates page (bot owner only) goes through that link.
+- **Statistics and achievements** (`modules/stats`, `modules/achievements`, helpers in `src/activity.js` / `src/achievements.js`): counts are buffered in memory and flushed every 10 seconds; message text is never stored. Achievements read the same events with their own throttles, and `eclipseid` shows them through `ctx.api('achievements')` when that module is on.
+- **Temporary voice and party finder** (`modules/tempvoice`, `modules/partyfinder`, rules in `src/tempvoice.js` / `src/party.js`): both keep a small record per room/post in module data and run a `sweep` task to clean up what Discord no longer has.
+- **Notification categories** (`src/notifications.js`): every DM or ping a module sends goes through `ctx.notify.allowed(userId, category)`; members choose with `/notifications`. Recaps are off by default.

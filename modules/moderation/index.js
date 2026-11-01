@@ -1,0 +1,706 @@
+/**
+ * Basic Ghost Labs - Good Boy
+ * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+ *
+ * Moderation suite: warn / timeout / kick / ban / unban / purge / history,
+ * AutoMod (spam, words, links, mass mentions), raid protection, anti-nuke, logging.
+ */
+import { SlashCommandBuilder, EmbedBuilder, AuditLogEvent, PermissionFlagsBits as P, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } from 'discord.js';
+import { UserError, hierarchyError, parseDuration, formatDuration, truncate, escapeRegex, ts, SNOWFLAKE } from '../../src/util.js';
+import { formStore } from '../../src/forms.js';
+import { RULES, RULE_IDS, ACTIONS, ruleById, ruleEnabled, actionFor, isExempt, editExempt, countEmoji, capsRatio, recordRepeat, snippet, activityCounts } from '../../src/automod.js';
+
+const EPH = MessageFlags.Ephemeral;
+const NOPING = { parse: [] };
+const COLOR = { warn: 0xfaa61a, timeout: 0xe67e22, untimeout: 0x2ecc71, kick: 0xe74c3c, ban: 0x992d22, unban: 0x2ecc71, purge: 0x95a5a6, automod: 0x3498db, alert: 0xed4245, info: 0x5865f2 };
+const MAX_TIMEOUT = 28 * 86400000;
+const DANGEROUS = [P.Administrator, P.ManageGuild, P.ManageRoles, P.ManageChannels, P.BanMembers, P.KickMembers, P.ManageWebhooks];
+
+// in-memory sliding windows (reset on restart - that's fine for rate limiting)
+const spam = new Map();   // guild:user -> [{t,id,ch}]
+const joins = new Map();  // guild -> [{t,id}]
+const raidUntil = new Map();
+const nuke = new Map();   // guild:executor -> [t]
+const regexCache = new Map();
+
+const prune = (arr, windowMs, now = Date.now()) => arr.filter((e) => now - (e.t ?? e) < windowMs);
+
+function addCase(ctx, { type, user, modId, reason, extra }) {
+  const id = ctx.data.update('counter', (n) => n + 1, 0);
+  const entry = { id, type, targetId: user.id, targetTag: user.tag ?? user.username ?? user.id, modId, reason, at: Date.now(), ...extra };
+  ctx.data.update(`hist:${user.id}`, (arr) => [entry, ...arr].slice(0, 100), []);
+  return entry;
+}
+
+async function modLog(ctx, embed) {
+  const id = ctx.config.get('logChannel');
+  const ch = id && ctx.guild?.channels.cache.get(id);
+  if (!ch?.isTextBased()) return;
+  await ctx.queue(() => ch.send({ embeds: [embed], allowedMentions: NOPING })).catch(() => {});
+}
+
+function caseEmbed(type, c, user, mod) {
+  return new EmbedBuilder().setColor(COLOR[type] ?? COLOR.info).setTitle(`${type[0].toUpperCase() + type.slice(1)} · case #${c.id}`)
+    .addFields({ name: 'User', value: `${user.tag ?? user.username} (${user.id})`, inline: true }, { name: 'Moderator', value: mod ? `<@${mod}>` : 'AutoMod', inline: true },
+      { name: 'Reason', value: truncate(c.reason, 1000) }).setTimestamp();
+}
+
+async function tellUser(ctx, user, guild, text) {
+  if (!ctx.config.get('dmOnAction')) return;
+  await user.send({ content: `**${truncate(guild.name, 60)}**: ${text}`, allowedMentions: NOPING }).catch(() => {});
+}
+
+async function fetchTarget(i, user) {
+  const member = await i.guild.members.fetch(user.id).catch(() => null);
+  return member;
+}
+
+function guardTarget(i, member) {
+  const err = hierarchyError(i.guild, i.member, member, i.guild.members.me);
+  if (err) throw new UserError(err);
+}
+
+async function doTimeout(ctx, member, ms, reason, modId, type = 'timeout') {
+  if (!member.moderatable) throw new UserError("I can't time out that member (their role is above mine, or they're an admin).");
+  await member.timeout(Math.min(ms, MAX_TIMEOUT - 60000), truncate(reason, 400)); // stay safely inside Discord's 28-day cap
+  const c = addCase(ctx, { type, user: member.user, modId, reason, extra: { durationMs: ms } });
+  await modLog(ctx, caseEmbed('timeout', c, member.user, modId));
+  return c;
+}
+
+// ------------------------------------------------------------------ AutoMod
+function wordRegex(words) {
+  const key = words.join('\u0000');
+  let r = regexCache.get(key);
+  if (!r) {
+    r = words.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${words.map(escapeRegex).join('|')})(?![\\p{L}\\p{N}])`, 'iu') : null;
+    regexCache.set(key, r);
+    if (regexCache.size > 50) regexCache.delete(regexCache.keys().next().value);
+  }
+  return r;
+}
+
+function domainAllowed(host, allowed) {
+  host = host.toLowerCase();
+  return allowed.some((a) => { a = a.toLowerCase().replace(/^www\./, ''); return host === a || host.endsWith('.' + a); });
+}
+
+const AUTOMOD_CFG_KEYS = ['automodAction', ...RULES.flatMap((r) => [r.on, r.limit, r.action].filter(Boolean)), 'spamWindowSeconds', 'repeatWindowSeconds', 'capsMinLetters'];
+const automodCfg = (ctx) => Object.fromEntries(AUTOMOD_CFG_KEYS.map((k) => [k, ctx.config.get(k)]));
+const RECENT_MAX = 200;
+const repeats = new Map(); // guild:user -> [{t,id,ch,key}]
+
+/** First rule this message breaks (words, links, mentions, caps, emoji, repeats, spam), or null. */
+function detect(ctx, message, where = {}) {
+  const text = message.content ?? '';
+  const cfg = automodCfg(ctx);
+  const ex = ctx.data.get('automod:exempt') ?? {};
+  const live = (rule) => ruleEnabled(cfg, rule) && !isExempt(ex, rule.id, where);
+  const R = (id) => ruleById(id);
+
+  if (text && live(R('words'))) {
+    const re = wordRegex(ctx.config.get('bannedWords') ?? []);
+    if (re?.test(text)) return { rule: 'words', name: 'word filter', msg: 'that word is not allowed here.' };
+  }
+  if (text && live(R('links'))) {
+    const allowed = ctx.config.get('allowedDomains') ?? [];
+    for (const m of text.matchAll(/\b(?:https?:\/\/|www\.)([^\s/?#<>]+)/gi)) {
+      if (!domainAllowed(m[1], allowed)) return { rule: 'links', name: 'link filter', msg: "links aren't allowed here." };
+    }
+    if (/\b(?:discord\.gg|discord(?:app)?\.com\/invite)\/\w+/i.test(text) && !domainAllowed('discord.gg', allowed)) return { rule: 'links', name: 'invite filter', msg: "invites aren't allowed here." };
+  }
+  if (live(R('mentions')) && message.mentions.users.size + message.mentions.roles.size >= cfg.maxMentions) return { rule: 'mentions', name: 'mass mention', msg: 'too many mentions in one message.' };
+  if (text && live(R('caps')) && capsRatio(text, { minLetters: cfg.capsMinLetters }) >= cfg.capsPercent) return { rule: 'caps', name: 'too many capitals', msg: 'please do not shout - too many capital letters.' };
+  if (text && live(R('emoji')) && countEmoji(text) > cfg.emojiMax) return { rule: 'emoji', name: 'too many emoji', msg: 'too many emoji in one message.' };
+  const key = `${ctx.guildId}:${message.author.id}`;
+  if (text && live(R('repeat'))) {
+    const r = recordRepeat(repeats.get(key) ?? [], { text, id: message.id, ch: message.channelId, now: Date.now(), windowMs: cfg.repeatWindowSeconds * 1000 });
+    repeats.set(key, r.list);
+    if (r.count >= cfg.repeatMax) { repeats.delete(key); return { rule: 'repeat', name: 'repeated message', msg: 'please do not repeat the same message.', bulk: r.hits }; }
+  }
+  if (live(R('spam'))) {
+    const windowMs = cfg.spamWindowSeconds * 1000;
+    const list = prune(spam.get(key) ?? [], windowMs);
+    list.push({ t: Date.now(), id: message.id, ch: message.channelId });
+    spam.set(key, list);
+    if (list.length >= cfg.spamMaxMessages) { spam.delete(key); return { rule: 'spam', name: 'spam', msg: 'slow down - you are sending messages too fast.', bulk: list }; }
+  }
+  return null;
+}
+
+function remember(ctx, message, v, action, c) {
+  const entry = { at: Date.now(), userId: message.author.id, tag: truncate(message.author.tag ?? message.author.username ?? message.author.id, 40), channelId: message.channelId, rule: v.rule, name: v.name, action, caseId: c?.id ?? null };
+  if (ctx.config.get('automodKeepSnippets')) entry.snippet = snippet(message.content, 80);
+  ctx.data.update('automod:recent', (arr) => [entry, ...arr].slice(0, RECENT_MAX), []);
+}
+
+async function onMessage(ctx, message) {
+  if (!message.guild || message.author.bot || message.system || !message.member) return;
+  if (ctx.perms.check(message.member, 'moderation.bypass')) return;
+  const ch = message.channel;
+  const v = detect(ctx, message, {
+    roleIds: [...(message.member.roles?.cache?.keys?.() ?? [])],
+    channelId: message.channelId, parentId: ch?.isThread?.() ? ch.parentId : null, categoryId: ch?.isThread?.() ? ch.parent?.parentId : ch?.parentId,
+  });
+  if (!v) return;
+
+  const action = actionFor(automodCfg(ctx), ruleById(v.rule));
+  if (v.bulk) {
+    // earlier messages from the same burst, in bulk (best effort); the triggering message is always attempted directly
+    const byChannel = new Map();
+    for (const e of v.bulk) if (e.id !== message.id) (byChannel.get(e.ch) ?? byChannel.set(e.ch, []).get(e.ch)).push(e.id);
+    for (const [chId, ids] of byChannel) await message.guild.channels.cache.get(chId)?.bulkDelete?.(ids, true).catch(() => {});
+  }
+  await message.delete().catch(() => {});
+
+  const reason = `AutoMod: ${v.name}`;
+  let c;
+  if (action === 'delete-warn') c = addCase(ctx, { type: 'warn', user: message.author, modId: null, reason });
+  if (action === 'delete-timeout') c = await doTimeout(ctx, message.member, ctx.config.get('automodTimeoutMinutes') * 60000, reason, null, 'timeout').catch(() => null);
+  remember(ctx, message, v, action, c);
+
+  const notice = await message.channel.send({ content: `<@${message.author.id}>, ${v.msg}`, allowedMentions: { users: [message.author.id] } }).catch(() => null);
+  if (notice) setTimeout(() => notice.delete().catch(() => {}), 6000).unref?.();
+  await tellUser(ctx, message.author, message.guild, `your message was removed by AutoMod (${v.name}).`);
+  await modLog(ctx, new EmbedBuilder().setColor(COLOR.automod).setTitle('AutoMod').setDescription(`<@${message.author.id}> in <#${message.channelId}> - **${v.name}**${c ? ` (case #${c.id})` : ''}`).setTimestamp());
+}
+
+// ------------------------------------------------------------------ raid protection
+async function onJoin(ctx, member) {
+  const g = member.guild;
+  const ageDays = ctx.config.get('minAccountAgeDays');
+  if (ageDays > 0 && Date.now() - member.user.createdTimestamp < ageDays * 86400000) {
+    const act = ctx.config.get('newAccountAction');
+    await modLog(ctx, new EmbedBuilder().setColor(COLOR.alert).setTitle('New account joined').setDescription(`<@${member.id}> - account created ${ts(member.user.createdTimestamp)}`).setTimestamp());
+    if (act === 'kick' && member.kickable) await member.kick(`Account younger than ${ageDays} day(s)`).catch(() => {});
+  }
+  if (!ctx.config.get('raidProtection')) return;
+  const now = Date.now();
+  const list = prune(joins.get(g.id) ?? [], ctx.config.get('raidWindowSeconds') * 1000, now);
+  list.push({ t: now, id: member.id });
+  joins.set(g.id, list);
+  const inRaid = (raidUntil.get(g.id) ?? 0) > now;
+  if (!inRaid && list.length >= ctx.config.get('raidJoinThreshold')) {
+    raidUntil.set(g.id, now + 300000);
+    ctx.security(`Raid detected: ${list.length} joins in ${ctx.config.get('raidWindowSeconds')}s`);
+    await modLog(ctx, new EmbedBuilder().setColor(COLOR.alert).setTitle('🚨 Possible raid').setDescription(`${list.length} members joined within ${ctx.config.get('raidWindowSeconds')} seconds. Raid mode is active for 5 minutes (action: **${ctx.config.get('raidAction')}**).`).setTimestamp());
+    for (const j of list.slice(0, -1)) { const m = g.members.cache.get(j.id); if (m) await raidAct(ctx, m); }
+  }
+  if (inRaid || list.length >= ctx.config.get('raidJoinThreshold')) await raidAct(ctx, member);
+}
+
+async function raidAct(ctx, member) {
+  const act = ctx.config.get('raidAction');
+  try {
+    if (act === 'timeout' && member.moderatable) await member.timeout(600000, 'Raid protection');
+    else if (act === 'kick' && member.kickable) await member.kick('Raid protection');
+  } catch { /* best effort */ }
+}
+
+// ------------------------------------------------------------------ anti-nuke
+const WATCHED = () => new Set([AuditLogEvent.ChannelDelete, AuditLogEvent.RoleDelete, AuditLogEvent.MemberBanAdd, AuditLogEvent.MemberKick]);
+
+async function onAudit(ctx, entry, guild) {
+  if (!ctx.config.get('antiNuke') || !WATCHED().has(entry.action)) return;
+  const execId = entry.executorId;
+  if (!execId || execId === ctx.client.user.id || execId === guild.ownerId) return;
+  const member = await guild.members.fetch(execId).catch(() => null);
+  const immune = ctx.perms.rolesFor('moderation.antinuke-immune');
+  if (member && immune.some((r) => member.roles.cache.has(r))) return;
+
+  const key = `${guild.id}:${execId}`;
+  const list = prune(nuke.get(key) ?? [], ctx.config.get('nukeWindowSeconds') * 1000);
+  list.push(Date.now());
+  nuke.set(key, list);
+  if (list.length < ctx.config.get('nukeThreshold')) return;
+  nuke.delete(key);
+
+  const action = ctx.config.get('nukeAction');
+  let result = 'alert only';
+  try {
+    if (member && action === 'strip-roles') {
+      const risky = member.roles.cache.filter((r) => !r.managed && r.id !== guild.id && DANGEROUS.some((p) => r.permissions.has(p)));
+      await member.roles.remove(risky, 'Anti-nuke: mass destructive actions');
+      result = `removed ${risky.size} dangerous role(s)`;
+    } else if (action === 'ban') { await guild.members.ban(execId, { reason: 'Anti-nuke: mass destructive actions' }); result = 'banned'; }
+  } catch (err) { result = `could not act (${err.message}) - check my role position`; }
+
+  ctx.security(`Anti-nuke triggered by ${execId}: ${result}`);
+  const embed = new EmbedBuilder().setColor(COLOR.alert).setTitle('🛡️ Anti-nuke triggered')
+    .setDescription(`<@${execId}> performed **${list.length}** destructive actions within ${ctx.config.get('nukeWindowSeconds')}s.\nResponse: **${result}**.`).setTimestamp();
+  await modLog(ctx, embed);
+  const owner = await guild.fetchOwner().catch(() => null);
+  await owner?.send({ embeds: [embed] }).catch(() => {});
+}
+
+// ------------------------------------------------------------------ message logging
+async function onDelete(ctx, message) {
+  if (!ctx.config.get('logMessages') || message.author?.bot) return;
+  if (message.channelId === ctx.config.get('logChannel')) return;
+  await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle('Message deleted')
+    .setDescription(`In <#${message.channelId}>${message.author ? ` by <@${message.author.id}>` : ''}\n${message.content ? truncate(message.content, 1500) : '*content unavailable*'}`).setTimestamp());
+}
+
+async function onEdit(ctx, oldM, newM) {
+  if (!ctx.config.get('logMessages') || newM.author?.bot || !oldM.content || !newM.content || oldM.content === newM.content) return;
+  if (newM.channelId === ctx.config.get('logChannel')) return;
+  await modLog(ctx, new EmbedBuilder().setColor(COLOR.info).setTitle('Message edited')
+    .setDescription(`In <#${newM.channelId}> by <@${newM.author.id}> - [jump](${newM.url})`)
+    .addFields({ name: 'Before', value: truncate(oldM.content, 1000) }, { name: 'After', value: truncate(newM.content, 1000) }).setTimestamp());
+}
+
+// ------------------------------------------------------------------ popups
+// Warn / timeout / kick / ban / unban collect their details in a popup. Typing the details into the command still works
+// (handy for quick use); anything missing is asked for. The popup submit re-checks the permission, because a popup
+// can be opened by a command and submitted later.
+const forms = formStore('modaction');
+const FIELD = {
+  reason: (value) => ({ id: 'reason', label: 'Reason (shown in the log and to the member)', style: TextInputStyle.Paragraph, required: true, max: 500, value }),
+  duration: (value) => ({ id: 'duration', label: 'How long? e.g. 10m, 2h, 1d (max 28d)', style: TextInputStyle.Short, required: true, max: 10, value }),
+  days: (value) => ({ id: 'days', label: 'Delete their messages from the last N days (0-7)', style: TextInputStyle.Short, required: false, max: 1, value: value ?? '0' }),
+};
+const TITLES = { warn: 'Warn a member', timeout: 'Time out a member', kick: 'Kick a member', ban: 'Ban a user', unban: 'Unban a user' };
+const PERMS = { warn: 'moderation.warn', timeout: 'moderation.timeout', kick: 'moderation.kick', ban: 'moderation.ban', unban: 'moderation.ban' };
+
+export function actionModal(token, action, fields) {
+  return new ModalBuilder().setCustomId(`modq:${token}`).setTitle(TITLES[action]).addComponents(
+    ...fields.map((f) => {
+      const t = new TextInputBuilder().setCustomId(f.id).setLabel(f.label.slice(0, 45)).setStyle(f.style).setRequired(f.required).setMaxLength(f.max);
+      if (f.value) t.setValue(String(f.value).slice(0, f.max));
+      return new ActionRowBuilder().addComponents(t);
+    }));
+}
+const askFor = (i, action, data, fields) => i.showModal(actionModal(forms.put({ action, by: i.user.id, ...data }), action, fields));
+
+async function modPopupSubmit(ctx, i) {
+  const form = forms.take(i.customId.split(':')[1], i.user.id);
+  if (!ctx.perms.check(i.member, PERMS[form.action])) throw new UserError(`You need the \`${PERMS[form.action]}\` permission for that.`);
+  const text = (id) => i.fields.fields?.has?.(id) || i.fields.getTextInputValue ? (i.fields.getTextInputValue(id) ?? '').trim() : '';
+  const reason = text('reason');
+  if (!reason) throw new UserError('Please give a reason - it goes in the log.');
+  await i.deferReply();
+  const user = await i.client.users.fetch(form.userId).catch(() => null);
+  if (!user) throw new UserError('I can\'t find that user any more.');
+  if (form.action === 'warn') return runWarn(ctx, i, user, reason);
+  if (form.action === 'kick') return runKick(ctx, i, user, reason);
+  if (form.action === 'unban') return runUnban(ctx, i, user.id, reason);
+  if (form.action === 'timeout') return runTimeout(ctx, i, user, parseTimeoutInput(text('duration')), reason);
+  if (form.action === 'ban') return runBan(ctx, i, user, reason, parseDays(text('days')));
+}
+function parseTimeoutInput(raw) {
+  const ms = parseDuration(raw);
+  if (!ms) throw new UserError('Use a duration like `10m`, `2h` or `1d`.');
+  if (ms > MAX_TIMEOUT) throw new UserError('Discord limits timeouts to 28 days.');
+  return ms;
+}
+function parseDays(raw) {
+  if (!raw) return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 7) throw new UserError('Days of messages to delete must be a whole number from 0 to 7.');
+  return n;
+}
+
+
+async function memberFor(i, user) {
+  const member = await fetchTarget(i, user);
+  if (!member) throw new UserError('That user is not in this server.');
+  guardTarget(i, member);
+  return member;
+}
+
+async function runWarn(ctx, i, user, reason) {
+  const member = await memberFor(i, user);
+  const c = addCase(ctx, { type: 'warn', user, modId: i.user.id, reason });
+  await tellUser(ctx, user, i.guild, `you were warned: ${reason}`);
+  await modLog(ctx, caseEmbed('warn', c, user, i.user.id));
+  const warns = (ctx.data.get(`hist:${user.id}`) ?? []).filter((e) => e.type === 'warn').length;
+  const threshold = ctx.config.get('warnTimeoutThreshold');
+  let extra = '';
+  if (threshold > 0 && warns % threshold === 0) {
+    const mins = ctx.config.get('warnTimeoutMinutes');
+    await doTimeout(ctx, member, mins * 60000, `Automatic: ${warns} warnings`, null).then(() => { extra = `\nReached ${warns} warnings - timed out for ${mins} minutes.`; }).catch(() => {});
+  }
+  await i.editReply({ embeds: [caseEmbed('warn', c, user, i.user.id).setFooter({ text: `${warns} warning(s) total` })], content: extra || undefined, allowedMentions: NOPING });
+}
+
+async function runTimeout(ctx, i, user, ms, reason) {
+  const member = await memberFor(i, user);
+  const c = await doTimeout(ctx, member, ms, reason, i.user.id);
+  await tellUser(ctx, user, i.guild, `you were timed out for ${formatDuration(ms)}: ${reason}`);
+  await i.editReply({ embeds: [caseEmbed('timeout', c, user, i.user.id).addFields({ name: 'Duration', value: formatDuration(ms), inline: true })], allowedMentions: NOPING });
+}
+
+async function runKick(ctx, i, user, reason) {
+  const member = await memberFor(i, user);
+  if (!member.kickable) throw new UserError("I can't kick that member - move my role above theirs.");
+  await tellUser(ctx, user, i.guild, `you were kicked: ${reason}`);
+  await member.kick(`${i.user.tag}: ${truncate(reason, 400)}`);
+  const c = addCase(ctx, { type: 'kick', user, modId: i.user.id, reason });
+  await modLog(ctx, caseEmbed('kick', c, user, i.user.id));
+  await i.editReply({ embeds: [caseEmbed('kick', c, user, i.user.id)], allowedMentions: NOPING });
+}
+
+async function runBan(ctx, i, user, reason, days) {
+  const member = await fetchTarget(i, user);
+  if (member) { guardTarget(i, member); if (!member.bannable) throw new UserError("I can't ban that member - move my role above theirs."); }
+  else if (user.id === i.guild.ownerId || user.id === i.user.id) throw new UserError("You can't do that.");
+  await tellUser(ctx, user, i.guild, `you were banned: ${reason}`);
+  await i.guild.members.ban(user.id, { reason: `${i.user.tag}: ${truncate(reason, 400)}`, deleteMessageSeconds: days * 86400 });
+  const c = addCase(ctx, { type: 'ban', user, modId: i.user.id, reason });
+  await modLog(ctx, caseEmbed('ban', c, user, i.user.id));
+  await i.editReply({ embeds: [caseEmbed('ban', c, user, i.user.id)], allowedMentions: NOPING });
+}
+
+async function runUnban(ctx, i, id, reason) {
+  await i.guild.bans.remove(id, `${i.user.tag}: ${truncate(reason, 400)}`).catch(() => { throw new UserError("That user isn't banned (or I can't unban them)."); });
+  const c = addCase(ctx, { type: 'unban', user: { id, tag: id }, modId: i.user.id, reason });
+  await modLog(ctx, caseEmbed('unban', c, { id, tag: id }, i.user.id));
+  await i.editReply({ content: `Unbanned \`${id}\`.`, allowedMentions: NOPING });
+}
+
+// ------------------------------------------------------------------ commands
+const userOpt = (o, d = 'The user') => o.setName('user').setDescription(d).setRequired(true);
+const reasonOpt = (o) => o.setName('reason').setDescription('Reason - leave empty to type it in a popup').setMaxLength(500);
+
+// ------------------------------------------------------------------ AutoMod: shared by /automod and the dashboard
+const ACTION_WORDS = { default: 'server default', delete: 'delete only', 'delete-warn': 'delete + warn', 'delete-timeout': 'delete + timeout' };
+
+function ruleRow(ctx, rule, counts) {
+  const cfg = automodCfg(ctx);
+  const on = ruleEnabled(cfg, rule);
+  const own = cfg[rule.action] ?? 'default';
+  const ex = ctx.data.get('automod:exempt') ?? {};
+  const exNum = (ex[rule.id]?.roles?.length ?? 0) + (ex[rule.id]?.channels?.length ?? 0);
+  return {
+    id: rule.id, name: rule.label, on, state: on ? 'On' : 'Off', action: ACTION_WORDS[own] ?? own, ownAction: own,
+    limit: rule.limit ? cfg[rule.limit] : null, last7: counts[rule.id] ?? 0, exemptions: exNum,
+  };
+}
+
+/** Switch a rule on or off, set its action and/or its threshold. Goes through the validated settings path, like /config. */
+function applyRule(ctx, ruleId, { enabled, action, limit } = {}) {
+  const rule = ruleById(ruleId);
+  if (!rule) throw new UserError(`Unknown rule. Choose one of: ${RULE_IDS.join(', ')}.`);
+  if (action !== undefined && action !== null) {
+    if (!ACTIONS.includes(action)) throw new UserError(`The action must be one of: ${ACTIONS.join(', ')}.`);
+    ctx.settings.set(rule.action, action);
+  }
+  if (limit !== undefined && limit !== null) {
+    if (!rule.limit) throw new UserError(`The ${rule.label.toLowerCase()} rule has no number to set.`);
+    ctx.settings.set(rule.limit, limit);
+  }
+  if (enabled !== undefined && enabled !== null) {
+    if (rule.on) ctx.settings.set(rule.on, enabled);
+    else if (!enabled) ctx.settings.set(rule.limit, 0);
+    else if (!(Number(ctx.config.get(rule.limit)) > 0)) ctx.settings.set(rule.limit, 6);
+  }
+  return ruleRow(ctx, rule, activityCounts(ctx.data.get('automod:recent') ?? [], Date.now()));
+}
+
+function exemptionLines(ctx) {
+  const ex = ctx.data.get('automod:exempt') ?? {};
+  const lines = [];
+  for (const key of ['all', ...RULE_IDS]) {
+    const s = ex[key]; if (!s) continue;
+    const bits = [...(s.roles ?? []).map((r) => `<@&${r}>`), ...(s.channels ?? []).map((c) => `<#${c}>`)];
+    if (bits.length) lines.push(`**${key === 'all' ? 'Every rule' : ruleById(key).label}:** ${bits.join(' ')}`);
+  }
+  return lines;
+}
+
+const when = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 16);
+const RULE_CHOICES = RULES.map((r) => ({ name: r.label.slice(0, 100), value: r.id }));
+const ACTION_CHOICES = ACTIONS.map((a) => ({ name: ACTION_WORDS[a], value: a }));
+const automodNeed = (ctx, i, key) => { if (!ctx.perms.check(i.member, key)) throw new UserError(`You don't have permission for that (\`${key}\`).`); };
+
+const automodCommand = {
+  permission: 'moderation.history',
+  data: new SlashCommandBuilder().setName('automod').setDescription('See and change AutoMod: rules, actions, exemptions')
+    .addSubcommand((s) => s.setName('status').setDescription('Every rule: on or off, its action, and how often it fired this week'))
+    .addSubcommand((s) => s.setName('rule').setDescription('Turn a rule on or off, or change its action or number')
+      .addStringOption((o) => o.setName('rule').setDescription('Which rule').setRequired(true).addChoices(...RULE_CHOICES))
+      .addBooleanOption((o) => o.setName('enabled').setDescription('On or off'))
+      .addStringOption((o) => o.setName('action').setDescription('What happens when it triggers').addChoices(...ACTION_CHOICES))
+      .addIntegerOption((o) => o.setName('limit').setDescription('The rule\'s number (messages, mentions, percent, emoji...)').setMinValue(0).setMaxValue(1000)))
+    .addSubcommand((s) => s.setName('exempt').setDescription('Roles and channels AutoMod should ignore')
+      .addStringOption((o) => o.setName('what').setDescription('Add, remove or list').setRequired(true).addChoices({ name: 'add', value: 'add' }, { name: 'remove', value: 'remove' }, { name: 'list', value: 'list' }))
+      .addStringOption((o) => o.setName('rule').setDescription('One rule, or every rule (default)').addChoices({ name: 'every rule', value: 'all' }, ...RULE_CHOICES))
+      .addRoleOption((o) => o.setName('role').setDescription('A role to ignore'))
+      .addChannelOption((o) => o.setName('channel').setDescription('A channel or category to ignore')))
+    .addSubcommand((s) => s.setName('recent').setDescription('The latest things AutoMod removed')
+      .addIntegerOption((o) => o.setName('count').setDescription('How many (default 10)').setMinValue(1).setMaxValue(25)))
+    .addSubcommand((s) => s.setName('word').setDescription('Banned words')
+      .addStringOption((o) => o.setName('what').setDescription('Add, remove or list').setRequired(true).addChoices({ name: 'add', value: 'add' }, { name: 'remove', value: 'remove' }, { name: 'list', value: 'list' }))
+      .addStringOption((o) => o.setName('word').setDescription('The word or phrase')))
+    .addSubcommand((s) => s.setName('domain').setDescription('Link domains that are always allowed')
+      .addStringOption((o) => o.setName('what').setDescription('Add, remove or list').setRequired(true).addChoices({ name: 'add', value: 'add' }, { name: 'remove', value: 'remove' }, { name: 'list', value: 'list' }))
+      .addStringOption((o) => o.setName('domain').setDescription('For example youtube.com'))),
+  async execute(ctx, i) {
+    const sub = i.options.getSubcommand();
+    const reply = (content) => i.reply({ content, flags: EPH, allowedMentions: NOPING });
+    if (sub === 'status') {
+      const counts = activityCounts(ctx.data.get('automod:recent') ?? [], Date.now());
+      const lines = RULES.map((r) => { const x = ruleRow(ctx, r, counts); return `${x.on ? '🟢' : '⚫'} **${r.label}**${x.limit ? ` · limit ${x.limit}` : ''}\n   ${x.action}${x.exemptions ? ` · ${x.exemptions} exemption(s)` : ''} · ${x.last7} this week`; });
+      const ex = exemptionLines(ctx);
+      const e = new EmbedBuilder().setColor(COLOR.automod).setTitle('AutoMod').setDescription(lines.join('\n')).setFooter({ text: 'Change a rule with /automod rule. Staff with the bypass permission are never checked.' });
+      if (ex.length) e.addFields({ name: 'Ignored', value: truncate(ex.join('\n'), 1000) });
+      return i.reply({ embeds: [e], flags: EPH, allowedMentions: NOPING });
+    }
+    if (sub === 'recent') {
+      const n = i.options.getInteger('count') ?? 10;
+      const rows = (ctx.data.get('automod:recent') ?? []).slice(0, n);
+      if (!rows.length) return reply('AutoMod has not removed anything yet.');
+      return reply(rows.map((e) => `\`${when(e.at)}\` <@${e.userId}> in <#${e.channelId}> · **${e.name}** · ${ACTION_WORDS[e.action] ?? e.action}${e.caseId ? ` · case #${e.caseId}` : ''}${e.snippet ? `\n   > ${e.snippet}` : ''}`).join('\n'));
+    }
+    if (sub === 'word' || sub === 'domain') {
+      const key = sub === 'word' ? 'bannedWords' : 'allowedDomains';
+      const what = i.options.getString('what', true);
+      if (what !== 'list') {
+        automodNeed(ctx, i, 'moderation.automod');
+        let v = (i.options.getString(sub) ?? '').trim();
+        if (sub === 'domain') v = v.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/[/?#].*$/, '').toLowerCase();
+        if (!v) throw new UserError(`Say which ${sub}.`);
+        ctx.settings.set(key, v, what);
+        return reply(`${what === 'add' ? 'Added' : 'Removed'} **${truncate(v, 80)}**.`);
+      }
+      const list = ctx.config.get(key) ?? [];
+      return reply(list.length ? `**${sub === 'word' ? 'Banned words' : 'Allowed domains'}** (${list.length}): ${truncate(list.join(', '), 1700)}` : 'The list is empty.');
+    }
+    if (sub === 'rule') {
+      automodNeed(ctx, i, 'moderation.automod');
+      const row = applyRule(ctx, i.options.getString('rule', true), { enabled: i.options.getBoolean('enabled'), action: i.options.getString('action'), limit: i.options.getInteger('limit') });
+      return reply(`**${row.name}** is now ${row.on ? 'on' : 'off'} · ${row.action}${row.limit ? ` · limit ${row.limit}` : ''}.`);
+    }
+    // exempt
+    const what = i.options.getString('what', true);
+    if (what === 'list') { const ex = exemptionLines(ctx); return reply(ex.length ? ex.join('\n') : 'Nothing is exempt. (Members with the bypass permission are always ignored.)'); }
+    automodNeed(ctx, i, 'moderation.automod');
+    const role = i.options.getRole('role'), channel = i.options.getChannel('channel');
+    if (!role && !channel) throw new UserError('Pick a role or a channel.');
+    const rule = i.options.getString('rule') ?? 'all';
+    let ex = ctx.data.get('automod:exempt') ?? {}, changed = false;
+    for (const [kind, thing] of [['roles', role], ['channels', channel]]) {
+      if (!thing) continue;
+      const r = editExempt(ex, rule, kind, thing.id, what === 'add'); ex = r.ex; changed ||= r.changed;
+    }
+    ctx.data.set('automod:exempt', ex);
+    const label = rule === 'all' ? 'every rule' : ruleById(rule).label;
+    return reply(changed ? `${what === 'add' ? 'Now ignoring' : 'No longer ignoring'} ${[role && `<@&${role.id}>`, channel && `<#${channel.id}>`].filter(Boolean).join(' and ')} for **${label}**.` : 'Nothing changed - it was already that way.');
+  },
+};
+
+const commands = [
+  {
+    permission: 'moderation.warn',
+    data: new SlashCommandBuilder().setName('warn').setDescription('Warn a member')
+      .addUserOption((o) => userOpt(o, 'Who to warn')).addStringOption(reasonOpt),
+    async execute(ctx, i) {
+      const user = i.options.getUser('user', true);
+      const reason = i.options.getString('reason');
+      if (!reason) return askFor(i, 'warn', { userId: user.id }, [FIELD.reason()]);
+      await i.deferReply();
+      return runWarn(ctx, i, user, reason);
+    },
+  },
+  {
+    permission: 'moderation.timeout',
+    data: new SlashCommandBuilder().setName('timeout').setDescription('Time out a member')
+      .addUserOption((o) => userOpt(o, 'Who to time out'))
+      .addStringOption((o) => o.setName('duration').setDescription('e.g. 10m, 2h, 1d (max 28d) - leave empty to use a popup'))
+      .addStringOption(reasonOpt),
+    async execute(ctx, i) {
+      const user = i.options.getUser('user', true);
+      const dur = i.options.getString('duration');
+      const reason = i.options.getString('reason');
+      if (!dur || !reason) return askFor(i, 'timeout', { userId: user.id }, [FIELD.duration(dur), FIELD.reason(reason)]);
+      const ms = parseTimeoutInput(dur);
+      await i.deferReply();
+      return runTimeout(ctx, i, user, ms, reason);
+    },
+  },
+  {
+    permission: 'moderation.timeout',
+    data: new SlashCommandBuilder().setName('untimeout').setDescription('Remove a member\'s timeout').addUserOption((o) => userOpt(o)),
+    async execute(ctx, i) {
+      await i.deferReply();
+      const user = i.options.getUser('user', true);
+      const member = await memberFor(i, user);
+      await member.timeout(null, `Removed by ${i.user.tag}`);
+      const c = addCase(ctx, { type: 'untimeout', user, modId: i.user.id, reason: 'Timeout removed' });
+      await modLog(ctx, caseEmbed('untimeout', c, user, i.user.id));
+      await i.editReply({ content: `Timeout removed for **${truncate(user.tag, 40)}**.`, allowedMentions: NOPING });
+    },
+  },
+  {
+    permission: 'moderation.kick',
+    data: new SlashCommandBuilder().setName('kick').setDescription('Kick a member').addUserOption((o) => userOpt(o, 'Who to kick')).addStringOption(reasonOpt),
+    async execute(ctx, i) {
+      const user = i.options.getUser('user', true);
+      const reason = i.options.getString('reason');
+      if (!reason) return askFor(i, 'kick', { userId: user.id }, [FIELD.reason()]);
+      await i.deferReply();
+      return runKick(ctx, i, user, reason);
+    },
+  },
+  {
+    permission: 'moderation.ban',
+    data: new SlashCommandBuilder().setName('ban').setDescription('Ban a user')
+      .addUserOption((o) => userOpt(o, 'Who to ban')).addStringOption(reasonOpt)
+      .addIntegerOption((o) => o.setName('delete_days').setDescription('Also delete their messages from the last N days (0-7)').setMinValue(0).setMaxValue(7)),
+    async execute(ctx, i) {
+      const user = i.options.getUser('user', true);
+      const reason = i.options.getString('reason');
+      const days = i.options.getInteger('delete_days');
+      if (!reason) return askFor(i, 'ban', { userId: user.id }, [FIELD.reason(), FIELD.days(days)]);
+      await i.deferReply();
+      return runBan(ctx, i, user, reason, days ?? 0);
+    },
+  },
+  {
+    permission: 'moderation.ban',
+    data: new SlashCommandBuilder().setName('unban').setDescription('Unban a user by ID')
+      .addStringOption((o) => o.setName('user_id').setDescription('The user\'s ID').setRequired(true)).addStringOption(reasonOpt),
+    async execute(ctx, i) {
+      const id = i.options.getString('user_id', true).trim();
+      if (!SNOWFLAKE.test(id)) throw new UserError('That is not a valid user ID.');
+      const reason = i.options.getString('reason');
+      if (!reason) return askFor(i, 'unban', { userId: id }, [FIELD.reason()]);
+      await i.deferReply();
+      return runUnban(ctx, i, id, reason);
+    },
+  },
+  {
+    permission: 'moderation.purge',
+    data: new SlashCommandBuilder().setName('purge').setDescription('Delete recent messages in this channel')
+      .addIntegerOption((o) => o.setName('amount').setDescription('How many (1-100)').setRequired(true).setMinValue(1).setMaxValue(100))
+      .addUserOption((o) => o.setName('user').setDescription('Only delete this user\'s messages')),
+    async execute(ctx, i) {
+      await i.deferReply({ flags: EPH });
+      const amount = i.options.getInteger('amount', true);
+      const user = i.options.getUser('user');
+      if (!i.channel?.bulkDelete) throw new UserError("I can't purge in this kind of channel.");
+      let msgs = await i.channel.messages.fetch({ limit: 100 });
+      if (user) msgs = msgs.filter((m) => m.author.id === user.id);
+      const picked = [...msgs.values()].slice(0, amount);
+      const deleted = await i.channel.bulkDelete(picked, true);
+      await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle('Purge').setDescription(`<@${i.user.id}> deleted **${deleted.size}** message(s) in <#${i.channelId}>${user ? ` from <@${user.id}>` : ''}.`).setTimestamp());
+      await i.editReply({ content: `Deleted ${deleted.size} message(s). (Discord can't bulk-delete messages older than 14 days.)` });
+    },
+  },
+  {
+    permission: 'moderation.history',
+    data: new SlashCommandBuilder().setName('modhistory').setDescription('See a user\'s moderation history').addUserOption((o) => userOpt(o)),
+    async execute(ctx, i) {
+      const user = i.options.getUser('user', true);
+      const hist = ctx.data.get(`hist:${user.id}`) ?? [];
+      if (!hist.length) return i.reply({ content: `No history for **${truncate(user.tag, 40)}**.`, flags: EPH, allowedMentions: NOPING });
+      const lines = hist.slice(0, 12).map((e) => `**#${e.id}** ${e.type} - ${truncate(e.reason, 80)} (${ts(e.at)}${e.modId ? `, <@${e.modId}>` : ', AutoMod'})`);
+      const e = new EmbedBuilder().setColor(COLOR.info).setTitle(`History for ${truncate(user.tag, 40)}`).setDescription(lines.join('\n'))
+        .setFooter({ text: `${hist.length} total entries` });
+      await i.reply({ embeds: [e], flags: EPH, allowedMentions: NOPING });
+    },
+  },
+  automodCommand,
+];
+
+export default {
+  name: 'moderation',
+  version: '1.2.0',
+  description: 'Warn, timeout, kick, ban, purge, history, AutoMod (spam, words, links, mentions, repeats, caps, emoji), raid protection and anti-nuke.',
+  settings: [
+    { key: 'logChannel', type: 'channel', label: 'Mod log channel' },
+    { key: 'dmOnAction', type: 'toggle', label: 'DM users when action is taken', default: true },
+    { key: 'logMessages', type: 'toggle', label: 'Log message edits & deletes', default: true },
+    { key: 'warnTimeoutThreshold', type: 'number', label: 'Auto-timeout every N warnings (0 = off)', default: 3, min: 0, max: 20 },
+    { key: 'warnTimeoutMinutes', type: 'number', label: 'Auto-timeout length (minutes)', default: 60, min: 1, max: 40320 },
+    { key: 'automodAction', type: 'select', label: 'AutoMod action', options: ['delete', 'delete-warn', 'delete-timeout'], default: 'delete-warn' },
+    { key: 'automodTimeoutMinutes', type: 'number', label: 'AutoMod timeout (minutes)', default: 5, min: 1, max: 1440 },
+    { key: 'automodSpam', type: 'toggle', label: 'Spam protection', default: false },
+    { key: 'spamMaxMessages', type: 'number', label: 'Spam: messages allowed...', default: 5, min: 2, max: 30 },
+    { key: 'spamWindowSeconds', type: 'number', label: '...within N seconds', default: 6, min: 2, max: 60 },
+    { key: 'automodWords', type: 'toggle', label: 'Word filter', default: false },
+    { key: 'bannedWords', type: 'list', label: 'Banned words' },
+    { key: 'automodLinks', type: 'toggle', label: 'Link & invite filter', default: false },
+    { key: 'allowedDomains', type: 'list', label: 'Allowed link domains' },
+    { key: 'maxMentions', type: 'number', label: 'Max mentions per message (0 = off)', default: 6, min: 0, max: 50 },
+    { key: 'automodRepeat', type: 'toggle', label: 'Repeated-message filter', default: false },
+    { key: 'repeatMax', type: 'number', label: 'Repeats: identical messages allowed...', default: 3, min: 2, max: 20 },
+    { key: 'repeatWindowSeconds', type: 'number', label: '...within N seconds', default: 60, min: 5, max: 600 },
+    { key: 'automodCaps', type: 'toggle', label: 'Capital-letters filter', default: false },
+    { key: 'capsPercent', type: 'number', label: 'Caps: percent of letters in capitals', default: 70, min: 40, max: 100 },
+    { key: 'capsMinLetters', type: 'number', label: 'Caps: ignore messages with fewer letters than', default: 12, min: 5, max: 100 },
+    { key: 'automodEmoji', type: 'toggle', label: 'Emoji filter', default: false },
+    { key: 'emojiMax', type: 'number', label: 'Emoji: most allowed in one message', default: 10, min: 2, max: 50 },
+    ...RULES.map((r) => ({ key: r.action, type: 'select', label: `${r.label}: action`, options: ACTIONS, default: 'default' })),
+    { key: 'automodKeepSnippets', type: 'toggle', label: 'Keep a short preview of removed messages in the AutoMod activity list', default: true },
+    { key: 'raidProtection', type: 'toggle', label: 'Raid protection', default: false },
+    { key: 'raidJoinThreshold', type: 'number', label: 'Raid: joins...', default: 8, min: 3, max: 100 },
+    { key: 'raidWindowSeconds', type: 'number', label: '...within N seconds', default: 10, min: 3, max: 120 },
+    { key: 'raidAction', type: 'select', label: 'Raid action', options: ['alert', 'timeout', 'kick'], default: 'alert' },
+    { key: 'minAccountAgeDays', type: 'number', label: 'Flag accounts younger than N days (0 = off)', default: 0, min: 0, max: 365 },
+    { key: 'newAccountAction', type: 'select', label: 'Young account action', options: ['alert', 'kick'], default: 'alert' },
+    { key: 'antiNuke', type: 'toggle', label: 'Anti-nuke', default: false },
+    { key: 'nukeThreshold', type: 'number', label: 'Anti-nuke: destructive actions...', default: 3, min: 2, max: 20 },
+    { key: 'nukeWindowSeconds', type: 'number', label: '...within N seconds', default: 30, min: 5, max: 300 },
+    { key: 'nukeAction', type: 'select', label: 'Anti-nuke response', options: ['strip-roles', 'ban', 'alert'], default: 'strip-roles' },
+  ],
+  permissions: [
+    { key: 'moderation.warn', label: 'Warn members', default: 'moderator', discordPerm: 'ModerateMembers' },
+    { key: 'moderation.timeout', label: 'Time out members', default: 'moderator', discordPerm: 'ModerateMembers' },
+    { key: 'moderation.kick', label: 'Kick members', default: 'moderator', discordPerm: 'KickMembers' },
+    { key: 'moderation.ban', label: 'Ban / unban', default: 'moderator', discordPerm: 'BanMembers' },
+    { key: 'moderation.purge', label: 'Bulk delete messages', default: 'moderator', discordPerm: 'ManageMessages' },
+    { key: 'moderation.history', label: 'View moderation history', default: 'moderator' },
+    { key: 'moderation.automod', label: 'Change AutoMod rules and exemptions', default: 'admin' },
+    { key: 'moderation.bypass', label: 'Ignored by AutoMod', default: 'moderator' },
+    { key: 'moderation.antinuke-immune', label: 'Trusted: not watched by anti-nuke (owner always is)', default: 'owner' },
+  ],
+  views: {
+    async automod(ctx) {
+      const recent = ctx.data.get('automod:recent') ?? [];
+      const counts = activityCounts(recent, Date.now());
+      return {
+        rows: RULES.map((r) => ruleRow(ctx, r, counts)),
+        exemptions: exemptionLines(ctx).map((l) => ({ line: l.replace(/<@&(\d+)>/g, (_, id) => `@${ctx.guild?.roles.cache.get(id)?.name ?? id}`).replace(/<#(\d+)>/g, (_, id) => `#${ctx.guild?.channels.cache.get(id)?.name ?? id}`).replace(/\*\*/g, '') })),
+        recent: recent.slice(0, 25).map((e) => ({ when: when(e.at), member: e.tag, channel: `#${ctx.guild?.channels.cache.get(e.channelId)?.name ?? e.channelId}`, rule: e.name, action: ACTION_WORDS[e.action] ?? e.action, preview: e.snippet ?? '' })),
+      };
+    },
+  },
+  actions: {
+    async 'automod-toggle'(ctx, body) {
+      const rule = ruleById(String(body.id ?? body.userId));
+      if (!rule) throw new UserError('Unknown rule.');
+      return applyRule(ctx, rule.id, { enabled: !ruleEnabled(automodCfg(ctx), rule) });
+    },
+    async 'automod-action'(ctx, body) {
+      const rule = ruleById(String(body.id ?? body.userId));
+      if (!rule) throw new UserError('Unknown rule.');
+      return applyRule(ctx, rule.id, { action: String(body.value ?? '').trim().toLowerCase() });
+    },
+  },
+  panels: [{
+    id: 'automod', title: 'AutoMod', view: 'automod', permission: 'moderation.automod',
+    columns: [{ key: 'name', label: 'Rule' }, { key: 'state', label: 'State' }, { key: 'action', label: 'Action' }, { key: 'limit', label: 'Limit' }, { key: 'last7', label: 'This week' }, { key: 'exemptions', label: 'Exemptions' }],
+    rowActions: [{ action: 'automod-toggle', label: 'Turn on/off' }, { action: 'automod-action', label: 'Set action', prompt: 'text', field: 'value', hint: 'default, delete, delete-warn or delete-timeout' }],
+    recentColumns: [{ key: 'when', label: 'When' }, { key: 'member', label: 'Member' }, { key: 'channel', label: 'Channel' }, { key: 'rule', label: 'Rule' }, { key: 'action', label: 'Action' }, { key: 'preview', label: 'Preview' }],
+  }],
+  commands,
+  components: [{ prefix: 'modq:', execute: modPopupSubmit }],
+  events: {
+    messageCreate: onMessage,
+    messageDelete: onDelete,
+    messageUpdate: onEdit,
+    guildMemberAdd: onJoin,
+    guildAuditLogEntryCreate: onAudit,
+  },
+  tasks: [{
+    name: 'cleanup', everyMs: 60000,
+    async run() {
+      const now = Date.now();
+      for (const [k, v] of spam) if (!prune(v, 120000, now).length) spam.delete(k);
+      for (const [k, v] of repeats) if (!prune(v, 300000, now).length) repeats.delete(k);
+      for (const [k, v] of joins) if (!prune(v, 300000, now).length) joins.delete(k);
+      for (const [k, v] of nuke) if (!prune(v, 600000, now).length) nuke.delete(k);
+    },
+  }],
+};

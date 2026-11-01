@@ -1,0 +1,462 @@
+/**
+ * Basic Ghost Labs - Good Boy
+ * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+ *
+ * Desktop app tests. These cover everything in desktop/lib (settings, checks, log cleaning, the bot runner with the real
+ * supervisor script) plus static checks on the Electron files. Electron itself is NOT started here.
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { normalize, DEFAULTS } from '../desktop/lib/settings.js';
+import { parseNodeVersion, nodeIsNewEnough, findNode, candidateNodePaths, dashboardPort, isSafeDashboardUrl, checkBotDir } from '../desktop/lib/checks.js';
+import { LogBuffer, clean } from '../desktop/lib/logbuf.js';
+import { BotRunner } from '../desktop/lib/runner.js';
+import { collectFiles } from '../src/update/release.js';
+import { parseEnv, safeBotSettings, looksLikeToken } from '../desktop/lib/envfile.js';
+import { Vault } from '../desktop/lib/vault.js';
+import { readEdition } from '../desktop/lib/edition.js';
+import { ensureBotCode, seedData, installedVersion } from '../desktop/lib/botinstall.js';
+import { runTool } from '../desktop/lib/tools.js';
+import { editionConfig } from '../desktop/scripts/set-edition.js';
+import { bundleFiles } from '../desktop/scripts/bundle-bot.js';
+import { levelOf as toolLevel, summary as toolSummary, importDb } from '../scripts/app-tools.js';
+import { levelOf as communityLevel } from '../modules/community/index.js';
+import { Database } from '../src/db.js';
+import { verifyToken, inviteUrl as appInvite, linkFor, intentsFrom, avatarUrl, PERMISSIONS } from '../desktop/lib/discord.js';
+import { inviteUrl as botInvite, clientIdFromToken } from '../scripts/inviteLib.js';
+import { appIdFromToken, redirectUriFor } from '../desktop/lib/discord.js';
+import { normalizeBase } from '../src/dashboard/server.js';
+import { brandStatus, applyBrand, applyCustom, BRAND } from '../desktop/lib/brand.js';
+import { createLicense, verifyLicense, generateKeyPair, hasFeature } from '../desktop/lib/license.js';
+import { SecretFile } from '../desktop/lib/vault.js';
+import { signModule, verifyModule, hashModule, SIG_FILE } from '../desktop/lib/modsign.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'gb-desk-'));
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const until = async (cond, ms = 8000, what = 'condition') => { const end = Date.now() + ms; while (Date.now() < end) { if (await cond()) return; await new Promise((r) => setTimeout(r, 25)); } throw new Error(`timed out waiting for ${what}`); };
+
+// A believable-looking (but invented) bot token, assembled so no real token is ever in this file.
+const FAKE_TOKEN = ['MTA1MjM0NTY3ODkwMTIzNDU2', 'GaBcDe', 'abcdefghijklmnopqrstuvwxyz0'].join('.');
+
+const FAKE_BOT = `
+import fs from 'node:fs'; import path from 'node:path';
+fs.writeFileSync(path.join(process.env.GOODBOY_DATA_DIR, 'bot.pid'), String(process.pid));
+console.log('Logged in as Test#0');
+console.log('token=${FAKE_TOKEN}');
+console.log('Ready. In Discord, run /module list to turn features on.');
+process.on('message', (m) => { if (m.type === 'shutdown') process.exit(0); });
+setInterval(() => {}, 1000);
+`;
+function fakeInstall() {
+  const base = tmp();
+  fs.mkdirSync(path.join(base, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'package.json'), JSON.stringify({ name: 'good-boy', version: '2.2.0', type: 'module' }));
+  fs.writeFileSync(path.join(base, 'src', 'index.js'), FAKE_BOT);
+  return base;
+}
+const SUPERVISE = path.join(root, 'scripts', 'supervise.js');
+
+export default async function ({ test }) {
+  console.log('\nDesktop app');
+
+  await test('desktop settings: every value is checked, unknown keys are dropped, bad input falls back to the defaults', async () => {
+    assert.deepEqual(normalize(null), DEFAULTS);
+    assert.deepEqual(normalize('nonsense'), DEFAULTS);
+    const n = normalize({ botDir: '  C:\\Bot  ', closeAction: 'explode', theme: 'neon', startAtLogin: 'yes', startBotWithApp: false, evil: 1 });
+    assert.equal(n.botDir, 'C:\\Bot'); assert.equal(n.closeAction, 'minimize'); assert.equal(n.theme, 'system');
+    assert.equal(n.startAtLogin, false, 'only real booleans count'); assert.equal(n.startBotWithApp, false);
+    assert.ok(!('evil' in n));
+    assert.equal(normalize({ closeAction: 'quit' }).closeAction, 'quit');
+    assert.equal(normalize({ botDir: 'x'.repeat(5000) }).botDir.length, 1024);
+  });
+
+  await test('desktop checks: Node version rules, the dashboard port, and which addresses may be opened', async () => {
+    assert.deepEqual(parseNodeVersion('v22.14.0\n'), [22, 14, 0]); assert.equal(parseNodeVersion('banana'), null);
+    assert.ok(nodeIsNewEnough([22, 13, 0])); assert.ok(nodeIsNewEnough([24, 0, 1])); assert.ok(!nodeIsNewEnough([22, 12, 9])); assert.ok(!nodeIsNewEnough([20, 99, 0])); assert.ok(!nodeIsNewEnough(null));
+    const none = { candidates: [], exists: () => false };
+    assert.deepEqual(findNode(() => 'v22.13.0', '', none), { found: true, version: '22.13.0', ok: true, path: 'node' });
+    assert.deepEqual(findNode(() => 'v20.1.0', '', none), { found: true, version: '20.1.0', ok: false, path: 'node' });
+    assert.deepEqual(findNode(() => { throw new Error('ENOENT'); }, '', none), { found: false, version: null, ok: false, path: '' });
+    assert.equal(dashboardPort('DASHBOARD_PORT=4100\n'), 4100); assert.equal(dashboardPort('# DASHBOARD_PORT=4100'), 3000);
+    assert.equal(dashboardPort('DASHBOARD_PORT=99999'), 3000); assert.equal(dashboardPort(''), 3000);
+    for (const ok of ['http://localhost:3000', 'http://127.0.0.1:4100/x']) assert.ok(isSafeDashboardUrl(ok), ok);
+    for (const bad of ['https://localhost:3000', 'http://evil.example', 'http://localhost.evil.example', 'http://user:pw@localhost:3000', 'file:///etc/passwd', 'javascript:alert(1)', '', null]) assert.ok(!isSafeDashboardUrl(bad), String(bad));
+  });
+
+  await test('desktop checks: a folder is ready only with the files and .env the bot needs, and the token is never returned', async () => {
+    assert.match(checkBotDir('').problems[0], /Choose the folder/);
+    const empty = tmp(); assert.match(checkBotDir(empty).problems[0], /does not look like Good Boy/);
+    const other = tmp(); fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({ name: 'something-else' }));
+    assert.match(checkBotDir(other).problems[0], /does not look like Good Boy/);
+    const dir = tmp(); fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'good-boy' }));
+    let r = checkBotDir(dir); assert.ok(r.problems.some((p) => /supervisor script/.test(p))); assert.ok(r.problems.some((p) => /npm install/.test(p))); assert.ok(r.problems.some((p) => /DISCORD_TOKEN/.test(p)));
+    fs.mkdirSync(path.join(dir, 'scripts')); fs.writeFileSync(path.join(dir, 'scripts', 'supervise.js'), ''); fs.mkdirSync(path.join(dir, 'node_modules'));
+    fs.writeFileSync(path.join(dir, '.env'), `DISCORD_TOKEN=${FAKE_TOKEN}\nDASHBOARD_PORT=4200\n`);
+    r = checkBotDir(dir); assert.deepEqual([r.ok, r.problems, r.port], [true, [], 4200]);
+    assert.ok(!JSON.stringify(r).includes('GaBcDe'), 'the token must never come back');
+    fs.writeFileSync(path.join(dir, '.env'), 'DISCORD_TOKEN=\n'); assert.ok(!checkBotDir(dir).ok, 'an empty token is not a token');
+  });
+
+  await test('desktop node lookup: the chosen node wins, then PATH, then the usual install places (a packaged app cannot see the terminal PATH)', async () => {
+    const seen = [];
+    const run = (cmd) => { seen.push(cmd); if (cmd === 'node') throw new Error('ENOENT'); return 'v22.14.0'; };
+    // PATH has no node (as when the app is opened from the Start menu): the install folder is found instead
+    const r = findNode(run, '', { candidates: ['C:\\Program Files\\nodejs\\node.exe', 'D:\\missing\\node.exe'], exists: (f) => f.startsWith('C:') });
+    assert.deepEqual(r, { found: true, version: '22.14.0', ok: true, path: 'C:\\Program Files\\nodejs\\node.exe' });
+    assert.deepEqual(seen, ['node', 'C:\\Program Files\\nodejs\\node.exe'], 'a candidate that does not exist is never run');
+    // a chosen path is tried first, even if the file check cannot see it
+    seen.length = 0; assert.equal(findNode((c) => { seen.push(c); return 'v24.0.0'; }, 'E:\\tools\\node.exe', { candidates: [], exists: () => false }).path, 'E:\\tools\\node.exe'); assert.equal(seen[0], 'E:\\tools\\node.exe');
+    assert.ok(candidateNodePaths('win32', { ProgramFiles: 'C:\\Program Files' }).some((p) => /nodejs[\\/]node\.exe$/.test(p)));
+    assert.ok(candidateNodePaths('darwin', { HOME: '/Users/a' }).includes('/opt/homebrew/bin/node'));
+    // only a file really named node can be saved as the setting
+    assert.equal(normalize({ nodePath: 'C:\\Program Files\\nodejs\\node.exe' }).nodePath, 'C:\\Program Files\\nodejs\\node.exe');
+    assert.equal(normalize({ nodePath: '/usr/local/bin/node' }).nodePath, '/usr/local/bin/node');
+    for (const bad of ['C:\\Windows\\System32\\cmd.exe', '/bin/sh', 'node.exe.bat', 'C:\\x\\notnode.exe', 5, null]) assert.equal(normalize({ nodePath: bad }).nodePath, '', String(bad));
+  });
+
+  await test('desktop look: launch window and main window share one design (Inter, light/dark, the status orb), motion respects reduce-motion, pages are locked down', async () => {
+    const r = path.join(root, 'desktop', 'renderer');
+    const splash = fs.readFileSync(path.join(r, 'splash.html'), 'utf8'), index = fs.readFileSync(path.join(r, 'index.html'), 'utf8');
+    for (const html of [splash, index]) { assert.match(html, /default-src 'none'/); assert.match(html, /font-src 'self'/); assert.ok(!/<script>|unsafe-inline|unsafe-eval|https?:\/\/(?!www\.w3|cdn\.discordapp\.com;)/.test(html), 'no inline script; the only outside address is Discord\'s image server, for the bot\'s picture'); assert.match(html, /app\.css/); }
+    assert.match(index, /img-src 'self' https:\/\/cdn\.discordapp\.com;/); assert.match(index, /script-src 'self'"/, 'scripts only from the app itself');
+    assert.match(splash, /class="orb" data-state="starting"/);
+    const css = fs.readFileSync(path.join(r, 'app.css'), 'utf8');
+    for (const f of ['Inter-Regular', 'Inter-Medium', 'Inter-SemiBold', 'InterDisplay-SemiBold', 'InterDisplay-Bold']) { assert.match(css, new RegExp(`fonts/${f}\\.woff`)); assert.ok(fs.existsSync(path.join(r, 'fonts', `${f}.woff`)), `${f} bundled`); }
+    assert.ok(fs.existsSync(path.join(r, 'fonts', 'LICENSE-Inter.txt')), 'the font licence ships with it');
+    assert.match(css, /:root\[data-theme="dark"\]/); assert.match(css, /prefers-reduced-motion:reduce/); assert.match(css, /@keyframes breathe/); assert.match(css, /backdrop-filter/);
+    assert.ok(!/glass\.css|desktop\.css/.test(splash + index), 'the old styles are gone');
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    assert.match(main, /createSplash\(\)/); assert.match(main, /closeSplash\(\)/); assert.ok(!/devTools|openDevTools/.test(main), 'no developer tools in the shipped app');
+    const app = fs.readFileSync(path.join(r, 'app.js'), 'utf8');
+    for (const pg of ['overview', 'levels', 'modules', 'log', 'updates', 'settings', 'setup']) assert.match(app, new RegExp(`\\b${pg}\\(\\)\\s*\\{`), `page ${pg}`);
+    assert.match(app, /const STEPS = \['token', 'secret', 'brand', 'invite', 'done'\]/, 'setup is five short steps after the welcome');
+  });
+
+  await test('desktop setup: .env files are read safely, only bot settings are kept, and the vault never stores or shows the token in plain text', async () => {
+    const env = parseEnv('\uFEFF# comment\nDISCORD_TOKEN="' + FAKE_TOKEN + '"\nDISCORD_CLIENT_SECRET=abc # note\nexport DASHBOARD_PORT=4100\nNODE_OPTIONS=--require evil.js\nPATH=/evil\nGOODBOY_DATA_DIR=/elsewhere\nlower=x\nbroken line\nEMPTY=\n');
+    assert.equal(env.DISCORD_TOKEN, FAKE_TOKEN); assert.equal(env.DISCORD_CLIENT_SECRET, 'abc'); assert.equal(env.DASHBOARD_PORT, '4100');
+    const safe = safeBotSettings({ ...env, BAD: 'a\nb' });
+    assert.deepEqual(Object.keys(safe).sort(), ['DASHBOARD_PORT', 'DISCORD_CLIENT_SECRET', 'DISCORD_TOKEN', 'EMPTY'], 'settings that would change how Node or the app runs are dropped');
+    assert.ok(looksLikeToken(FAKE_TOKEN)); for (const bad of ['', 'hello', 'a.b.c', null, FAKE_TOKEN + ' extra']) assert.ok(!looksLikeToken(bad), String(bad));
+    // fake OS encryption: reversible, but nothing readable on disk
+    const crypto = { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from(t).map((b) => b ^ 0x5a), decryptString: (b) => Buffer.from(b).map((x) => x ^ 0x5a).toString() };
+    const file = path.join(tmp(), 'secrets.bin'); const v = new Vault(file, crypto);
+    v.write({ DISCORD_TOKEN: FAKE_TOKEN, DASHBOARD_PORT: '4100', NODE_OPTIONS: 'x' });
+    assert.ok(!fs.readFileSync(file).includes(FAKE_TOKEN.slice(0, 10)), 'the token is not in the file in plain text');
+    assert.deepEqual(v.read(), { DISCORD_TOKEN: FAKE_TOKEN, DASHBOARD_PORT: '4100' });
+    v.merge({ DISCORD_CLIENT_SECRET: 's' }); assert.equal(v.read().DISCORD_TOKEN, FAKE_TOKEN, 'merging keeps what was there');
+    assert.deepEqual(v.describe(), { hasToken: true, hasClientSecret: true, keys: ['DASHBOARD_PORT'] }, 'the window learns which settings exist, never secret values or names');
+    assert.ok(!JSON.stringify(v.describe()).includes(FAKE_TOKEN));
+    const off = new Vault(path.join(tmp(), 's.bin'), { isEncryptionAvailable: () => false });
+    assert.throws(() => off.write({ DISCORD_TOKEN: FAKE_TOKEN }), /cannot encrypt/); assert.deepEqual(off.read(), {});
+    assert.deepEqual(new Vault(file, { ...crypto, decryptString: () => { throw new Error('wrong user'); } }).read(), {}, 'a vault from another Windows user reads as empty, not as an error');
+  });
+
+  await test('desktop setup wizard: the token is checked with Discord, answers are plain English, the token never comes back, and only discord.com is opened', async () => {
+    const calls = [];
+    const reply = (status, body) => ({ status, ok: status >= 200 && status < 300, json: async () => body });
+    const discord = (routes) => async (url, opts) => { calls.push([url, opts.headers.Authorization]); const r = routes[new URL(url).pathname.replace('/api/v10', '')]; return typeof r === 'function' ? r() : r; };
+    const good = await verifyToken(` ${FAKE_TOKEN} `, discord({
+      '/users/@me': reply(200, { id: '123456789012345678', username: 'goodboy', global_name: 'Good Boy', bot: true, avatar: 'abc' }),
+      '/applications/@me': reply(200, { id: '123456789012345678', name: 'Good Boy', flags: (1 << 15) | (1 << 19) }),
+      '/users/@me/guilds': reply(200, [{ id: '1', name: 'A Basic Discord Server' }]),
+    }));
+    assert.equal(good.ok, true); assert.equal(good.bot.name, 'Good Boy'); assert.deepEqual(good.intents, { presence: false, members: true, messageContent: true });
+    assert.deepEqual(good.guilds, [{ id: '1', name: 'A Basic Discord Server' }]); assert.match(good.bot.avatar, /^https:\/\/cdn\.discordapp\.com\/avatars\/123456789012345678\/abc\.png/);
+    assert.ok(!JSON.stringify(good).includes(FAKE_TOKEN), 'the token is never in the answer');
+    assert.ok(calls.every(([u, a]) => u.startsWith('https://discord.com/api/v10/') && a === `Bot ${FAKE_TOKEN}`), 'only discord.com is asked, with the trimmed token');
+    assert.match((await verifyToken(FAKE_TOKEN, discord({ '/users/@me': reply(401, {}) }))).error, /not valid/);
+    assert.match((await verifyToken(FAKE_TOKEN, discord({ '/users/@me': reply(429, {}) }))).error, /slow down/);
+    assert.match((await verifyToken(FAKE_TOKEN, discord({ '/users/@me': () => { throw new TypeError('fetch failed'); } }))).error, /internet connection/);
+    assert.match((await verifyToken(FAKE_TOKEN, discord({ '/users/@me': reply(200, { id: '1', username: 'me' }) }))).error, /user account token/);
+    assert.equal((await verifyToken('   ', discord({}))).kind, 'empty');
+    const half = await verifyToken(FAKE_TOKEN, discord({ '/users/@me': reply(200, { id: '123456789012345678', username: 'b', bot: true }), '/applications/@me': reply(500, {}), '/users/@me/guilds': reply(500, {}) }));
+    assert.equal(half.ok, true, 'a token that signs in still counts when the extra details fail'); assert.equal(half.intents, null); assert.equal(half.guilds, null);
+    assert.deepEqual(intentsFrom(0), { presence: false, members: false, messageContent: false }); assert.equal(intentsFrom(1 << 12).presence, true);
+    assert.match(avatarUrl({ id: '123456789012345678', avatar: null }), /embed\/avatars\/[0-5]\.png$/);
+    // links: built here, only discord.com, and the invite asks for the same permissions as "npm run invite"
+    assert.equal(appInvite('123456789012345678'), botInvite('123456789012345678'), 'same invite as the bot\'s own invite script');
+    assert.ok(!/permissions=8\b/.test(appInvite('123456789012345678')), 'no Administrator'); assert.equal(PERMISSIONS, new URL(botInvite('123456789012345678')).searchParams.get('permissions'));
+    for (const k of ['portal', 'bot', 'oauth', 'invite']) assert.ok(linkFor(k, '123456789012345678').startsWith('https://discord.com/'), k);
+    assert.equal(linkFor('invite', 'not-an-id'), null); assert.equal(linkFor('javascript:alert(1)', '123456789012345678'), null);
+    assert.equal(linkFor('bot', '../../evil'), 'https://discord.com/developers/applications', 'a bad app ID falls back to the general page');
+    const app = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'app.js'), 'utf8');
+    for (const words of ['Discord bot token', 'Client secret', 'Open the Developer Portal', 'Add to my Discord server', 'Start the bot', 'Skip']) assert.ok(app.includes(words), words);
+    assert.equal(normalize({}).setupComplete, false); assert.equal(normalize({ setupComplete: 'yes' }).setupComplete, false);
+  });
+
+  await test('desktop redirect and brand: the setup shows the same login address the dashboard asks for, and the Good Boy look is applied part by part', async () => {
+    for (const env of [{}, { DASHBOARD_PORT: '4100' }, { DASHBOARD_BASE_URL: 'https://gb.example.ts.net/' }, { DASHBOARD_BASE_URL: 'http://localhost:3000' }, { DASHBOARD_BASE_URL: 'ftp://x' }, { DASHBOARD_BASE_URL: '"https://a.example/sub/"' }])
+      assert.equal(redirectUriFor(env), `${normalizeBase(env.DASHBOARD_BASE_URL, Number(env.DASHBOARD_PORT || 3000))}/callback`, JSON.stringify(env));
+    assert.equal(redirectUriFor({}), 'http://localhost:3000/callback');
+    assert.equal(appIdFromToken(FAKE_TOKEN), clientIdFromToken(FAKE_TOKEN)); assert.equal(appIdFromToken('nonsense'), null);
+    const v = { ok: true, bot: { username: 'Good Boy', name: 'Good Boy', avatarHash: 'a1', bannerHash: null }, app: { icon: 'i1', description: BRAND.description } };
+    assert.deepEqual(brandStatus(v, { avatar: 'a1', icon: 'i1' }).items, { name: true, avatar: true, banner: false, icon: true, description: true });
+    assert.equal(brandStatus({ ok: false }), null);
+    const sent = [];
+    const fake = async (url, o) => { const body = JSON.parse(o.body); sent.push([new URL(url).pathname, Object.keys(body)[0], o.headers.Authorization]);
+      if (body.banner) return { ok: false, status: 403, json: async () => ({ message: 'Missing Access' }) };
+      if (body.username) return { ok: false, status: 400, json: async () => ({ message: 'Invalid Form Body', errors: { username: {} } }) };
+      return { ok: true, status: 200, json: async () => (body.avatar ? { avatar: 'new-a' } : body.icon ? { icon: 'new-i' } : {}) }; };
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const r = await applyBrand(FAKE_TOKEN, { avatar: png, banner: png, icon: png }, { bot: { username: 'old name' } }, fake);
+    assert.deepEqual(Object.fromEntries(Object.entries(r.results).map(([k, x]) => [k, x.ok])), { avatar: true, banner: false, name: false, icon: true, description: true }, 'one refusal does not stop the rest');
+    assert.match(r.results.name.error, /two name changes an hour/); assert.match(r.results.banner.error, /did not allow/);
+    assert.deepEqual(r.applied, { avatar: 'new-a', icon: 'new-i' });
+    assert.ok(sent.every(([p, , a]) => ['/api/v10/users/@me', '/api/v10/applications/@me'].includes(p) && a === `Bot ${FAKE_TOKEN}`));
+    assert.equal((await applyBrand(FAKE_TOKEN, { avatar: png, banner: png, icon: png }, { bot: { username: 'Good Boy' } }, fake)).results.name.skipped, true, 'the name is only changed when it is wrong (Discord limits name changes)');
+    sent.length = 0;
+    const only = await applyBrand(FAKE_TOKEN, { avatar: png, banner: png, icon: png }, { bot: { username: 'x' } }, fake, { parts: ['icon'] });
+    assert.deepEqual(Object.keys(only.results), ['icon'], 'keeping the look up only touches the parts that are missing'); assert.equal(sent.length, 1);
+    assert.match((await applyCustom(FAKE_TOKEN, { name: 'a' }, fake)).error, /2 to 32/);
+    sent.length = 0; assert.equal((await applyCustom(FAKE_TOKEN, { image: png }, fake)).ok, true); assert.deepEqual(sent.map((x) => x[1]), ['avatar']);
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    assert.match(main, /async function keepBrand\(\) \{\n  if \(!bundled \|\| whiteLabel\(\)/, 'free versions put the Good Boy look back by themselves; licensed ones are left alone');
+    assert.match(main.slice(main.indexOf("'gb:brand-custom'"), main.indexOf("'gb:brand-custom'") + 200), /if \(!whiteLabel\(\)\) return/, 'own name and picture need a licence');
+    for (const f of ['avatar.png', 'banner.png', 'app-icon.png']) { const b = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'brand', f)); assert.equal(b.toString('latin1', 1, 4), 'PNG', f); assert.ok(b.length < 8 * 1024 * 1024, `${f} is under Discord's size limit`); }
+    const banner = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'brand', 'banner.png')); assert.equal(banner.readUInt32BE(16) / banner.readUInt32BE(20), 2.5, 'banner is 5:2 like Discord\'s');
+    assert.ok(fs.existsSync(path.join(root, 'desktop', 'renderer', 'tray.png')) && fs.existsSync(path.join(root, 'desktop', 'build', 'icon.ico')));
+  });
+
+  await test('licences: signed by the owner, tied to one bot, with an end date; forged, changed, moved, ended and cancelled keys are all refused', () => {
+    const { publicKey, privateKey } = generateKeyPair();
+    const t0 = Date.UTC(2026, 9, 31);
+    const { key, payload } = createLicense({ privateKey, appId: '1469714389648015571', to: "Joe's server", days: 30, now: t0 });
+    assert.match(key, /^GB1\.[\w-]+\.[\w-]+$/); assert.equal(payload.exp, t0 + 30 * 86400000);
+    const ok = verifyLicense(key, publicKey, { appId: '1469714389648015571', now: t0 + 86400000 });
+    assert.equal(ok.ok, true); assert.ok(hasFeature(ok, 'whitelabel'));
+    assert.match(verifyLicense(key, publicKey, { appId: '1469714389648015572', now: t0 }).error, /different bot/);
+    assert.match(verifyLicense(key, publicKey, { appId: '1469714389648015571', now: t0 + 31 * 86400000 }).error, /ended on/);
+    assert.match(verifyLicense(key, publicKey, { appId: '1469714389648015571', now: t0, revoked: [payload.id] }).error, /cancelled/);
+    const [pre, body, sig] = key.split('.');
+    const longer = Buffer.from(JSON.stringify({ ...payload, exp: null })).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+    assert.match(verifyLicense(`${pre}.${longer}.${sig}`, publicKey, { appId: payload.app, now: t0 }).error, /not genuine/, 'changing the end date breaks the signature');
+    assert.match(verifyLicense(key, generateKeyPair().publicKey, { appId: payload.app, now: t0 }).error, /not genuine/, 'a key made by someone else is refused');
+    assert.match(verifyLicense('hello', publicKey).error, /not a Good Boy licence/); assert.match(verifyLicense(key, null).error, /not switched on/);
+    const life = createLicense({ privateKey, appId: '1469714389648015571', days: null, now: t0 });
+    assert.equal(life.payload.exp, null); assert.equal(verifyLicense(life.key, publicKey, { appId: '1469714389648015571', now: t0 + 1e12 }).ok, true, 'lifetime never ends');
+    assert.equal(createLicense({ privateKey, appId: '1469714389648015571', until: '2027-03-03', now: t0 }).payload.exp, Date.parse('2027-03-03'));
+    assert.throws(() => createLicense({ privateKey, appId: 'abc', days: 30 }), /Application ID/);
+    assert.throws(() => createLicense({ privateKey, appId: '1469714389648015571', until: '2020-01-01', now: t0 }), /future/);
+    assert.throws(() => createLicense({ privateKey, appId: '1469714389648015571', days: 30, features: ['admin'] }), /unlocks/);
+    // the signing key is stored encrypted
+    const crypto = { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from(t).map((b) => b ^ 0x33), decryptString: (b) => Buffer.from(b).map((x) => x ^ 0x33).toString() };
+    const f = new SecretFile(path.join(tmp(), 'k.bin'), crypto); f.write({ privateKey });
+    assert.ok(!fs.readFileSync(f.file).includes('PRIVATE KEY'), 'not readable on disk'); assert.equal(f.read().privateKey, privateKey);
+    assert.equal(normalize({ license: key }).license, key); assert.equal(normalize({ license: 'bad key!<script>' }).license, '');
+    assert.deepEqual(normalize({ brandApplied: { avatar: 'a1', icon: '../x', evil: 1 } }).brandApplied, { avatar: 'a1', banner: null, icon: null });
+  });
+
+  await test('modules from the app: the everyone version only takes modules the owner signed; any changed file breaks the signature', () => {
+    const { publicKey, privateKey } = generateKeyPair();
+    const dir = path.join(tmp(), 'party-games'); fs.mkdirSync(path.join(dir, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.js'), "export default { name: 'party-games', version: '1.0.0' };"); fs.writeFileSync(path.join(dir, 'lib', 'x.js'), 'export const x = 1;');
+    assert.match(verifyModule(dir, publicKey).error, /not signed/);
+    const s = signModule(dir, privateKey); assert.equal(s.name, 'party-games'); assert.ok(fs.existsSync(path.join(dir, SIG_FILE)));
+    assert.deepEqual(verifyModule(dir, publicKey), { ok: true, name: 'party-games' });
+    assert.match(verifyModule(dir, generateKeyPair().publicKey).error, /not genuine/, 'signed by someone else');
+    assert.match(verifyModule(dir, null).error, /not switched on/);
+    fs.writeFileSync(path.join(dir, 'lib', 'x.js'), 'export const x = 2; // sneaky');
+    assert.match(verifyModule(dir, publicKey).error, /changed after it was signed/, 'one changed file anywhere is caught');
+    fs.writeFileSync(path.join(dir, 'lib', 'x.js'), 'export const x = 1;'); assert.equal(verifyModule(dir, publicKey).ok, true);
+    fs.writeFileSync(path.join(dir, 'lib', 'extra.js'), ''); assert.equal(verifyModule(dir, publicKey).ok, false, 'an added file is caught too'); fs.rmSync(path.join(dir, 'lib', 'extra.js'));
+    const moved = path.join(path.dirname(dir), 'other-name'); fs.cpSync(dir, moved, { recursive: true });
+    assert.match(verifyModule(moved, publicKey).error, /different name/);
+    const bad = path.join(tmp(), 'Bad Name!'); fs.mkdirSync(bad); fs.writeFileSync(path.join(bad, 'index.js'), '');
+    assert.match(verifyModule(bad, publicKey).error, /lowercase/);
+    assert.equal(hashModule(dir), hashModule(dir), 'the same folder always hashes the same');
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    const add = main.slice(main.indexOf("'gb:module-add'"), main.indexOf("'gb:module-sign'"));
+    assert.ok(add.indexOf('verifyModule(') < add.indexOf('fs.cpSync('), 'the signature is checked before anything is copied or run');
+    assert.match(add, /if \(!sig\.ok && !canAddUnsigned\(\)\) return/);
+    assert.match(main, /const canAddUnsigned = \(\) => edition\.id === 'owner' \|\| edition\.features\.includes\('devtools'\)/);
+  });
+
+  await test('desktop editions: three builds from one codebase with their own names and app IDs; unknown means consumer', async () => {
+    assert.equal(readEdition({ edition: 'owner' }).features.includes('publish'), true);
+    assert.equal(readEdition({ edition: 'consumer' }).features.includes('publish'), false);
+    assert.equal(readEdition({ edition: 'developer' }).features.includes('devtools'), true);
+    for (const bad of [null, {}, { edition: 'admin' }, { edition: '__proto__' }]) assert.equal(readEdition(bad).id, 'consumer');
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'package.json'), 'utf8'));
+    const ids = ['owner', 'consumer', 'developer'].map((e) => editionConfig(pkg, e));
+    assert.equal(new Set(ids.map((c) => c.build.appId)).size, 3, 'separate app IDs, so all three install side by side');
+    assert.deepEqual(ids.map((c) => c.productName), ['Good Boy Owner', 'Good Boy', 'Good Boy Developer']);
+    assert.match(ids[0].build.nsis.artifactName, /^Good-Boy-Owner-Setup-/); assert.equal(pkg.build.appId, 'com.basicghostlabs.goodboy', 'the committed file is not changed by the function');
+    assert.throws(() => editionConfig(pkg, 'admin'), /owner, consumer or developer/);
+  });
+
+  await test('desktop bundled bot: copied into place once per version, the bot\'s own updates and the data are kept, owner data seeds only an empty install', async () => {
+    const src = tmp(), dest = path.join(tmp(), 'bot'), data = path.join(tmp(), 'data');
+    fs.mkdirSync(path.join(src, 'src'), { recursive: true }); fs.writeFileSync(path.join(src, 'src', 'index.js'), '//1'); fs.writeFileSync(path.join(src, 'package.json'), JSON.stringify({ version: '2.1.1' }));
+    assert.deepEqual(ensureBotCode(src, dest), { action: 'installed', version: '2.1.1' }); assert.equal(installedVersion(dest), '2.1.1');
+    assert.deepEqual(ensureBotCode(src, dest), { action: 'none', version: '2.1.1' });
+    fs.mkdirSync(path.join(dest, 'releases', '2.1.2'), { recursive: true }); fs.writeFileSync(path.join(dest, 'current.json'), '{}');
+    fs.writeFileSync(path.join(src, 'package.json'), JSON.stringify({ version: '2.1.3' })); fs.writeFileSync(path.join(src, 'src', 'index.js'), '//3');
+    assert.equal(ensureBotCode(src, dest).action, 'updated'); assert.equal(fs.readFileSync(path.join(dest, 'src', 'index.js'), 'utf8'), '//3');
+    assert.ok(fs.existsSync(path.join(dest, 'releases', '2.1.2')) && fs.existsSync(path.join(dest, 'current.json')), 'downloaded bot updates survive an app update');
+    assert.throws(() => ensureBotCode(tmp(), dest), /missing from this app/);
+    const seed = path.join(tmp(), 'eclipse.db'); fs.writeFileSync(seed, 'SEED');
+    assert.equal(seedData(seed, data), true); fs.writeFileSync(path.join(data, 'eclipse.db'), 'LIVE');
+    assert.equal(seedData(seed, data), false); assert.equal(fs.readFileSync(path.join(data, 'eclipse.db'), 'utf8'), 'LIVE', 'existing data is never overwritten');
+    assert.equal(seedData(path.join(tmp(), 'none.db'), path.join(tmp(), 'x')), false);
+    // what goes into the app: the bot without tests, docs, secrets, data or the desktop app itself
+    const shipped = bundleFiles(root).map((f) => f.path);
+    assert.ok(shipped.includes('src/index.js') && shipped.includes('scripts/app-tools.js') && shipped.includes('scripts/supervise.js'));
+    assert.ok(!shipped.some((p) => /^(tests|docs|desktop|data|node_modules|\.github)\//.test(p) || /(^|\/)\.env|\.db$|\.pem$/.test(p)), shipped.filter((p) => /^(tests|docs|desktop|data)\//.test(p)).join(','));
+  });
+
+  await test('desktop helper: reads levels and modules from a database, imports a live database (with its -wal changes) as one clean copy, and agrees with the levels module', async () => {
+    for (const xp of [0, 99, 100, 254, 255, 1671, 1470, 99999]) assert.deepEqual(toolLevel(xp), communityLevel(xp), `level curve for ${xp}`);
+    const live = tmp(); const db = new Database(path.join(live, 'eclipse.db'));
+    db.upsertGuild('9', 'Test Server'); db.setModuleState('9', 'community', true, '1'); db.setModuleState('9', 'voice', false, '1');
+    db.dataSet('9', 'community', 'user:111', { xp: 1671, messages: 147 }); db.dataSet('9', 'community', 'user:222', { xp: 50 }); db.dataSet('9', 'community', 'user:333', { xp: 0 });
+    assert.ok(fs.existsSync(path.join(live, 'eclipse.db-wal')), 'changes are still in the -wal side file, like a running bot');
+    const out = tmp(); fs.writeFileSync(path.join(out, 'eclipse.db'), 'old');
+    const r = await importDb(path.join(live, 'eclipse.db'), out);
+    assert.equal(r.guild.name, 'Test Server'); assert.equal(r.memberCount, 2); assert.ok(r.backup && fs.readFileSync(r.backup, 'utf8') === 'old', 'what was there is kept as a backup');
+    db.close();
+    const s = await toolSummary(out);
+    assert.deepEqual(s.members.map((m) => [m.id, m.level]), [['111', 6], ['222', 0]], 'sorted by XP, members without XP left out');
+    assert.deepEqual(s.modules, [{ name: 'community', enabled: true }, { name: 'voice', enabled: false }]);
+    assert.equal((await toolSummary(tmp())).empty, true);
+    await assert.rejects(importDb(path.join(tmp(), 'missing.db'), tmp()), /no database/);
+    // the same, through the app's runner with a real Node process
+    const viaApp = await runTool({ nodePath: process.execPath, botDir: root, args: ['summary', out] });
+    assert.equal(viaApp.ok, true); assert.equal(viaApp.memberCount, 2);
+    assert.match((await runTool({ nodePath: path.join(tmp(), 'no-node'), botDir: root, args: ['summary', out] })).error, /bundled Node\.js is missing/);
+  });
+
+  await test('desktop build workflow: builds the .exe and .dmg, then starts the built app and fails the build if the window did not draw', async () => {
+    const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'desktop.yml'), 'utf8');
+    for (const must of ['windows-latest', 'macos-latest', 'npm run dist:win', 'npm run dist:mac', 'GOODBOY_SMOKE_DIR', 'GOODBOY_SMOKE_SEED', 'make-fixture.js', 'win-unpacked', '*-Setup-*.exe', '*-Portable-*.exe', '*.dmg', 'workflow_dispatch', 'edition: [owner, consumer, developer]', 'set-edition.js', 'bundle-bot.js', 'desktop/bundle/node/node.exe']) assert.ok(wf.includes(must), must);
+    assert.ok(!/owner-seed\/eclipse\.db|good-boy-data/.test(wf), 'no real server data is ever part of the GitHub build');
+    assert.ok(!/secrets\.|GITHUB_TOKEN|contents:\s*write/.test(wf), 'the build uses no secrets and cannot write to the repo');
+    assert.ok(!/uses:\s*\S+@(main|master|latest)\b/.test(wf), 'actions are pinned to a version');
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    assert.match(main, /process\.env\.GOODBOY_SMOKE_DIR/); assert.match(main, /app\.exit\(out\.ok \? 0 : 1\)/);
+    const gi = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+    for (const x of ['.env', 'data/', '*.db', 'desktop/dist/', 'node_modules/']) assert.ok(gi.split('\n').includes(x), `${x} is ignored by git`);
+  });
+
+  await test('desktop log: colour codes are removed, tokens and secrets are hidden, lines are kept in order and capped', async () => {
+    assert.equal(clean('\x1b[32mok\x1b[0m'), 'ok');
+    assert.ok(!clean(`error ${FAKE_TOKEN} here`).includes('GaBcDe')); assert.match(clean(`error ${FAKE_TOKEN} here`), /\[hidden\]/);
+    assert.equal(clean('DISCORD_CLIENT_SECRET=abc123def'), 'DISCORD_CLIENT_SECRET=[hidden]');
+    assert.equal(clean('password: hunter2'), 'password: [hidden]');
+    const b = new LogBuffer(3);
+    assert.deepEqual(b.push('one\ntw'), ['one']); assert.deepEqual(b.push('o\nthree\n\n'), ['two', 'three']);
+    b.push('four\nfive\n'); assert.deepEqual(b.all(), ['three', 'four', 'five'], 'only the newest lines are kept');
+    const big = new LogBuffer(5); assert.equal(big.push('x'.repeat(5000)).length, 1, 'a never-ending line cannot grow without limit');
+  });
+
+  await test('desktop runner: starts the real supervisor, reports running, hides the token in the log, and stops without leaving the bot behind', async () => {
+    const base = fakeInstall(); const r = new BotRunner({ botDir: base, script: SUPERVISE, stopTimeoutMs: 4000 }); // short, so a stop that needs the kill fallback fails the timing check below
+    const states = []; r.on('state', (s) => states.push(s.state));
+    assert.equal(r.start(), true); assert.equal(r.start(), false, 'a second start does nothing');
+    await until(() => r.state === 'running', 10000, 'running');
+    const pidFile = path.join(base, 'data', 'bot.pid'); await until(() => fs.existsSync(pidFile), 3000, 'bot pid');
+    const botPid = Number(fs.readFileSync(pidFile, 'utf8')); const supPid = r.status().pid;
+    assert.ok(alive(botPid) && alive(supPid));
+    const log = r.logs.all().join('\n'); assert.match(log, /Logged in as Test#0/); assert.ok(!log.includes('GaBcDe'), 'token hidden'); assert.match(log, /\[hidden\]/);
+    const t0 = Date.now(); await r.stop();
+    assert.ok(Date.now() - t0 < 3000, 'stopped by the shutdown message, not by the kill fallback (which is a hard kill on Windows)');
+    assert.equal(r.state, 'stopped'); assert.ok(!alive(supPid), 'supervisor gone'); assert.ok(!alive(botPid), 'bot gone, nothing orphaned');
+    assert.ok(!fs.existsSync(path.join(base, 'supervisor.lock')), 'lock released');
+    assert.deepEqual(states.slice(0, 2), ['starting', 'running']); assert.ok(states.includes('stopping'));
+    assert.equal(r.start(), true, 'can be started again'); await until(() => r.state === 'running', 10000, 'running again'); await r.stop();
+  });
+
+  await test('desktop runner: if the app goes away, the supervisor and the bot stop too', async () => {
+    const base = fakeInstall(); const r = new BotRunner({ botDir: base, script: SUPERVISE });
+    r.start(); await until(() => r.state === 'running', 10000, 'running');
+    const pidFile = path.join(base, 'data', 'bot.pid'); await until(() => fs.existsSync(pidFile), 3000, 'bot pid');
+    const botPid = Number(fs.readFileSync(pidFile, 'utf8')); const supPid = r.status().pid;
+    r.child.disconnect(); // what happens when the desktop app is killed
+    await until(() => !alive(supPid) && !alive(botPid), 8000, 'both processes to end');
+  });
+
+  await test('desktop runner: the app can ask the running bot to do things, through the supervisor, and gets a plain answer when it cannot', async () => {
+    const base = fakeInstall();
+    fs.writeFileSync(path.join(base, 'src', 'index.js'), `
+import { connectSupervisor } from ${JSON.stringify(pathToFileURL(path.join(root, 'src', 'ipc.js')).href)};
+const link = connectSupervisor({ version: 'x', onControl: async (action, p) => action === 'boom' ? Promise.reject(new Error('it broke')) : ({ ok: true, action, p }) });
+console.log('Ready. In Discord, run /module list to turn features on.'); link.ready(); setInterval(() => {}, 1000);`);
+    const r = new BotRunner({ botDir: base, script: SUPERVISE, stopTimeoutMs: 4000 });
+    assert.match((await r.control('modules')).error, /not running/);
+    r.start(); await until(() => r.state === 'running', 10000, 'running');
+    assert.deepEqual(await r.control('module-set', { name: 'stats', enabled: true }), { ok: true, action: 'module-set', p: { name: 'stats', enabled: true } });
+    assert.deepEqual(await r.control('boom'), { ok: false, error: 'it broke' }, 'a failure inside the bot comes back as a message, not a crash');
+    const two = await Promise.all([r.control('a'), r.control('b')]); assert.deepEqual(two.map((x) => x.action), ['a', 'b'], 'answers go to the right question');
+    await r.stop();
+  });
+
+  await test('desktop runner: problems are reported in plain words (missing script, bad node, crash, restart)', async () => {
+    const none = new BotRunner({ botDir: tmp() });
+    assert.equal(none.start(), false); assert.equal(none.state, 'failed'); assert.match(none.lastError, /supervisor script was not found/);
+    const base = fakeInstall(); const nonode = new BotRunner({ botDir: base, script: SUPERVISE, nodePath: path.join(base, 'no-such-node') });
+    nonode.start(); await until(() => nonode.state === 'failed', 5000, 'failure'); assert.match(nonode.lastError, /Node\.js was not found/);
+    const crash = new BotRunner({ botDir: base, script: path.join(base, 'boom.js') }); fs.writeFileSync(path.join(base, 'boom.js'), 'console.log("[supervisor 00:00] Stopped: it kept crashing"); process.exit(1);');
+    crash.start(); await until(() => crash.state === 'failed', 5000, 'crash'); assert.equal(crash.lastError, 'it kept crashing');
+    const idle = new BotRunner({ botDir: base, script: SUPERVISE }); await idle.stop(); assert.equal(idle.state, 'stopped');
+    // restart = stop then start, ending in a fresh running process
+    idle.start(); await until(() => idle.state === 'running', 10000, 'running'); const first = idle.status().pid;
+    assert.equal(await idle.restart(), true); await until(() => idle.state === 'running', 10000, 'running after restart');
+    assert.notEqual(idle.status().pid, first); await idle.stop();
+  });
+
+  await test('desktop security: the window is sandboxed, isolated and offline-only, the preload exposes a fixed list, nothing is built from HTML strings', async () => {
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    for (const must of ['contextIsolation: true', 'nodeIntegration: false', 'sandbox: true', "action: 'deny'", "'will-navigate'", 'requestSingleInstanceLock', 'isSafeDashboardUrl(u)']) assert.ok(main.includes(must), `main.js should contain ${must}`);
+    assert.ok(!/nodeIntegration:\s*true|contextIsolation:\s*false|sandbox:\s*false|webSecurity:\s*false/.test(main));
+    assert.ok(!/openExternal\((?!u\)|url\)|linkFor\('oauth', v\.app\.id\)\))/.test(main), 'only the checked dashboard address or a discord.com link built by linkFor is ever opened');
+    assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
+    const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
+    const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'verifyToken']);
+    assert.match(main, /const ownerOnly = \(\) =>/); for (const h of ['gb:lic-keygen', 'gb:lic-create', 'gb:lic-revoke']) assert.match(main.slice(main.indexOf(`'${h}'`), main.indexOf(`'${h}'`) + 200), /ownerOnly\(\)/, `${h} only works in the Owner version`);
+    assert.ok(!/privateKey/.test(main.slice(main.indexOf("'gb:lic-state'"), main.indexOf("'gb:lic-keygen'"))), 'the signing key is never sent to the window');
+    assert.match(main, /url && url\.startsWith\('https:\/\/discord\.com\/'\)/, 'setup only ever opens discord.com pages');
+    assert.match(main, /vault: bundled \? vault\.describe\(\) : null/, 'the window gets the vault description, never its contents');
+    const readers = [...main.matchAll(/vault\.read\(\)/g)].map((m) => [...main.slice(0, m.index).matchAll(/function (\w+)\(/g)].pop()?.[1]);
+    assert.deepEqual([...new Set(readers)].sort(), ['childEnv', 'recheck', 'savedToken'], 'secret values are read only to start the bot, to check readiness and to ask Discord, never for the window');
+    assert.match(main, /allowedImport\.has\(dir\)/, 'the window can only import from a folder the person picked or that was found');
+    const block = pre.slice(pre.indexOf('exposeInMainWorld'));
+    assert.ok(!/\bipcRenderer\s*[,}]|:\s*ipcRenderer\s*[,}]|exposeInMainWorld\('[^']+',\s*(ipcRenderer|require)/.test(block), 'ipcRenderer itself is never handed to the page');
+    const handled = [...main.matchAll(/ipcMain\.handle\('(gb:[\w-]+)'/g)].map((m) => m[1]).sort();
+    const invoked = [...pre.matchAll(/invoke\('(gb:[\w-]+)'/g)].map((m) => m[1]).sort();
+    assert.deepEqual([...new Set(invoked)], handled, 'every call the window can make has exactly one handler');
+    const html = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'index.html'), 'utf8');
+    assert.match(html, /default-src 'none'/); assert.ok(!/<script>|unsafe-inline|unsafe-eval|https?:\/\/(?!cdn\.discordapp\.com;)/.test(html), 'no inline script; no outside address except Discord\'s image server');
+    const app = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'app.js'), 'utf8');
+    assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/.test(app));
+    assert.doesNotMatch(app + html + main, new RegExp(['Eclip' + 'se', 'Clau' + 'de', 'Anthro' + 'pic'].join('|')));
+  });
+
+  await test('desktop packaging: the app is kept out of bot releases, the shared look is in sync, and the build asks for no signing it cannot do', async () => {
+    const proj = tmp();
+    for (const f of ['package.json', 'src/index.js', 'desktop/main.js', 'desktop/package.json', 'desktop/lib/runner.js']) { fs.mkdirSync(path.dirname(path.join(proj, f)), { recursive: true }); fs.writeFileSync(path.join(proj, f), '{}'); }
+    const shipped = collectFiles(proj).map((f) => (typeof f === 'string' ? f : f.path));
+    assert.ok(shipped.includes('src/index.js')); assert.ok(!shipped.some((p) => p.startsWith('desktop/')), 'desktop/ must not be inside a bot update');
+    const pub = path.join(root, 'src', 'dashboard', 'public');
+    assert.ok(fs.readFileSync(path.join(root, 'desktop', 'renderer', 'good-boy-logo.png')).equals(fs.readFileSync(path.join(pub, 'good-boy-logo.png'))), 'run "npm run sync" in desktop/ after changing the logo');
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'package.json'), 'utf8'));
+    assert.equal(pkg.main, 'boot.cjs'); assert.equal(pkg.build.mac.identity, null); assert.ok(pkg.devDependencies.electron && pkg.devDependencies['electron-builder']);
+    assert.ok(!pkg.dependencies, 'the app ships no runtime packages');
+    const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    assert.equal(pkg.version, rootPkg.version, 'the app and the bot share one version number');
+    for (const f of [pkg.build.win.icon, pkg.build.mac.icon]) assert.ok(fs.existsSync(path.join(root, 'desktop', f)), `${f} must exist`);
+    const size = (f) => { const b = fs.readFileSync(path.join(root, 'desktop', f)); if (f.endsWith('.ico')) { const n = b.readUInt16LE(4); const w = [...Array(n)].map((_, i) => b[6 + i * 16] || 256); return [Math.max(...w), Math.max(...w), w]; } return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
+    assert.ok(size(pkg.build.win.icon).slice(0, 2).every((n) => n >= 256), 'Windows icon is at least 256x256');
+    assert.deepEqual(size(pkg.build.win.icon)[2].sort((a, b) => a - b), [16, 24, 32, 48, 64, 128, 256], 'every size Windows shows has its own image, so the small ones stay crisp'); assert.ok(size(pkg.build.mac.icon).every((n) => n >= 512), 'Mac icon is at least 512x512');
+    assert.ok(pkg.build.win.target.some((t) => t.target === 'nsis') && pkg.build.win.target.some((t) => t.target === 'portable'), 'installer and portable .exe');
+    assert.equal(pkg.build.nsis.oneClick, false); assert.equal(pkg.build.nsis.allowToChangeInstallationDirectory, true, 'the installer asks where to install');
+    assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false, 'uninstalling never deletes the bot\'s data');
+    for (const f of pkg.build.files.filter((x) => !x.includes('*'))) assert.ok(fs.existsSync(path.join(root, 'desktop', f)), `${f} listed for packaging must exist`);
+    assert.deepEqual(pkg.build.extraResources.map((x) => x.to), ['bot', 'node', 'owner-seed'], 'the bot and its own Node ship next to the app, outside the archive');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'edition.json'), 'utf8')).edition, 'consumer', 'the committed edition is the safe one');
+  });
+}
