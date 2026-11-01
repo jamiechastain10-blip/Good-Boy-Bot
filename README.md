@@ -177,7 +177,7 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 11. Optional: `npm run supervised` and open Dashboard → Updates (as the bot owner); it should say updates are off.
 
 ## Security notes
-Secrets live only in `.env` (never commit it; it's in `.gitignore`). Permissions are enforced centrally by the core (the bot also checks role hierarchy, so a moderator can't act on someone above them). The bot refuses to hand out roles that carry dangerous permissions through menus/rewards/auto-roles. `@everyone`/role pickers are off unless a feature explicitly needs them. Outbound feed fetches block private/internal addresses. The dashboard re-checks the person's rights with Discord on every request, and panels are enforced on the server, not just hidden in the page. Settings changes and permission edits are written to the security log.
+Secrets live only in `.env` (never commit it; it's in `.gitignore`). Permissions are enforced centrally by the core (the bot also checks role hierarchy, so a moderator can't act on someone above them). The bot refuses to hand out roles that carry dangerous permissions through menus/rewards/auto-roles. `@everyone`/role pings are off unless a feature explicitly needs them. Outbound feed fetches block private/internal addresses. The dashboard re-checks the person's rights with Discord on every request, and panels are enforced on the server, not just hidden in the page. Settings changes and permission edits are written to the security log.
 
 ---
 © 2026 Basic Ghost Labs. All rights reserved. · Good Boy
