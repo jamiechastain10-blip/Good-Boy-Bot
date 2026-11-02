@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.3.2
+**A new look everywhere (liquid glass, a living aurora background and a Dynamic Island), migrate that replaces old role menus and learns custom commands, and a proper AutoMod page.**
+
+<!-- members -->
+- **A whole new look** for the dashboard and app: liquid glass, an aurora background and a Dynamic Island with live news.
+- **Nicer role menus** that show how many people have each role.
+- **Games are quiet again:** no more public lines for every rare fish.
+<!-- /members -->
+
+**The new look (dashboard, phone page and the Windows app)**
+- One shared design system for all three, so they always match: deep dark theme by default (light still available), glass panels that bend the background behind them like water, a glossy highlight and a rim of light, and a slow aurora of colour drifting behind everything with a fine grain.
+- Everything moves like liquid: switches whose thumb stretches as it slides, buttons that squish when pressed, a highlight that flows between sidebar items and tabs, cards that settle in, pages that blend into each other, and toasts that spring up. "Reduce motion" (Windows setting or Appearance) stops all of it.
+- **Dynamic Island** at the top: your server's live status; live news (level-ups, jackpots, AutoMod catches) flows in and stretches the island open for a moment; tap it for quick jumps. On phones it sits at the bottom of the screen.
+- **Dropdowns are dark**, including their open list (the white lists in the Windows app are gone), and in up-to-date browsers and the app the open list is fully styled to match.
+- Toasts have **Undo** where a change can be undone.
+
+**Modules, rebuilt**
+- A grid of tiles grouped by category (Safety, Community, Fun & games, Messages & roles, Voice, Tools), each with its icon, a one-line description, a status light and a switch. Turning a module on never expands the page. Search, and filters for On, Off and Needs setup.
+- Click a module for its own page: tabs for Setup (channels and roles), Settings (switches and choices), Advanced (numbers, lists, text) and Commands (every command explained). Every setting saves by itself with Undo; numbers have +/- buttons, lists are tags you add and remove, choices use plain words.
+- Turning on a module that needs a channel (Clips, Bot news, Moderation, Tickets, Dead chat ping) opens a short setup sheet for it.
+- Moderation's AutoMod settings live on the AutoMod page instead of being repeated.
+
+**Windows app**
+- Updated to a newer Electron (with security fixes and the styleable dropdowns).
+- The app's native parts (dropdown lists, scrollbars, menus) follow the app's theme.
+
+**Migrate, role menus, AutoMod and games**
+
+- **Old reaction-role messages are replaced.** `/migrate scan` finds every role message from Carl-bot, YAGPDB and the others, posts a Good Boy role menu in the same channel with the same heading and text, and removes the old message (Good Boy needs Manage Messages there). Members keep the roles they already have.
+- **Role menus look better**: each role is listed with its emoji and how many members have it, with a button per role (emojis included). Counts refresh a few seconds after people click. Listing roles never pings them.
+- **Custom commands are learned from chat.** When someone typed `?ip` or `!rules` and the old bot answered, Good Boy learns that answer, so those commands keep working without pasting anything. The old bots' own built-in commands are skipped.
+- **Command report**: the scan lists which commands your members used with the old bots and the Good Boy command that replaces each one.
+- **Games are silent again by default.** The public "caught a Legendary…" lines from 2.3 spammed the channel for active fishers, so big-win announcements are now off unless an admin turns them on. When on: only the chosen wins (slots jackpots, plus Mythical fish by default), at most one line per member every 10 minutes (jackpots always), and optionally in their own channel.
+- **New AutoMod page on the dashboard** (for admins, and for roles given AutoMod access): one-click presets (Off, Relaxed, Balanced, Strict), a card per rule with a plain explanation, its limit with units and what happens, word and allowed-site lists you add to and remove from, raid protection, new accounts and anti-nuke, recent catches updating live, and **Test a message**, which shows exactly which rules a message would break without posting or deleting anything.
+
+
 ## 2.3.1
 **Purge without limits, member message stats, and `/migrate` fixes from the first real scan.**
 

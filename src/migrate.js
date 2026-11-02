@@ -21,6 +21,7 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits, MessageFlags, ChannelType, AuditLogEvent } from 'discord.js';
 import { UserError, truncate } from './util.js';
 import { saveCommand } from '../modules/tags/index.js';
+import { postRoleMenu } from '../modules/roles/index.js';
 
 const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
@@ -57,6 +58,27 @@ function editDistance(a, b) {
   for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
   return d[a.length][b.length];
 }
+// Commands the old bots answered: learned from the chat history, so custom commands come across without pasting.
+// Built-in commands of those bots are not custom commands, so they are skipped (Good Boy has its own versions).
+const BUILTIN = new Set(('help commands ping rank level levels xp leaderboard lb top daily balance bal pay warn warnings ban unban kick mute unmute timeout untimeout '
+  + 'purge clear prune remind reminder reminders poll suggest suggestion giveaway gstart tag tags t tagcreate avatar av userinfo whois serverinfo info say embed rr reactionrole role roles '
+  + 'afk slowmode lock unlock nick nickname play skip stop queue np pause resume join leave tts voice rep cases modlogs case note notes reason starboard automod config prefix settings setup').split(' '));
+const COMMAND_MAP = { rank: '/rank', level: '/rank', levels: '/leaderboard', leaderboard: '/leaderboard', lb: '/leaderboard', top: '/top', daily: '/daily', balance: '/balance', bal: '/balance', pay: '/pay',
+  warn: '/warn', warnings: '/modhistory', cases: '/modhistory', modlogs: '/modhistory', ban: '/ban', unban: '/unban', kick: '/kick', mute: '/timeout', timeout: '/timeout', unmute: '/untimeout',
+  purge: '/purge', clear: '/purge', prune: '/purge', remind: '/remind me', reminder: '/remind me', poll: '/poll create', suggest: '/suggest', afk: '/afk', say: '/say send', embed: '/say send',
+  rr: '/rolemenu', reactionrole: '/rolemenu', rep: '/rep', tts: '/tts', join: '/tts join', leave: '/tts leave', skip: '/tts skip', starboard: '/starboard', tag: 'custom commands (?name)', tags: '/tags list',
+  avatar: null, serverinfo: '/serverstats', userinfo: '/id show', giveaway: null, play: null, stats: '/stats member', counter: '/counter' };
+const CMD_RE = /^([?!.\-$+;~>])([\p{L}\p{N}_-]{1,32})(?:\s+(.*))?$/u;
+const replyText = (m) => { const e = m.embeds?.[0]; return [m.content, e?.title ? `**${e.title}**` : null, e?.description].filter(Boolean).join('\n').trim(); };
+
+/** The old message's own heading and text (everything that isn't an emoji-to-role line), to keep on the new menu. */
+export function headerOf(msg) {
+  const e = msg.embeds?.[0];
+  const lines = `${msg.content ?? ''}\n${e?.description ?? ''}`.split('\n').map((l) => l.trim()).filter((l) => l && !(EMOJI_RE.test(l) && l.replace(EMOJI_RE, '').trim().length < 60 && /[\p{L}]/u.test(l)));
+  const title = (e?.title ?? lines.shift() ?? 'Pick your roles').replace(/\*\*/g, '').slice(0, 200);
+  return { title, description: lines.join('\n').slice(0, 1500) || null };
+}
+
 /** Lines like "🎮 : @Gamer" or "<:valo:123> Valorant players - <@&456>" -> [{ emojiKey, roleId }]. */
 export function parseRolePairs(text, guild) {
   const out = [];
@@ -66,7 +88,7 @@ export function parseRolePairs(text, guild) {
     const key = em[1] ?? em[2];
     let roleId = /<@&(\d{17,20})>/.exec(line)?.[1];
     if (!roleId) roleId = findRoleByName(guild, line.replace(EMOJI_RE, '').replace(/[-:=→>|*_~`]/g, ' ').trim());
-    if (key && roleId) out.push({ emojiKey: key, roleId });
+    if (key && roleId) out.push({ emojiKey: key, emoji: em[0], roleId });
   }
   return out;
 }
@@ -86,6 +108,7 @@ export async function scanServer(guild, { perChannel = 1000, timeBudgetMs = 12 *
   const bots = oldBots(guild);
   const botIds = new Set(bots.map((b) => b.id));
   const botName = new Map(bots.map((b) => [b.id, b.name]));
+  const learned = new Map(), usage = new Map();
   const unreadable = [];
   const findings = [];
   const add = (f) => findings.push({ id: String(findings.length + 1), ...f });
@@ -113,6 +136,24 @@ export async function scanServer(guild, { perChannel = 1000, timeBudgetMs = 12 *
       if (list.length < 100) break;
     }
     done++; scannedMessages += msgs.length;
+    const ordered = [...msgs].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    for (let k = 0; k < ordered.length; k++) {
+      const um = ordered[k];
+      const used = um.interaction?.commandName ?? um.interactionMetadata?.name;
+      if (used && botIds.has(um.author?.id)) { const key = `${botName.get(um.author.id)}|/${used}`; usage.set(key, (usage.get(key) ?? 0) + 1); }
+      if (um.author?.bot) continue;
+      const cm = CMD_RE.exec(String(um.content ?? '').trim());
+      if (!cm) continue;
+      let name = cm[2].toLowerCase();
+      if ((name === 'tag' || name === 't') && cm[3]) name = cm[3].split(/\s+/)[0].toLowerCase();
+      else if (BUILTIN.has(name)) { const key = `prefix|${cm[1]}${name}`; usage.set(key, (usage.get(key) ?? 0) + 1); continue; }
+      // the old bot's answer: a reply to this message, or its next message here within 15 seconds
+      const ans = ordered.slice(k + 1, k + 6).find((r) => botIds.has(r.author?.id) && (r.reference?.messageId === um.id || r.createdTimestamp - um.createdTimestamp < 15000));
+      const text = ans && replyText(ans);
+      if (!text || text.length < 2) continue;
+      const prev = learned.get(name);
+      learned.set(name, { name, prefix: cm[1], response: text.slice(0, 2000), count: (prev?.count ?? 0) + 1, from: botName.get(ans.author.id) });
+    }
     if (!readable) { unreadable.push(ch.id); continue; }
     for (const msg of msgs) {
       if (!botIds.has(msg.author?.id)) continue;
@@ -121,7 +162,10 @@ export async function scanServer(guild, { perChannel = 1000, timeBudgetMs = 12 *
       const reacted = [...(msg.reactions?.cache?.values?.() ?? [])];
       if (reacted.length) {
         const pairs = parseRolePairs(text, guild).filter((p) => reacted.some((r) => (r.emoji?.id ?? r.emoji?.name) === p.emojiKey));
-        if (pairs.length) add({ kind: 'reactionroles', title: `Reaction roles in #${ch.name}`, detail: pairs.map((p) => `${p.emojiKey.match(/^\d+$/) ? '(custom emoji)' : p.emojiKey} → <@&${p.roleId}>`).join(', '), data: { messageId: msg.id, pairs } });
+        if (pairs.length) {
+          const head = headerOf(msg);
+          add({ kind: 'reactionroles', title: `Role menu in #${ch.name} (${pairs.length} role${pairs.length === 1 ? '' : 's'})`, detail: `${pairs.map((p) => `${p.emoji} <@&${p.roleId}>`).join(' ')} → replaced by a Good Boy role menu in the same place`, data: { messageId: msg.id, channelId: ch.id, pairs, from: botName.get(msg.author.id), ...head } });
+        }
       }
       // Logs are boxes (embeds) from a moderation bot; TTS Bot's voice messages are not logs.
       const box = embedText(msg);
@@ -150,6 +194,18 @@ export async function scanServer(guild, { perChannel = 1000, timeBudgetMs = 12 *
   const gCh = [...goodbye.entries()].sort((a, b) => b[1].n - a[1].n)[0];
   if (gCh && gCh[1].n >= 2) add({ kind: 'goodbye', title: 'Goodbye messages', detail: `<#${gCh[0]}>`, data: { channelId: gCh[0], message: toTemplate(gCh[1].sample).replace('{user}', '**{username}**') } });
 
+  if (learned.size) {
+    const list = [...learned.values()].sort((a, b) => b.count - a.count);
+    add({ kind: 'tags', title: `Custom commands learned from chat (${list.length})`, detail: list.slice(0, 15).map((t) => `\`${t.prefix}${t.name}\``).join(' ') + (list.length > 15 ? ' …' : '') + ' → work the same in Good Boy', data: { tags: list } });
+  }
+  if (usage.size) {
+    const rows = [...usage.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => {
+      const cmd = k.split('|')[1], word = cmd.replace(/^[^\p{L}\p{N}]+/u, '').toLowerCase();
+      const gb = Object.hasOwn(COMMAND_MAP, word) ? COMMAND_MAP[word] : undefined;
+      return `\`${cmd}\` ${n}× → ${gb ? `**${gb}**` : gb === null ? '*no Good Boy version*' : '*check /help*'}`;
+    });
+    add({ kind: 'usage', info: true, title: 'Commands your members used', detail: rows.join(' · '), data: {} });
+  }
   // auto roles: roles an old bot added within a minute of someone joining
   const logs = botIds.size ? await guild.fetchAuditLogs?.({ type: AuditLogEvent.MemberRoleUpdate, limit: 100 }).catch(() => null) : null;
   const autoCount = new Map();
@@ -187,10 +243,19 @@ export async function applyFinding(m, guildId, f) {
   const set = (mod, key, value) => m.setSetting(guildId, mod, key, value);
   switch (f.kind) {
     case 'reactionroles': {
+      // Post a Good Boy role menu where the old one was, then remove the old message. Members keep the roles they have.
       await enable('roles');
       const ctx = m.ctx(guildId, 'roles');
-      for (const p of f.data.pairs) ctx.data.set(`rr:${f.data.messageId}:${p.emojiKey}`, p.roleId);
-      return `Reaction roles: ${f.data.pairs.length} on one message`;
+      const guild = m.client?.guilds?.cache?.get(guildId) ?? ctx.guild;
+      const ch = guild?.channels.cache.get(f.data.channelId);
+      if (!ch?.isTextBased?.()) throw new UserError('That channel is gone.');
+      const roles = f.data.pairs.filter((p, i, all) => all.findIndex((x) => x.roleId === p.roleId) === i).map((p) => ({ id: p.roleId, emoji: p.emoji }));
+      const fresh = await postRoleMenu(ctx, ch, { title: f.data.title, description: f.data.description, roles, from: f.data.from ?? 'another bot' });
+      const old = await ch.messages.fetch(f.data.messageId).catch(() => null);
+      let removed = !old;
+      if (old) { try { await old.delete(); removed = true; } catch { removed = false; } }
+      if (!removed) for (const p of f.data.pairs) ctx.data.set(`rr:${f.data.messageId}:${p.emojiKey}`, p.roleId); // keep the old one working until it's deleted
+      return `Role menu in <#${ch.id}>: new menu posted with ${roles.length} role${roles.length === 1 ? '' : 's'}${removed ? ', old message removed' : ' (I couldn\'t delete the old message: give me Manage Messages there, or delete it yourself)'} · [open](${fresh.url ?? ''})`;
     }
     case 'logs': {
       await enable('moderation');
@@ -222,6 +287,14 @@ export async function applyFinding(m, guildId, f) {
       for (const c of f.data.counters) ctx.data.set(`counter:${c.channelId}`, { template: c.template, by: 'migrate' });
       return `Counters: ${f.data.counters.length}`;
     }
+    case 'tags': {
+      await enable('tags');
+      const ctx = m.ctx(guildId, 'tags');
+      let n = 0;
+      for (const t of f.data.tags) { try { saveCommand(ctx, { name: t.name, response: t.response, trigger: 'command', from: t.from }, null); n++; } catch { /* name not allowed */ } }
+      return `Custom commands: ${n} learned (try \`?${f.data.tags[0]?.name ?? 'name'}\`)`;
+    }
+    case 'usage': return 'Command report (nothing to import)';
     case 'bans': {
       await enable('moderation');
       const ctx = m.ctx(guildId, 'moderation');
@@ -264,8 +337,9 @@ function reportMessage(i, result) {
     ].filter(Boolean).join('\n\n').slice(0, 4000));
   const rows = [];
   if (findings.length) {
-    rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`${NS}:pick:${i.user.id}`).setPlaceholder('Choose what to import').setMinValues(1).setMaxValues(Math.min(25, findings.length))
-      .addOptions(findings.slice(0, 25).map((f) => ({ label: truncate(`${f.id}. ${f.title}`, 100), value: f.id, description: truncate(f.detail.replace(/<[@#&!]+\d+>/g, '…'), 100) })))));
+    const pickable = findings.filter((f) => !f.info);
+    if (pickable.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`${NS}:pick:${i.user.id}`).setPlaceholder('Choose what to import').setMinValues(1).setMaxValues(Math.min(25, pickable.length))
+      .addOptions(pickable.slice(0, 25).map((f) => ({ label: truncate(`${f.id}. ${f.title}`, 100), value: f.id, description: truncate(f.detail.replace(/<[@#&!]+\d+>/g, '…'), 100) })))));
     rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${NS}:all:${i.user.id}`).setLabel('Import everything').setStyle(ButtonStyle.Success)));
   }
   return { embeds: [e], components: rows, allowedMentions: NOPING };
@@ -319,7 +393,7 @@ export const migrateCommand = {
       if (owner !== i.user.id) throw new UserError('That belongs to someone else. Run `/migrate scan` yourself.');
       const s = scans.get(`${i.guildId}:${i.user.id}`);
       if (kind === 'pick') return apply(i, m, [...(i.values ?? [])]);
-      if (kind === 'all') return apply(i, m, (s?.result.findings ?? []).map((f) => f.id));
+      if (kind === 'all') return apply(i, m, (s?.result.findings ?? []).filter((f) => !f.info).map((f) => f.id));
       throw new UserError('That button is no longer active.');
     },
   }],

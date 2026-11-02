@@ -1,28 +1,29 @@
-# Good Boy 3.0 plan: Good Boy Clipper
+# Good Boy 3.0 plan: Good Boy Link
 
-A small Windows app for members (separate from the app that runs the bot) that clips games and sends them to Discord
-through Good Boy, so the server no longer needs Medal. Built in stages; each stage is a release members install and test
-in real games, because clipping can only be proven on real gaming PCs.
+3.0 is the engine that lets anything talk to the bot: the Minecraft launcher, Roblox games, and future apps.
 
-## How members use it
-1. Install, sign in with Discord once.
-2. It sits in the tray and keeps the last 30 seconds of screen and game sound.
-3. Press the hotkey (Alt+F10, changeable), or let auto clips catch the moment.
-4. Preview, trim, add a title, press **Send**. Nothing is uploaded until they do.
-5. Good Boy posts it in the clips channel as "clip by @member": votes, Best clips, clip of the week and coins as usual.
+## How it works
+- **Connections**: on the dashboard, create one per app (e.g. "BoxBoyz Launcher", "Roblox: My Obby"). Each gets its own secret
+  key and only the abilities ticked for it. Keys are stored hashed, can be revoked in one click, every call is logged, rate limited.
+- **Requests**: apps call the bot over HTTPS with their key (plain web requests, which every language and Roblox can make).
+- **Events back**: a live stream for apps that can hold a connection (the launcher), and a "new events since" endpoint for
+  Roblox (game servers can only make plain requests, and only to public HTTPS addresses).
+- **Reachable from the internet**: through the dashboard's share link (Tailscale Funnel) or your own domain.
 
-## Stages
-| Stage | What's in it |
+## Abilities (each one ticked per connection)
+| Ability | Example |
 |---|---|
-| 1 | Hotkey clipping, game sound, Discord sign-in, send to the clips channel through the bot, clip loudness evened out, clips shrunk to fit Discord's 10 MB limit |
-| 2 | Preview and trim, title, clip length (15/30/60 s), optional mic, clip library, automatic game tags, "Clipping with Good Boy" Rich Presence |
-| 3 | Auto clips: CS2 and Dota 2 (Valve Game State Integration), League of Legends (Riot Live Client Data API), hype detection (loud moments, voices, reactions) for every other game. Auto clips stay in the app until the member sends one |
-| 4 | Discord in the app (through the bot): the clips feed, voting, notifications (votes, Best clips, clip of the week), send to any channel, see who from the server is in voice or playing the same game |
-| 5 | Live audio balancing (game turned down while friends talk in Discord), clip editor (trim, slow motion, text), screenshots hotkey, weekly highlight reel made by the bot, full-quality clips hosted on the bot's computer (no 10 MB limit), storage clean-up |
+| Link accounts | The game/launcher shows a short code, the player types `/link CODE` in Discord: game account tied to Discord, verified |
+| Read | A player's Discord level, coins, roles |
+| Reward | Coins or XP for playing, winning, daily logins |
+| Announce | "Basic beat the boss!" in a chosen channel (never pings @everyone) |
+| Roles | Discord role for a game rank or achievement, and the other way round (never staff roles) |
+| Live events | Who's online, level-ups, jackpots, server news |
 
-## Known limits
-- Windows first. Uses Windows' own screen capture (the same as Discord screen share); a few games with strict anti-cheat or
-  exclusive fullscreen may record black, borderless windowed usually fixes it.
-- No official kill feed for Valorant, Fortnite, Apex and others: hype detection only there.
-- Discord does not let apps control the Discord client (mute, join voice) without special approval.
-- Sending clips needs the owner's dashboard link to be set up (the same link testers use).
+## Ships with
+- The engine, `/link`, a Connections page on the dashboard, and a guide with copy-paste examples.
+- Ready-made code: a Luau module for Roblox, a Rust library for the launcher, and JavaScript.
+
+## Open questions
+- Launcher language (Rust?)
+- What the first Roblox game and the launcher do with Discord first.

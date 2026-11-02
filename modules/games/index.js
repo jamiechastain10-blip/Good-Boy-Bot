@@ -24,9 +24,23 @@ const EPH = MessageFlags.Ephemeral;
 // Game results are private to the player by default: a public message per play notified everyone following the channel.
 const vis = (ctx) => (ctx.config.get('privateGames') ? { flags: EPH } : {});
 /** One public line for a big moment (jackpot, huge win, rare fish). Names only, never a ping. */
-function shout(ctx, i, text) {
-  if (!ctx.config.get('privateGames') || !ctx.config.get('announceBigWins') || !i.channel?.send) return;
-  ctx.queue(() => i.channel.send({ content: text, allowedMentions: NOPING })).catch(() => {});
+// Big-win lines are off by default (2.3.2): a public line per rare fish turned into channel spam for active fishers.
+// When an admin turns them on, only the chosen moments count, each member gets at most one line every 10 minutes
+// (jackpots always), and the lines can go to their own channel.
+const shoutAt = new Map(); // guild:user -> last shout time
+const SHOUT_LEVELS = { jackpots: ['jackpot'], mythical: ['jackpot', 'mythical'], rare: ['jackpot', 'mythical', 'legendary', 'mutated', 'bigwin'] };
+export function shouldShout(cfg, kind, last, now = Date.now()) {
+  if (!cfg.announceBigWins) return false;
+  if (!(SHOUT_LEVELS[cfg.bigWinLevel] ?? SHOUT_LEVELS.mythical).includes(kind)) return false;
+  return kind === 'jackpot' || !last || now - last > 10 * 60000;
+}
+function shout(ctx, i, text, kind) {
+  const key = `${ctx.guildId}:${i.user.id}`;
+  if (!shouldShout({ announceBigWins: ctx.config.get('announceBigWins'), bigWinLevel: ctx.config.get('bigWinLevel') }, kind, shoutAt.get(key))) return;
+  const ch = ctx.guild?.channels.cache.get(ctx.config.get('bigWinChannel')) ?? i.channel;
+  if (!ch?.send) return;
+  shoutAt.set(key, Date.now());
+  ctx.queue(() => ch.send({ content: text, allowedMentions: NOPING })).catch(() => {});
 }
 const nameOf = (i) => `**${String(i.member?.displayName ?? i.user.globalName ?? i.user.username).replace(/[*_`~|>@]/g, '')}**`;
 const NOPING = { parse: [] };
@@ -130,8 +144,8 @@ async function runSlots(ctx, i, bet, { update = false } = {}) {
   for (const stopped of [1, 2]) { await sleep(frameMs()); await i.editReply({ embeds: [slotsEmbed(ctx, r, stopped)] }).catch(() => {}); }
   await sleep(frameMs());
   await i.editReply({ embeds: [slotsEmbed(ctx, r, 3)], components: [againRow(i, 'slots', bet, 'Spin again')] }).catch(() => {});
-  if (r.jackpotWon) shout(ctx, i, `💥 ${nameOf(i)} hit the slots **JACKPOT** and won ${money(ctx, r.payout)}!`);
-  else if (r.payout >= bet * 20) shout(ctx, i, `🎰 ${nameOf(i)} won **${r.multiplier}x** on slots (${money(ctx, r.payout)})!`);
+  if (r.jackpotWon) shout(ctx, i, `💥 ${nameOf(i)} hit the slots **JACKPOT** and won ${money(ctx, r.payout)}!`, 'jackpot');
+  else if (r.payout >= bet * 20) shout(ctx, i, `🎰 ${nameOf(i)} won **${r.multiplier}x** on slots (${money(ctx, r.payout)})!`, 'bigwin');
 }
 
 // ------------------------------------------------------------------ coin flip
@@ -312,7 +326,7 @@ async function reelClick(ctx, i, id, action) {
     const r = F.rarityById(s.fish.rarity);
     if (['legendary', 'mythical'].includes(s.fish.rarity) || s.fish.mutation) {
       ctx.live('activity', { icon: '🎣', text: `${i.member?.displayName ?? i.user.username} caught a ${s.fish.mutation ? `${F.MUTATIONS[s.fish.mutation].label} ` : ''}${F.FISH[s.fish.species].name} (${r.label})` });
-      shout(ctx, i, `🎣 ${nameOf(i)} caught a ${s.fish.mutation ? `${F.MUTATIONS[s.fish.mutation].label} ` : ''}**${F.FISH[s.fish.species].name}** (${r.label})!`);
+      shout(ctx, i, `🎣 ${nameOf(i)} caught a ${s.fish.mutation ? `${F.MUTATIONS[s.fish.mutation].label} ` : ''}**${F.FISH[s.fish.species].name}** (${r.label})!`, s.fish.rarity === 'mythical' ? 'mythical' : s.fish.rarity === 'legendary' ? 'legendary' : 'mutated');
     }
     ctx.live('data');
     e.setColor(s.fish.mutation === 'corrupted' ? 0x2c2f33 : r.color)
@@ -599,7 +613,9 @@ export default {
     { key: 'minBet', type: 'number', label: 'Smallest bet', default: 10, min: 1, max: 1000000 },
     { key: 'maxBet', type: 'number', label: 'Biggest bet', default: 50000, min: 1, max: 100000000 },
     { key: 'privateGames', type: 'toggle', label: 'Only the player sees their game (keeps the channel quiet)', default: true },
-    { key: 'announceBigWins', type: 'toggle', label: 'Post a short public line for jackpots, 20x+ wins and rare fish (no pings)', default: true },
+    { key: 'announceBigWins', type: 'toggle', label: 'Announce big wins publicly (no pings, at most one per member every 10 minutes)', default: false },
+    { key: 'bigWinLevel', type: 'select', label: 'Which wins are announced', options: ['jackpots', 'mythical', 'rare'], default: 'mythical', description: 'jackpots = slots jackpots only · mythical = jackpots and Mythical fish · rare = also Legendary, Mutated and 20x+ slots' },
+    { key: 'bigWinChannel', type: 'channel', label: 'Channel for big-win announcements (empty = where they played)' },
     { key: 'jackpotSeed', type: 'number', label: 'Jackpot pool starts at', default: 5000, min: 0, max: 100000000 },
     { key: 'jackpotPercent', type: 'number', label: 'Share of each slots bet added to the jackpot (%)', default: 3, min: 0, max: 20 },
   ],

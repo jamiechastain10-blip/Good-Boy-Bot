@@ -571,6 +571,48 @@ function ruleRow(ctx, rule, counts) {
 }
 
 /** Switch a rule on or off, set its action and/or its threshold. Goes through the validated settings path, like /config. */
+// ---- AutoMod page (2.3.2): presets, plain descriptions, units, a safe "test a message", list editing ----
+export const RULE_INFO = {
+  spam: { desc: 'Someone sends lots of messages in a few seconds.', unit: 'messages', min: 2, max: 30 },
+  words: { desc: 'A message contains a word from your list.' },
+  links: { desc: 'A message has a link to a site that is not on your allowed list, or a server invite.' },
+  mentions: { desc: 'One message pings lots of people or roles at once.', unit: 'mentions', min: 0, max: 50 },
+  repeat: { desc: 'Someone sends the same message again and again.', unit: 'repeats', min: 2, max: 20 },
+  caps: { desc: 'A message is mostly CAPITAL LETTERS.', unit: '% capitals', min: 40, max: 100 },
+  emoji: { desc: 'A message is stuffed with emoji.', unit: 'emoji', min: 2, max: 50 },
+};
+export const PRESETS = {
+  off: { automodSpam: false, automodWords: false, automodLinks: false, maxMentions: 0, automodRepeat: false, automodCaps: false, automodEmoji: false, raidProtection: false, antiNuke: false, minAccountAgeDays: 0 },
+  relaxed: { automodSpam: true, spamMaxMessages: 8, spamWindowSeconds: 6, automodWords: true, automodLinks: false, maxMentions: 10, automodRepeat: false, automodCaps: false, automodEmoji: false, raidProtection: true, raidAction: 'alert', antiNuke: true, minAccountAgeDays: 0 },
+  balanced: { automodSpam: true, spamMaxMessages: 5, spamWindowSeconds: 6, automodWords: true, automodLinks: true, maxMentions: 6, automodRepeat: true, repeatMax: 3, repeatWindowSeconds: 60, automodCaps: false, automodEmoji: true, emojiMax: 12, raidProtection: true, raidAction: 'alert', antiNuke: true, minAccountAgeDays: 0 },
+  strict: { automodSpam: true, spamMaxMessages: 4, spamWindowSeconds: 6, automodWords: true, automodLinks: true, maxMentions: 4, automodRepeat: true, repeatMax: 2, repeatWindowSeconds: 60, automodCaps: true, capsPercent: 70, automodEmoji: true, emojiMax: 8, raidProtection: true, raidAction: 'timeout', antiNuke: true, minAccountAgeDays: 3, newAccountAction: 'alert' },
+};
+const PAGE_KEYS = new Set(['automodAction', 'spamWindowSeconds', 'repeatWindowSeconds', 'raidProtection', 'raidJoinThreshold', 'raidWindowSeconds', 'raidAction', 'minAccountAgeDays', 'newAccountAction', 'antiNuke', 'nukeAction', 'automodTimeoutMinutes']);
+export function currentPreset(ctx) {
+  for (const [name, p] of Object.entries(PRESETS)) if (Object.entries(p).every(([k, v]) => ctx.config.get(k) === v)) return name;
+  return 'custom';
+}
+/** Which rules a message would break, checked one by one, without deleting or recording anything. */
+export function testMessage(ctx, text) {
+  const cfg = automodCfg(ctx);
+  const out = [];
+  const add = (id, hit, why) => { const rule = ruleById(id); out.push({ id, label: rule.label, on: ruleEnabled(cfg, rule), hit, why }); };
+  const re = wordRegex(ctx.config.get('bannedWords') ?? []);
+  const word = re ? (String(text).match(re) ?? [])[0] : null;
+  add('words', !!word, word ? `contains "${word}"` : 'no blocked words');
+  const allowed = ctx.config.get('allowedDomains') ?? [];
+  const bad = [...String(text).matchAll(/\b(?:https?:\/\/|www\.)([^\s/?#<>]+)/gi)].map((m) => m[1]).find((d) => !domainAllowed(d, allowed));
+  const invite = /\b(?:discord\.gg|discord(?:app)?\.com\/invite)\/\w+/i.test(text) && !domainAllowed('discord.gg', allowed);
+  add('links', !!(bad || invite), bad ? `link to ${bad}` : invite ? 'a server invite' : 'no blocked links');
+  const pings = (String(text).match(/<@[!&]?\d+>|@everyone|@here/g) ?? []).length;
+  add('mentions', cfg.maxMentions > 0 && pings >= cfg.maxMentions, `${pings} mention${pings === 1 ? '' : 's'} (limit ${cfg.maxMentions || 'off'})`);
+  const caps = capsRatio(text, { minLetters: cfg.capsMinLetters });
+  add('caps', caps >= cfg.capsPercent, `${Math.round(caps)}% capitals (limit ${cfg.capsPercent}%)`);
+  const em = countEmoji(text);
+  add('emoji', em > cfg.emojiMax, `${em} emoji (limit ${cfg.emojiMax})`);
+  return out;
+}
+
 function applyRule(ctx, ruleId, { enabled, action, limit } = {}) {
   const rule = ruleById(ruleId);
   if (!rule) throw new UserError(`Unknown rule. Choose one of: ${RULE_IDS.join(', ')}.`);
@@ -845,6 +887,22 @@ export default {
     { key: 'moderation.antinuke-immune', label: 'Trusted: not watched by anti-nuke (owner always is)', default: 'owner' },
   ],
   views: {
+    async automodpage(ctx) {
+      const recent = ctx.data.get('automod:recent') ?? [];
+      const counts = activityCounts(recent, Date.now());
+      const cfg = automodCfg(ctx);
+      const name = (id, map) => map?.cache?.get(id)?.name ?? id;
+      return {
+        preset: currentPreset(ctx), defaultAction: ctx.config.get('automodAction'),
+        rules: RULES.map((r) => ({ id: r.id, label: r.label, ...RULE_INFO[r.id], on: ruleEnabled(cfg, r), limit: r.limit ? cfg[r.limit] : null, action: cfg[r.action] || 'default', caught: counts[r.id] ?? 0 })),
+        spamWindow: ctx.config.get('spamWindowSeconds'), repeatWindow: ctx.config.get('repeatWindowSeconds'),
+        protect: { raidProtection: ctx.config.get('raidProtection'), raidJoinThreshold: ctx.config.get('raidJoinThreshold'), raidWindowSeconds: ctx.config.get('raidWindowSeconds'), raidAction: ctx.config.get('raidAction'),
+          minAccountAgeDays: ctx.config.get('minAccountAgeDays'), newAccountAction: ctx.config.get('newAccountAction'), antiNuke: ctx.config.get('antiNuke'), nukeAction: ctx.config.get('nukeAction') },
+        words: ctx.config.get('bannedWords') ?? [], domains: ctx.config.get('allowedDomains') ?? [],
+        exemptions: exemptionLines(ctx).map((l) => l.replace(/<@&(\d+)>/g, (_, id) => `@${name(id, ctx.guild?.roles)}`).replace(/<#(\d+)>/g, (_, id) => `#${name(id, ctx.guild?.channels)}`).replace(/\*\*/g, '')),
+        recent: recent.slice(0, 30).map((e) => ({ when: when(e.at), member: e.tag, channel: `#${name(e.channelId, ctx.guild?.channels)}`, rule: e.name, action: ACTION_WORDS[e.action] ?? e.action, preview: e.snippet ?? '' })),
+      };
+    },
     async automod(ctx) {
       const recent = ctx.data.get('automod:recent') ?? [];
       const counts = activityCounts(recent, Date.now());
@@ -856,6 +914,35 @@ export default {
     },
   },
   actions: {
+    async 'automod-preset'(ctx, body) {
+      const p = PRESETS[String(body.preset ?? body.value)];
+      if (!p) throw new UserError('Choose Off, Relaxed, Balanced or Strict.');
+      for (const [k, v] of Object.entries(p)) ctx.settings.set(k, v);
+      return { preset: String(body.preset ?? body.value) };
+    },
+    async 'automod-rule'(ctx, body) {
+      const rule = ruleById(String(body.rule));
+      if (!rule) throw new UserError('Unknown rule.');
+      return applyRule(ctx, rule.id, { enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined, action: body.action ?? undefined, limit: body.limit ?? undefined });
+    },
+    async 'automod-set'(ctx, body) {
+      if (!PAGE_KEYS.has(String(body.key))) throw new UserError('That setting is not on this page.');
+      ctx.settings.set(String(body.key), body.value);
+      return { ok: true };
+    },
+    async 'automod-list'(ctx, body) {
+      const key = body.list === 'domains' ? 'allowedDomains' : body.list === 'words' ? 'bannedWords' : null;
+      if (!key) throw new UserError('Unknown list.');
+      const value = String(body.value ?? '').trim().toLowerCase().slice(0, 100);
+      if (!value) throw new UserError('Type something to add.');
+      ctx.settings.set(key, value, body.op === 'remove' ? 'remove' : 'add');
+      return { list: ctx.config.get(key) ?? [] };
+    },
+    async 'automod-test'(ctx, body) {
+      const text = String(body.text ?? '').slice(0, 2000);
+      if (!text.trim()) throw new UserError('Type a message to test.');
+      return { results: testMessage(ctx, text) };
+    },
     async 'automod-toggle'(ctx, body) {
       const rule = ruleById(String(body.id ?? body.userId));
       if (!rule) throw new UserError('Unknown rule.');
@@ -868,7 +955,8 @@ export default {
     },
   },
   panels: [{
-    id: 'automod', title: 'AutoMod', view: 'automod', permission: 'moderation.automod',
+    id: 'automod', title: 'AutoMod', view: 'automod', permission: 'moderation.automod', page: 'automod',
+    pageViews: ['automodpage'], pageActions: ['automod-preset', 'automod-rule', 'automod-set', 'automod-list', 'automod-test'],
     description: 'Rules that check every message. Turn a rule on, then choose what happens when someone breaks it.',
     empty: 'No AutoMod rules are available.',
     columns: [{ key: 'name', label: 'Rule' }, { key: 'state', label: 'State' },

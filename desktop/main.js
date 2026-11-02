@@ -238,7 +238,9 @@ function createWindow() {
 }
 
 /** Colours of the Windows caption buttons follow the page's light or dark look. */
-function setChrome(dark) { if (process.platform !== 'darwin' && win && !win.isDestroyed()) try { win.setTitleBarOverlay({ color: '#00000000', symbolColor: dark ? '#9AA9C2' : '#5E6E86', height: 38 }); } catch { /* older systems */ } }
+function setChrome(dark) {
+  // Native parts the page can't style (the open list of a dropdown, scrollbars, context menus) follow the app's theme.
+  nativeTheme.themeSource = dark ? 'dark' : 'light'; if (process.platform !== 'darwin' && win && !win.isDestroyed()) try { win.setTitleBarOverlay({ color: '#00000000', symbolColor: dark ? '#9AA9C2' : '#5E6E86', height: 38 }); } catch { /* older systems */ } }
 
 /** Only used by the automated build check (GOODBOY_SMOKE_DIR): walk every page, photograph it, save the facts, exit. */
 async function smokeCheck() {

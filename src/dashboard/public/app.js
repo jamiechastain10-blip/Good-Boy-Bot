@@ -30,10 +30,12 @@ function h(tag, attrs = {}, ...kids) {
   return el;
 }
 
-function toast(msg, bad) {
+function toast(msg, bad, undo) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.className = 'show' + (bad ? ' err' : '');
-  clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), 3500);
+  put(t, msg);
+  if (typeof undo === 'function') t.append(h('button', { type: 'button', class: 'undo', onclick: () => { t.className = ''; undo(); } }, 'Undo'));
+  t.className = 'show' + (bad ? ' err' : '');
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), undo ? 6000 : 3500);
 }
 
 async function api(path, body) {
@@ -100,6 +102,7 @@ async function boot() {
     return;
   }
   document.getElementById('who').replaceChildren(document.createTextNode(state.me.user.username + ' · '), h('a', { href: '/logout', class: 'muted' }, 'log out'));
+  mountIsland();
   state.gid ? await loadGuild() : showGuilds();
 }
 
@@ -131,15 +134,37 @@ async function loadGuild() {
 // One stream per open server. The bot sends a pulse every 15 seconds and an event whenever something changes,
 // so numbers, panels and the activity feed update by themselves.
 function stopLive() { state.live?.es.close(); state.live = null; }
+/* The Dynamic Island in the top bar: bot status, live news flowing in, quick jumps when opened. */
+function mountIsland() {
+  if (!window.GB || document.querySelector('.gb-island')) return;
+  const bar = document.querySelector('.topbar');
+  const who = document.getElementById('who');
+  const wrap = GB.island.mount(bar, { actions: [
+    { label: '⌂ Overview', run: () => { GB.island.toggle(); go('overview'); } },
+    { label: '▦ Modules', run: () => { GB.island.toggle(); go('modules'); } },
+    { label: '🤖 AutoMod', run: () => { GB.island.toggle(); go('automod'); } },
+  ] });
+  if (wrap && who) bar.insertBefore(wrap, who);
+  wrap?.classList.add('gb-dock');
+  GB.island.status({ text: 'Good Boy', title: 'Good Boy', sub: 'Pick a server to see it live', ok: true });
+}
+function islandStatus() {
+  if (!window.GB) return;
+  const p = state.pulse ?? {};
+  GB.island.status({ text: state.data?.guild?.name ? `${state.data.guild.name} · live` : 'Good Boy', ms: p.ping ?? null, ok: !!state.live,
+    title: state.data?.guild?.name ?? 'Good Boy', sub: [p.members != null ? `${p.members} members` : null, p.inVoice ? `${p.inVoice} in voice` : null, p.uptimeSeconds != null ? `up ${duration(p.uptimeSeconds)}` : null].filter(Boolean).join(' · ') });
+  GB.island.feed((state.activity ?? []).slice(0, 4).map((a) => `${a.icon ?? '•'} ${a.text}`));
+}
+
 function startLive() {
   if (state.live?.gid === state.gid || typeof EventSource === 'undefined') return;
   stopLive();
   const es = new EventSource(`/api/guilds/${state.gid}/live`);
   state.live = { es, gid: state.gid };
   const on = (type, fn) => es.addEventListener(type, (e) => { try { fn(JSON.parse(e.data)); } catch { /* ignore a bad event */ } });
-  on('hello', (d) => { state.activity = d.activity ?? []; paintFeed(); liveChip('on'); });
-  on('pulse', (d) => { state.pulse = d; paintPulse(); liveChip('on'); });
-  on('activity', (d) => { state.activity.unshift(d); state.activity.length = Math.min(state.activity.length, 30); paintFeed(true); });
+  on('hello', (d) => { state.activity = d.activity ?? []; paintFeed(); liveChip('on'); islandStatus(); });
+  on('pulse', (d) => { state.pulse = d; paintPulse(); liveChip('on'); islandStatus(); });
+  on('activity', (d) => { state.activity.unshift(d); state.activity.length = Math.min(state.activity.length, 30); paintFeed(true); islandStatus(); window.GB?.island.news(d.icon ?? '•', d.text); });
   on('data', (d) => refreshModule(d.module));
   on('modules', () => softReload());
   on('settings', () => softReload());
@@ -198,14 +223,17 @@ function pages() {
   const d = state.data, admin = d.access === 'admin';
   const list = [{ id: 'overview', icon: '⌂', label: 'Overview', group: 'SERVER' }];
   if (admin) list.push({ id: 'modules', icon: '▦', label: 'Modules', group: 'SERVER' });
+  const mod = d.modules.find((m) => m.name === 'moderation');
+  if (mod && (admin ? mod.enabled : (mod.panels ?? []).some((p) => p.id === 'automod'))) list.push({ id: 'automod', icon: '🤖', label: 'AutoMod', group: 'SERVER' });
   for (const m of d.modules) if ((admin ? m.enabled : true) && (m.panels ?? []).length) list.push({ id: `tool:${m.name}`, icon: ICON[m.name] ?? '◆', label: TITLE[m.name] ?? cap(m.name), group: 'TOOLS' });
   if (admin) list.push({ id: 'permissions', icon: '♙', label: 'Permissions', group: 'ADMIN' }, { id: 'feedback', icon: '💬', label: 'Tester feedback', group: 'ADMIN' }, { id: 'logs', icon: '≡', label: 'Logs', group: 'ADMIN' });
   if (state.me?.botOwner) list.push({ id: 'updates', icon: '⬆', label: 'Updates', group: 'ADMIN' });
   list.push({ id: 'appearance', icon: '✦', label: 'Appearance', group: 'YOU' });
+  if (admin && String(state.page).startsWith('module:')) list.push({ id: state.page, icon: '▦', label: 'Modules', group: 'SERVER', hidden: true });
   return list;
 }
 
-function go(id) { state.page = id; render(); }
+function go(id) { state.page = id; window.GB ? GB.transition(render) : render(); }
 
 function render() {
   clear();
@@ -213,8 +241,10 @@ function render() {
   const side = h('aside', { class: 'side glass', 'aria-label': 'Dashboard navigation' });
   let group = null;
   for (const p of list) {
+    if (p.hidden) continue;
     if (p.group !== group) { group = p.group; side.append(h('div', { class: 'side-label' }, group)); }
-    side.append(h('button', { class: 'nav-item' + (p.id === current.id ? ' active' : ''), title: p.label, 'aria-current': p.id === current.id ? 'page' : null, onclick: () => go(p.id) },
+    const on = p.id === current.id || (p.id === 'modules' && current.id.startsWith('module:'));
+    side.append(h('button', { class: 'nav-item' + (on ? ' active' : ''), title: p.label, 'aria-current': on ? 'page' : null, onclick: () => go(p.id) },
       h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, p.icon), h('span', { class: 'nav-name' }, p.label)));
   }
   side.append(h('button', { class: 'nav-item', onclick: showGuilds }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '↩'), h('span', { class: 'nav-name' }, 'All servers')));
@@ -229,6 +259,8 @@ function render() {
 
   if (current.id === 'overview') renderOverview(workspace);
   else if (current.id === 'modules') renderModules(workspace);
+  else if (current.id.startsWith('module:')) renderModulePage(workspace, current.id.slice(7));
+  else if (current.id === 'automod') renderAutomod(workspace);
   else if (current.id === 'permissions') renderPermissions(workspace);
   else if (current.id === 'logs') renderLogs(workspace);
   else if (current.id === 'updates') renderUpdates(workspace);
@@ -319,6 +351,92 @@ function renderAppearance(ws) {
 
 async function act(fn, ok) {
   try { await fn(); toast(ok); await loadGuild(); } catch (e) { toast(e.message, true); }
+}
+
+// ---------------------------------------------------------------- AutoMod page (2.3.2)
+const AM_ACTIONS = [['default', 'Server default'], ['delete', 'Delete it'], ['delete-warn', 'Delete + warn'], ['delete-timeout', 'Delete + time out']];
+async function renderAutomod(ws) {
+  const base = `/api/guilds/${state.gid}/modules/moderation`;
+  const box = h('div', {}, h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Loading AutoMod…')));
+  const testState = { text: '', results: null }; // survives the page repainting itself when something changes
+  ws.append(box);
+  const run = async (action, body, ok) => { try { const r = await api(`${base}/actions/${action}`, body); if (ok) toast(ok); return r.result ?? r; } catch (e) { toast(e.message, true); throw e; } };
+  const reload = async () => { try { paint(await api(`${base}/views/automodpage`)); } catch (e) { put(box, h('div', { class: 'card' }, h('p', { class: 'muted' }, e.message))); } };
+  const select = (options, value, onchange) => h('select', { onchange: (e) => onchange(e.target.value) }, options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
+  const num = (value, min, max, onchange) => h('input', { type: 'number', class: 'num', value, min, max, onchange: (e) => onchange(Number(e.target.value)) });
+  const sw = (checked, label, onchange) => h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': label, checked, onchange: (e) => onchange(e.target.checked) });
+  function chips(list, kind, placeholder) {
+    const wrap = h('div', { class: 'chipbox' });
+    const input = h('input', { placeholder, 'aria-label': placeholder, onkeydown: async (e) => {
+      if (e.key !== 'Enter' || !input.value.trim()) return;
+      e.preventDefault(); await run('automod-list', { list: kind, op: 'add', value: input.value }, `Added "${input.value.trim()}"`); reload();
+    } });
+    for (const w of list) wrap.append(h('span', { class: 'chipx' }, w, h('button', { type: 'button', 'aria-label': `Remove ${w}`, onclick: async () => { await run('automod-list', { list: kind, op: 'remove', value: w }, `Removed "${w}"`); reload(); } }, '✕')));
+    wrap.append(input);
+    return wrap;
+  }
+  function paint(d) {
+    const presets = h('div', { class: 'segbar', role: 'group', 'aria-label': 'Preset' }, ['off', 'relaxed', 'balanced', 'strict'].map((p) =>
+      h('button', { type: 'button', class: d.preset === p ? 'on' : '', 'aria-pressed': String(d.preset === p), onclick: async () => { await run('automod-preset', { preset: p }, `AutoMod set to ${cap(p)}`); reload(); } }, cap(p))));
+    const head = h('div', { class: 'card glass' },
+      h('div', { class: 'row' }, h('div', {}, h('h2', { class: 'am-title' }, 'AutoMod'), h('p', { class: 'muted' }, 'Checks every message and removes the bad ones. Pick a starting point, then fine-tune any rule.')),
+        h('div', { class: 'row-end' }, presets)),
+      h('div', { class: 'row am-sub' }, h('span', { class: 'muted' }, d.preset === 'custom' ? 'Custom settings (changed from a preset).' : `Using the ${cap(d.preset)} preset.`),
+        h('label', { class: 'inline' }, 'When a rule is broken: ', select(AM_ACTIONS.slice(1), d.defaultAction, async (v) => { await run('automod-set', { key: 'automodAction', value: v }, 'Saved'); }))));
+
+    const out = h('div', { class: 'am-results' });
+    const ta = h('textarea', { placeholder: 'Type or paste a message to see what AutoMod would do. Nothing is posted or deleted.', 'aria-label': 'Message to test', oninput: (e) => { testState.text = e.target.value; } });
+    ta.value = testState.text;
+    const showResults = (results) => {
+      const hits = results.filter((x) => x.hit && x.on);
+      put(out, h('p', {}, hits.length ? h('strong', { class: 'bad' }, `⛔ This message would be caught by ${hits.map((x) => x.label.toLowerCase()).join(', ')}.`) : h('strong', { class: 'good' }, '✅ This message would be allowed.')),
+        h('ul', { class: 'am-list' }, results.map((x) => h('li', { class: x.hit ? (x.on ? 'bad' : 'warn') : '' }, `${x.hit ? (x.on ? '⛔' : '⚠️') : '✓'} ${x.label}: ${x.why}${x.hit && !x.on ? ' (but this rule is off)' : ''}`))));
+    };
+    if (testState.results) showResults(testState.results);
+    const test = h('div', { class: 'card' }, h('h3', {}, 'Test a message'), ta,
+      h('div', { class: 'row' }, h('span', { class: 'hint' }, 'Spam and repeats depend on timing, so they are not part of the test.'),
+        h('button', { type: 'button', onclick: async () => {
+          testState.text = ta.value;
+          const r = await run('automod-test', { text: ta.value });
+          testState.results = r.results; showResults(r.results);
+        } }, 'Test')), out);
+
+    const rules = h('div', { class: 'am-grid' }, d.rules.map((r) => {
+      const card = h('div', { class: 'card am-rule' + (r.on ? ' is-on' : '') },
+        h('div', { class: 'am-head' }, h('div', {}, h('strong', {}, r.label), h('div', { class: 'muted' }, r.desc)),
+          sw(r.on, r.label, async (on) => { await run('automod-rule', { rule: r.id, enabled: on }, `${r.label} ${on ? 'on' : 'off'}`); reload(); })),
+        r.on && r.limit !== null ? h('div', { class: 'am-field' }, h('span', { class: 'am-label' }, 'Limit'), h('span', { class: 'inline nowrap' }, num(r.limit, r.min, r.max, async (v) => { await run('automod-rule', { rule: r.id, limit: v }, 'Saved'); }), ` ${r.unit}`,
+          r.id === 'spam' ? [' in ', num(d.spamWindow, 2, 60, async (v) => { await run('automod-set', { key: 'spamWindowSeconds', value: v }, 'Saved'); }), ' seconds'] : null,
+          r.id === 'repeat' ? [' in ', num(d.repeatWindow, 5, 600, async (v) => { await run('automod-set', { key: 'repeatWindowSeconds', value: v }, 'Saved'); }), ' seconds'] : null)) : null,
+        r.on ? h('div', { class: 'am-field' }, h('span', { class: 'am-label' }, 'When it happens'), select(AM_ACTIONS, r.action, async (v) => { await run('automod-rule', { rule: r.id, action: v }, 'Saved'); })) : null,
+        r.on && r.id === 'words' ? chips(d.words, 'words', 'Add a word and press Enter') : null,
+        r.on && r.id === 'links' ? [h('div', { class: 'hint' }, 'Allowed sites:'), chips(d.domains, 'domains', 'Add a site (like youtube.com) and press Enter')] : null,
+        h('div', { class: 'hint' }, r.caught ? `Caught ${r.caught} message${r.caught === 1 ? '' : 's'} in the last 7 days` : 'Nothing caught in the last 7 days'));
+      return card;
+    }));
+
+    const P = d.protect;
+    const protect = h('div', { class: 'card' }, h('h3', {}, 'Server protection'),
+      h('div', { class: 'row' }, h('div', {}, h('strong', {}, 'Raid protection'), h('div', { class: 'muted' }, 'Lots of people joining at once.')), sw(P.raidProtection, 'Raid protection', async (on) => { await run('automod-set', { key: 'raidProtection', value: on }, 'Saved'); reload(); })),
+      P.raidProtection ? h('div', { class: 'row' }, h('span', { class: 'inline' }, num(P.raidJoinThreshold, 3, 100, async (v) => { await run('automod-set', { key: 'raidJoinThreshold', value: v }, 'Saved'); }), ' joins within ', num(P.raidWindowSeconds, 3, 120, async (v) => { await run('automod-set', { key: 'raidWindowSeconds', value: v }, 'Saved'); }), ' seconds'),
+        select([['alert', 'Alert staff'], ['timeout', 'Time out new joins'], ['kick', 'Kick new joins']], P.raidAction, async (v) => { await run('automod-set', { key: 'raidAction', value: v }, 'Saved'); })) : null,
+      h('div', { class: 'row' }, h('div', {}, h('strong', {}, 'New accounts'), h('div', { class: 'muted' }, 'Accounts made very recently (often alts or spammers).')),
+        h('span', { class: 'inline' }, 'Younger than ', num(P.minAccountAgeDays, 0, 365, async (v) => { await run('automod-set', { key: 'minAccountAgeDays', value: v }, 'Saved'); }), ' days (0 = off) ',
+          select([['alert', 'Alert staff'], ['kick', 'Kick']], P.newAccountAction, async (v) => { await run('automod-set', { key: 'newAccountAction', value: v }, 'Saved'); }))),
+      h('div', { class: 'row' }, h('div', {}, h('strong', {}, 'Anti-nuke'), h('div', { class: 'muted' }, 'Stops someone deleting channels or banning lots of people at once.')), sw(P.antiNuke, 'Anti-nuke', async (on) => { await run('automod-set', { key: 'antiNuke', value: on }, 'Saved'); reload(); })));
+
+    const recent = h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Recently caught'), h('span', { class: 'hint' }, 'updates live')),
+      d.recent.length ? h('table', {}, h('tr', {}, ['When', 'Member', 'Channel', 'Rule', 'What happened', 'Message'].map((x) => h('th', {}, x))),
+        d.recent.map((e) => h('tr', {}, [e.when, e.member, e.channel, e.rule, e.action, e.preview].map((x) => h('td', {}, x || '—'))))) : h('p', { class: 'empty-note' }, 'Nothing caught yet. That is a good sign.'),
+      d.exemptions.length ? h('p', { class: 'hint' }, `Not checked: ${d.exemptions.join(' · ')}. Change with /automod exempt in Discord.`) : null);
+
+    put(box, head, test, h('h3', { class: 'section-title' }, 'Rules'), rules, protect, recent);
+  }
+  // refresh in place when AutoMod catches something or a setting changes
+  if (!state.panels.has('moderation')) state.panels.set('moderation', new Set());
+  const refresher = () => { if (!box.isConnected) { state.panels.get('moderation')?.delete(refresher); return; } reload(); };
+  state.panels.get('moderation').add(refresher);
+  reload();
 }
 
 // ---------------------------------------------------------------- tools (panels)
@@ -445,7 +563,7 @@ function feedbackButton() {
     if (text === null) return;
     try { await api(`/api/guilds/${state.gid}/feedback`, { kind, text, page: state.page }); toast('Thanks! Your feedback was sent.'); }
     catch (e) { toast(e.message, true); }
-  } }, '💬 Feedback');
+  }, 'aria-label': 'Send feedback' }, h('span', { class: 'fab-i', 'aria-hidden': 'true' }, '💬'), h('span', { class: 'fab-t' }, ' Feedback'));
 }
 
 async function renderFeedback(ws) {
@@ -462,21 +580,163 @@ async function renderFeedback(ws) {
 }
 
 // ---------------------------------------------------------------- modules and their settings (admins)
+// ---------------------------------------------------------------- Modules (3.0): a grid of tiles, each opens its own page
+const MOD_CAT = { moderation: 0, support: 0, 'support-html-transcripts': 0, community: 1, stats: 1, achievements: 1, 'member-management': 1, eclipseid: 1,
+  economy: 2, games: 2, clips: 2, quotes: 2, deadchat: 2, partyfinder: 2, engagement: 3, tags: 3, messages: 3, botnews: 3, roles: 3, voice: 4, tempvoice: 4, reminders: 5, integrations: 5 };
+const MOD_CATS = ['Safety & moderation', 'Community & levels', 'Fun & games', 'Messages & roles', 'Voice', 'Tools'];
+const MOD_ICON = { moderation: '🛡️', support: '🎫', 'support-html-transcripts': '📄', community: '⭐', stats: '📊', achievements: '🏅', 'member-management': '👋', eclipseid: '🪪', economy: '🪙', games: '🎰',
+  clips: '🎬', quotes: '❝', deadchat: '💤', partyfinder: '🎮', engagement: '📣', tags: '📝', messages: '📌', botnews: '📰', roles: '🏷️', voice: '🔊', tempvoice: '🎧', reminders: '⏰', integrations: '📡' };
+const MOD_NAME = { moderation: 'Moderation', support: 'Tickets', 'support-html-transcripts': 'Ticket transcripts', community: 'Levels', stats: 'Stats', achievements: 'Achievements', 'member-management': 'Welcome & members',
+  eclipseid: 'Member IDs', economy: 'Economy', games: 'Games', clips: 'Clips', quotes: 'Quotes', deadchat: 'Dead chat ping', partyfinder: 'Party finder', engagement: 'Announcements & polls', tags: 'Custom commands',
+  messages: 'Messages', botnews: 'Bot news', roles: 'Roles', voice: 'Text to speech', tempvoice: 'Voice rooms', reminders: 'Reminders', integrations: 'Feeds' };
+const modName = (m) => MOD_NAME[m.name] ?? TITLE[m.name] ?? cap(m.name);
+/** The settings a module can't work without. A module that is on with any of these empty needs setting up. */
+const ESSENTIAL = { clips: ['clipsChannel'], botnews: ['adminChannel'], moderation: ['logChannel'], support: ['logChannel'], deadchat: ['channel'] };
+const essentials = (m) => (ESSENTIAL[m.name] ?? []).map((k) => m.settings.find((x) => x.key === k)).filter(Boolean);
+const needsSetup = (m) => m.enabled && essentials(m).some((x) => !m.values[x.key]);
+const modState = { q: '', filter: 'all' };
+
+function modStatus(m) {
+  if (needsSetup(m)) return h('span', { class: 'mstatus warn' }, h('i'), 'Needs setup');
+  if (m.enabled && (m.status === 'warning' || m.status === 'failing')) return h('span', { class: 'mstatus warn' }, h('i'), m.status === 'failing' ? 'Having problems' : 'Some errors');
+  return h('span', { class: 'mstatus' + (m.enabled ? ' is-on' : '') }, h('i'), m.enabled ? 'On' : 'Off');
+}
+async function setModuleOn(m, on, { undo = true } = {}) {
+  try {
+    await api(`/api/guilds/${state.gid}/modules/${m.name}/${on ? 'enable' : 'disable'}`, {});
+    toast(`${modName(m)} turned ${on ? 'on' : 'off'}`, false, undo ? () => setModuleOn(m, !on, { undo: false }) : null);
+    await loadGuild();
+    const fresh = state.data.modules.find((x) => x.name === m.name);
+    if (on && fresh && needsSetup(fresh)) setupSheet(fresh);
+  } catch (e) { toast(e.message, true); render(); }
+}
+
 function renderModules(ws) {
-  for (const m of state.data.modules) {
-    const card = h('div', { class: 'card' });
-    card.append(h('div', { class: 'row' },
-      h('div', {}, h('h3', {}, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, ICON[m.name] ?? '◆'), ' ', TITLE[m.name] ?? cap(m.name), h('span', { class: 'badge' }, 'v' + m.version),
-        m.type === 'addon' ? h('span', { class: 'badge' }, 'add-on for ' + m.requires.module) : null,
-        m.enabled ? h('span', { class: 'badge ' + m.status }, m.status) : null),
-        h('div', { class: 'muted' }, m.description)),
-      m.enabled
-        ? h('button', { class: 'ghost', onclick: () => act(() => api(`/api/guilds/${state.gid}/modules/${m.name}/disable`, {}), `${m.name} turned off`) }, 'Turn off')
-        : h('button', { onclick: () => act(() => api(`/api/guilds/${state.gid}/modules/${m.name}/enable`, {}), `${m.name} turned on`) }, 'Turn on')));
-    if (m.commands.length) card.append(h('div', { class: 'hint' }, 'Commands: ' + m.commands.map((c) => '/' + c).join('  ')));
-    if (m.enabled && m.settings.length) card.append(settingsForm(m));
-    ws.append(card);
+  const mods = state.data.modules;
+  const search = h('input', { type: 'search', placeholder: 'Search modules', 'aria-label': 'Search modules', value: modState.q });
+  const seg = h('div', { class: 'gb-seg', 'data-key': 'modfilter', role: 'group', 'aria-label': 'Show' },
+    [['all', 'All'], ['on', 'On'], ['off', 'Off'], ['setup', 'Needs setup']].map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(modState.filter === k), onclick: (e) => {
+      modState.filter = k; for (const b of seg.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === e.currentTarget)); draw(true);
+    } }, l)));
+  search.addEventListener('input', () => { modState.q = search.value.toLowerCase(); draw(true); });
+  const list = h('div', { class: 'modlist' });
+  ws.append(h('div', { class: 'card glass modhead' }, h('div', {}, h('h2', {}, 'Modules'), h('p', { class: 'muted' }, 'Turn features on or off. Click one to set it up.')),
+    h('div', { class: 'modtools' }, h('label', { class: 'msearch' }, h('span', { 'aria-hidden': 'true' }, '🔍'), search), seg)), list);
+  function draw(soft) {
+    const shown = mods.filter((m) => (!modState.q || `${modName(m)} ${m.name} ${m.description}`.toLowerCase().includes(modState.q))
+      && (modState.filter === 'all' || (modState.filter === 'on' && m.enabled) || (modState.filter === 'off' && !m.enabled) || (modState.filter === 'setup' && needsSetup(m))));
+    const groups = MOD_CATS.map((c, ci) => [c, shown.filter((m) => (MOD_CAT[m.name] ?? 5) === ci)]).filter(([, ms]) => ms.length);
+    put(list, groups.length ? groups.map(([c, ms]) => [h('h3', { class: 'section-title' }, c), h('div', { class: 'tiles' + (soft ? '' : ' gb-stagger') }, ms.map((m) => {
+      const sw = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': `${modName(m)} on`, checked: m.enabled, onclick: (e) => e.stopPropagation(), onchange: (e) => setModuleOn(m, e.target.checked) });
+      return h('div', { class: 'gb-tile glass', role: 'button', tabindex: '0', onclick: () => go(`module:${m.name}`), onkeydown: (e) => { if (e.key === 'Enter') go(`module:${m.name}`); } },
+        h('div', { class: 'ttop' }, h('span', { class: 'ticon', 'data-cat': String(MOD_CAT[m.name] ?? 5), 'aria-hidden': 'true' }, MOD_ICON[m.name] ?? '◆'), h('strong', {}, modName(m))),
+        h('p', { class: 'tdesc' }, m.description || ''),
+        h('div', { class: 'tfoot' }, modStatus(m), sw));
+    }))]).flat() : h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'No modules match. Try another word.')));
   }
+  draw(false);
+}
+
+/* ---------- one module's own page ---------- */
+// AutoMod settings live on the AutoMod page, so the Moderation page doesn't repeat them.
+const AUTOMOD_KEY = /^(automod|spam|repeat|caps|emoji|raid|nuke|antiNuke|minAccount|newAccount|maxMentions|bannedWords|allowedDomains|wordsAction|linksAction|mentionsAction)/;
+const hiddenHere = (m, s) => m.name === 'moderation' && AUTOMOD_KEY.test(s.key);
+const OPTION_WORDS = { default: 'Server default', delete: 'Delete it', 'delete-warn': 'Delete + warn', 'delete-timeout': 'Delete + time out', alert: 'Alert staff', timeout: 'Time out', kick: 'Kick', ban: 'Ban', 'strip-roles': 'Remove their roles', jackpots: 'Slots jackpots only', mythical: 'Jackpots and Mythical fish', rare: 'All rare wins' };
+const optionWord = (o) => OPTION_WORDS[o] ?? cap(String(o).replace(/[-_]/g, ' '));
+const TAB_OF = (s) => (s.type === 'channel' || s.type === 'role' ? 'setup' : s.type === 'toggle' || s.type === 'select' ? 'settings' : 'advanced');
+function renderModulePage(ws, name) {
+  const m = state.data.modules.find((x) => x.name === name);
+  if (!m) { ws.append(h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'That module is not available.'))); return; }
+  const tabs = [['setup', 'Setup'], ['settings', 'Settings'], ['advanced', 'Advanced'], ['commands', 'Commands']]
+    .filter(([k]) => k === 'commands' ? m.commandInfo?.length : m.settings.some((s) => TAB_OF(s) === k && !hiddenHere(m, s)));
+  if (!tabs.length) tabs.push(['commands', 'About']);
+  state.modTab = tabs.some(([k]) => k === state.modTab) ? state.modTab : tabs[0][0];
+  const sw = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': `${modName(m)} on`, checked: m.enabled, onchange: (e) => setModuleOn(m, e.target.checked) });
+  const body = h('div', { class: 'gb-enter' });
+  const bar = h('div', { class: 'gb-seg modtabs', 'data-key': 'modtabs', role: 'tablist' }, tabs.map(([k, l]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(state.modTab === k), onclick: (e) => {
+    state.modTab = k; for (const b of bar.querySelectorAll('button')) b.setAttribute('aria-selected', String(b === e.currentTarget)); drawTab();
+  } }, l)));
+  ws.append(...[h('button', { type: 'button', class: 'back ghost', onclick: () => go('modules') }, '‹ All modules'),
+    h('div', { class: 'card glass mhead' }, h('span', { class: 'ticon big', 'data-cat': String(MOD_CAT[m.name] ?? 5), 'aria-hidden': 'true' }, MOD_ICON[m.name] ?? '◆'),
+      h('div', { class: 'grow' }, h('h2', {}, modName(m)), h('p', { class: 'muted' }, m.description || '')), modStatus(m), sw),
+    (m.panels ?? []).length && m.enabled ? h('div', { class: 'card toolslink' }, h('span', {}, `${modName(m)} has tools: ${m.panels.map((p) => p.title).join(' · ')}`),
+      h('button', { type: 'button', class: 'ghost', onclick: () => go(m.panels.some((p) => p.page === 'automod') ? 'automod' : `tool:${m.name}`) }, 'Open tools')) : null,
+    m.enabled ? null : h('div', { class: 'card note' }, `${modName(m)} is off. You can change its settings now; they apply when you turn it on.`),
+    bar, body].filter(Boolean));
+  function drawTab() {
+    if (state.modTab === 'commands') {
+      put(body, h('div', { class: 'card' }, (m.commandInfo ?? []).length ? m.commandInfo.map((c) => h('div', { class: 'cmdrow' }, h('code', {}, `/${c.name}`), h('div', {}, h('div', {}, c.description),
+        c.subs.length ? h('div', { class: 'hint' }, c.subs.map((x) => x.name).join(' · ')) : null))) : h('p', { class: 'muted' }, 'This module has no commands of its own.')));
+      return;
+    }
+    const fields = m.settings.filter((s) => TAB_OF(s) === state.modTab && !hiddenHere(m, s));
+    const intro = { setup: 'The channels and roles this module uses.', settings: 'Switches and choices.', advanced: 'Numbers, lists and text you can fine-tune.' }[state.modTab];
+    put(body, h('div', { class: 'card' }, h('p', { class: 'muted' }, intro), fields.map((s) => settingRow(m, s)),
+      m.name === 'moderation' ? h('div', { class: 'srow' }, h('div', { class: 'srow-l' }, h('strong', {}, 'AutoMod'), h('div', { class: 'hint' }, 'Spam, bad words, links, raids and the rest have their own page.')), h('button', { type: 'button', class: 'ghost', onclick: () => go('automod') }, 'Open AutoMod')) : null));
+    body.classList.remove('gb-enter'); void body.offsetWidth; body.classList.add('gb-enter');
+  }
+  drawTab();
+}
+
+/** One setting that saves itself, with Undo. */
+function settingRow(m, s) {
+  const cur = m.values[s.key];
+  const save = async (value, label) => {
+    const before = m.values[s.key];
+    try {
+      await api(`/api/guilds/${state.gid}/modules/${m.name}/settings`, { key: s.key, value, op: 'set' });
+      m.values[s.key] = value;
+      toast(`Saved · ${label ?? s.label}`, false, async () => { try { await api(`/api/guilds/${state.gid}/modules/${m.name}/settings`, { key: s.key, value: before ?? null, op: before == null ? 'reset' : 'set' }); m.values[s.key] = before; toast('Changed back'); softReload(); } catch (e) { toast(e.message, true); } });
+    } catch (e) { toast(e.message, true); softReload(); }
+  };
+  const label = h('div', { class: 'srow-l' }, h('strong', {}, s.label), s.description ? h('div', { class: 'hint' }, s.description) : null);
+  let control;
+  if (s.type === 'toggle') control = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': s.label, checked: cur === true, onchange: (e) => save(e.target.checked) });
+  else if (s.type === 'select') control = h('select', { 'aria-label': s.label, onchange: (e) => save(e.target.value, `${s.label}: ${optionWord(e.target.value)}`) }, s.options.map((o) => h('option', { value: o, selected: o === cur }, optionWord(o))));
+  else if (s.type === 'channel') control = h('select', { 'aria-label': s.label, onchange: (e) => save(e.target.value || null) }, h('option', { value: '' }, 'None'),
+    state.data.channels.map((c) => h('option', { value: c.id, selected: c.id === cur }, ({ 0: '# ', 2: '🔊 ', 4: '📁 ', 5: '📢 ', 15: '💬 ' })[c.type] ?? '# ', c.name)));
+  else if (s.type === 'role') control = h('select', { 'aria-label': s.label, onchange: (e) => save(e.target.value || null) }, h('option', { value: '' }, 'None'),
+    state.data.roles.filter((r) => !isDivider(r.name)).map((r) => h('option', { value: r.id, selected: r.id === cur }, '@' + r.name)));
+  else if (s.type === 'number') {
+    let v = Number(cur ?? s.default ?? 0); let t;
+    const out = h('output', {}, String(v));
+    const step = (d) => { v = Math.max(s.min ?? -Infinity, Math.min(s.max ?? Infinity, v + d)); out.textContent = String(v); clearTimeout(t); t = setTimeout(() => save(v, `${s.label}: ${v}`), 600); };
+    control = h('div', { class: 'stepper' }, h('button', { type: 'button', class: 'ghost', 'aria-label': 'Less', onclick: () => step(-1) }, '−'), out, h('button', { type: 'button', class: 'ghost', 'aria-label': 'More', onclick: () => step(1) }, '+'));
+  } else if (s.type === 'list') {
+    const items = [...(cur ?? [])];
+    const wrap = h('div', { class: 'chipbox' });
+    const input = h('input', { placeholder: 'Add and press Enter', 'aria-label': `Add to ${s.label}` });
+    const paint = () => put(wrap, items.map((x, i) => h('span', { class: 'chipx' }, x, h('button', { type: 'button', class: 'plain', 'aria-label': `Remove ${x}`, onclick: () => { items.splice(i, 1); paint(); save([...items]); } }, '✕'))), input);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) { e.preventDefault(); items.push(input.value.trim()); input.value = ''; paint(); save([...items]); input.focus(); } });
+    paint(); control = wrap;
+    return h('div', { class: 'srow stack' }, label, control);
+  } else {
+    const ta = h('textarea', { 'aria-label': s.label, maxlength: s.maxLength ?? 2000, rows: 2 }, cur ?? '');
+    ta.addEventListener('change', () => save(ta.value));
+    return h('div', { class: 'srow stack' }, label, ta);
+  }
+  return h('div', { class: 'srow' }, label, control);
+}
+
+/* ---------- first-time setup: a short sheet for the channels and roles a module needs ---------- */
+function setupSheet(m) {
+  const needs = essentials(m).filter((s) => !m.values[s.key]);
+  if (!needs.length) return;
+  let i = 0;
+  const scrim = h('div', { class: 'scrim' });
+  const close = () => { scrim.classList.add('out'); setTimeout(() => scrim.remove(), 220); softReload(); };
+  const draw = () => {
+    const s = needs[i];
+    const card = h('div', { class: 'card glass sheet-gb', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Set up ${modName(m)}` },
+      h('div', { class: 'steps' }, needs.map((_, j) => h('i', { class: j <= i ? 'done' : '' }))),
+      h('div', { class: 'muted' }, `Set up ${modName(m)} · ${i + 1} of ${needs.length}`), h('h2', {}, s.label), s.description ? h('p', { class: 'muted' }, s.description) : null,
+      settingRow(m, s),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'ghost', onclick: () => { if (i) { i--; draw(); } else close(); } }, i ? 'Back' : 'Later'),
+        h('button', { type: 'button', onclick: () => { if (i < needs.length - 1) { i++; draw(); } else { close(); toast(`${modName(m)} is ready`); } } }, i < needs.length - 1 ? 'Next' : 'Done')));
+    put(scrim, card);
+  };
+  scrim.addEventListener('click', (e) => { if (e.target === scrim) close(); });
+  document.body.append(scrim); draw();
 }
 
 function settingsForm(m) {
