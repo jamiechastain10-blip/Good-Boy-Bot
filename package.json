@@ -1,6 +1,6 @@
 {
   "name": "good-boy",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Good Boy - modular Discord bot platform by Basic Ghost Labs",
   "private": true,
   "type": "module",

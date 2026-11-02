@@ -3020,7 +3020,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     await w.say(w.a); await w.say(w.a); await w.say(w.b); await w.say(w.a, w.other);
     await w.mm.dispatch('messageCreate', '1', { guildId: '1', author: { id: 'bot2', bot: true }, channelId: w.chat.id, channel: {}, createdTimestamp: Date.now() });
     await w.stats(w.c, 'optout'); await w.say(w.c);
-    assert.match(embedOf(await w.stats(w.a, 'me')), /Messages\n2/);
+    assert.match(embedOf(await w.stats(w.a, 'me', { period: 'all' })), /Messages\n2/);
     const top = embedOf(await w.stats(w.a, 'top', { metric: 'messages' }));
     assert.match(top, /<@sa> · 2[\s\S]*<@sb> · 1/); assert.ok(!/sc/.test(top));
     const srv = embedOf(await w.stats(w.a, 'server'));
@@ -3031,13 +3031,13 @@ export default async function runFeatureTests({ test, rejectsWith }) {
   await test('/stats forget erases a member\'s numbers; optin counts them again', async () => {
     const w = await stWorld();
     await w.say(w.a); await w.say(w.a);
-    assert.match(embedOf(await w.stats(w.a, 'me')), /Messages\n2/);
+    assert.match(embedOf(await w.stats(w.a, 'me', { period: 'all' })), /Messages\n2/);
     await w.stats(w.a, 'forget');
-    assert.match(embedOf(await w.stats(w.a, 'me')), /Messages\n0/);
+    assert.match(embedOf(await w.stats(w.a, 'me', { period: 'all' })), /Messages\n0/);
     await w.stats(w.a, 'optout'); await w.say(w.a);
-    assert.match((await w.stats(w.a, 'me')).text(), /opted out/);
+    assert.match((await w.stats(w.a, 'me', { period: 'all' })).text(), /opted out/);
     await w.stats(w.a, 'optin'); await w.say(w.a);
-    assert.match(embedOf(await w.stats(w.a, 'me')), /Messages\n1/);
+    assert.match(embedOf(await w.stats(w.a, 'me', { period: 'all' })), /Messages\n1/);
   });
 
   await test('voice time is credited when someone leaves; AFK time is skipped and forgotten sessions are capped', async () => {
@@ -3092,7 +3092,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.match(embedOf(await w.stats(w.b, 'me', { period: '7d' })), /Messages\n9 \(9 backfilled\)/);
     assert.match((await w.stats(w.a, 'backfill', { days: 3 })).text(), /permission/);
     // With counted history, the default period is all time, and the dashboard lists every active member with both kinds together.
-    assert.match(embedOf(await w.stats(w.b, 'me')), /Messages\n9 \(9 backfilled\)/, 'no period picked: all time once history is counted');
+    assert.match(embedOf(await w.stats(w.b, 'me')), /All time\n\*\*9\*\* messages/, 'no period picked: the member report, with counted history in all time');
     const v = await w.mm.runView('1', 'stats', 'members');
     const b = v.rows.find((r) => r.id === 'sb');
     assert.equal(b.total, 9, 'backfilled and live messages in one list'); assert.match(b.last, /today|yesterday|days ago/);

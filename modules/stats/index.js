@@ -10,7 +10,7 @@
  * from channel history; those counts are kept apart ("backfilled") and /stats coverage says exactly what they cover.
  * Voice time and reactions cannot be recovered from the past.
  */
-import { SlashCommandBuilder, EmbedBuilder, ChannelType, MessageFlags, PermissionFlagsBits as P, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
+import { SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType, EmbedBuilder, ChannelType, MessageFlags, PermissionFlagsBits as P, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
 import { UserError, truncate, ts, describeDiscordError } from '../../src/util.js';
 import { dayKey, weekStartKey, addDays, periodStart, VoiceTracker, hours } from '../../src/activity.js';
 
@@ -18,8 +18,8 @@ const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
 const need = (ctx, i, key) => { if (!ctx.perms.check(i.member, key)) throw new UserError(`You don't have permission for that (\`${key}\`).`); };
 const tz = (ctx) => ctx.config.get('timezoneOffset');
-const periodChoices = [{ name: 'last 7 days', value: '7d' }, { name: 'last 30 days', value: '30d' }, { name: 'last 90 days', value: '90d' }, { name: 'last year', value: '365d' }, { name: 'all time (includes counted history)', value: 'all' }];
-const PERIOD_WORDS = { '7d': 'last 7 days', '30d': 'last 30 days', '90d': 'last 90 days', '365d': 'last year', all: 'all time' };
+const periodChoices = [{ name: 'this month', value: 'month' }, { name: 'last month', value: 'lastmonth' }, { name: 'last 7 days', value: '7d' }, { name: 'last 30 days', value: '30d' }, { name: 'last 90 days', value: '90d' }, { name: 'last year', value: '365d' }, { name: 'all time (includes counted history)', value: 'all' }];
+const PERIOD_WORDS = { month: 'this month', lastmonth: 'last month', '7d': 'last 7 days', '30d': 'last 30 days', '90d': 'last 90 days', '365d': 'last year', all: 'all time' };
 
 // ------------------------------------------------------------------ live counting (buffered, flushed every few seconds)
 const buffers = new Map();   // guildId -> { user: Map, chan: Map, guild: Map }
@@ -95,11 +95,19 @@ function closeVoice(ctx) {
 }
 
 // ------------------------------------------------------------------ queries
-const startDay = (ctx, period) => periodStart(period, Date.now(), tz(ctx)) ?? '0000-00-00';
-const sumRow = (ctx, userId, from) => ctx.sql.get(
+const startDay = (ctx, period) => periodRange(ctx, period).from;
+/** A period as [from, to) day keys. Calendar months ("this month", "last month") as well as rolling ones. */
+function periodRange(ctx, period, now = Date.now()) {
+  const today = dayKey(now, tz(ctx));
+  const monthStart = `${today.slice(0, 7)}-01`;
+  if (period === 'month') return { from: monthStart, to: '9999-99-99' };
+  if (period === 'lastmonth') { const [y, m] = today.split('-').map(Number); const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; return { from: `${prev}-01`, to: monthStart }; }
+  return { from: periodStart(period, now, tz(ctx)) ?? '0000-00-00', to: '9999-99-99' };
+}
+const sumRow = (ctx, userId, from, to = '9999-99-99') => ctx.sql.get(
   `SELECT COALESCE(SUM(messages + messages_bf), 0) AS messages, COALESCE(SUM(messages_bf), 0) AS bf, COALESCE(SUM(voice_seconds), 0) AS voice, COALESCE(SUM(reactions), 0) AS reactions,
           COUNT(DISTINCT CASE WHEN messages + messages_bf + voice_seconds + reactions > 0 THEN day END) AS days
-     FROM stats_user_day WHERE guild_id = ? AND user_id = ? AND day >= ?`, ctx.guildId, userId, from);
+     FROM stats_user_day WHERE guild_id = ? AND user_id = ? AND day >= ? AND day < ?`, ctx.guildId, userId, from, to);
 
 export function topMembers(ctx, metric, from, to = '9999-99-99', limit = 10) {
   const col = { messages: 'SUM(messages + messages_bf)', voice: 'SUM(voice_seconds)', reactions: 'SUM(reactions)' }[metric];
@@ -352,34 +360,36 @@ async function statsCmd(ctx, i) {
     return;
   }
 
-  const period = i.options.getString('period') ?? (ctx.data.get('coverage')?.backfill ? 'all' : '7d'); // with counted history, show it
-  const from = startDay(ctx, period);
+  const chosen = i.options.getString('period');
+  const period = chosen ?? (sub === 'me' || sub === 'member' ? 'month' : ctx.data.get('coverage')?.backfill ? 'all' : '7d');
+  const { from, to } = periodRange(ctx, period);
 
   if (sub === 'recap') {
     need(ctx, i, 'stats.manage');
-    const to = dayKey(Date.now() + 86400000, tz(ctx));
-    return reply({ embeds: [buildRecap(ctx, from, to, `${PERIOD_WORDS[period]} in ${ctx.guild.name}`)] });
+    const end = to === '9999-99-99' ? dayKey(Date.now() + 86400000, tz(ctx)) : to;
+    return reply({ embeds: [buildRecap(ctx, from, end, `${PERIOD_WORDS[period]} in ${ctx.guild.name}`)] });
   }
   if (sub === 'server') {
-    const t = serverTotals(ctx, from);
+    const t = serverTotals(ctx, from, to);
     const e = new EmbedBuilder().setTitle(`📊 ${ctx.guild.name} · ${PERIOD_WORDS[period]}`).setColor(0x38bdf8)
       .addFields(
         { name: 'Messages', value: t.messages.toLocaleString('en-US'), inline: true }, { name: 'Voice hours', value: String(hours(t.voice)), inline: true }, { name: 'Reactions', value: t.reactions.toLocaleString('en-US'), inline: true },
         { name: 'Active members', value: String(t.people), inline: true }, { name: 'Joined / left', value: `+${t.joins} / −${t.leaves}`, inline: true },
-        { name: 'Busiest channels', value: chanLines(ctx, topChannels(ctx, from)) },
+        { name: 'Busiest channels', value: chanLines(ctx, topChannels(ctx, from, to)) },
       ).setFooter({ text: 'See /stats coverage for what these numbers include.' });
     return reply({ embeds: [e] });
   }
   if (sub === 'top') {
     const metric = i.options.getString('metric', true);
     const fmt = metric === 'voice' ? (n) => `${hours(n)} h` : (n) => n.toLocaleString('en-US');
-    return reply({ embeds: [new EmbedBuilder().setTitle(`🏆 Top ${metric} · ${PERIOD_WORDS[period]}`).setColor(0xfbbf24).setDescription(lines(ctx, topMembers(ctx, metric, from, undefined, 10), fmt))] });
+    return reply({ embeds: [new EmbedBuilder().setTitle(`🏆 Top ${metric} · ${PERIOD_WORDS[period]}`).setColor(0xfbbf24).setDescription(lines(ctx, topMembers(ctx, metric, from, to, 10), fmt))] });
   }
-  // me
+  // me / member: with no period picked, the full member report (this month, last month, all time, month by month)
   const user = i.options.getUser('member') ?? i.user;
   if (out(ctx.guildId).has(user.id)) return reply(user.id === i.user.id ? 'You opted out of statistics. Use `/stats optin` to be counted again.' : 'That member opted out of statistics.');
-  const r = sumRow(ctx, user.id, from);
-  const rank = ctx.sql.get(`SELECT COUNT(*) + 1 AS n FROM (SELECT user_id, SUM(messages + messages_bf) AS m FROM stats_user_day WHERE guild_id = ? AND day >= ? GROUP BY user_id) WHERE m > ?`, ctx.guildId, from, r.messages).n;
+  if (!chosen) return reply({ embeds: [memberReport(ctx, user.id)] });
+  const r = sumRow(ctx, user.id, from, to);
+  const rank = ctx.sql.get(`SELECT COUNT(*) + 1 AS n FROM (SELECT user_id, SUM(messages + messages_bf) AS m FROM stats_user_day WHERE guild_id = ? AND day >= ? AND day < ? GROUP BY user_id) WHERE m > ?`, ctx.guildId, from, to, r.messages).n;
   const e = new EmbedBuilder().setTitle(`📊 ${name(ctx, user.id)} · ${PERIOD_WORDS[period]}`).setColor(0x38bdf8)
     .addFields(
       { name: 'Messages', value: `${r.messages.toLocaleString('en-US')}${r.bf ? ` (${r.bf.toLocaleString('en-US')} backfilled)` : ''}`, inline: true },
@@ -389,17 +399,42 @@ async function statsCmd(ctx, i) {
   return reply({ embeds: [e] });
 }
 
+/** One member at a glance: this month, last month, all time, and the last 6 months one by one. */
+export function memberReport(ctx, userId, now = Date.now()) {
+  flush(ctx);
+  const rankIn = (from, to, n) => (n ? ctx.sql.get(`SELECT COUNT(*) + 1 AS n FROM (SELECT user_id, SUM(messages + messages_bf) AS m FROM stats_user_day WHERE guild_id = ? AND day >= ? AND day < ? GROUP BY user_id) WHERE m > ?`, ctx.guildId, from, to, n).n : null);
+  const tm = periodRange(ctx, 'month', now), lm = periodRange(ctx, 'lastmonth', now);
+  const thisMonth = sumRow(ctx, userId, tm.from, tm.to), lastMonth = sumRow(ctx, userId, lm.from, lm.to), all = sumRow(ctx, userId, '0000-00-00');
+  const months = ctx.sql.all(`SELECT substr(day, 1, 7) AS month, SUM(messages + messages_bf) AS n FROM stats_user_day WHERE guild_id = ? AND user_id = ? GROUP BY month ORDER BY month DESC LIMIT 6`, ctx.guildId, userId);
+  const max = Math.max(1, ...months.map((m) => m.n));
+  const label = (ym) => new Date(`${ym}-15T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const last = ctx.sql.get('SELECT MAX(day) AS d FROM stats_user_day WHERE guild_id = ? AND user_id = ? AND (messages + messages_bf + voice_seconds + reactions) > 0', ctx.guildId, userId)?.d;
+  const member = ctx.guild?.members.cache.get(userId);
+  const n = (x) => x.toLocaleString('en-US');
+  const rank = (r) => (r ? ` · #${r}` : '');
+  return new EmbedBuilder().setTitle(`📊 ${name(ctx, userId)}`).setColor(0x38bdf8)
+    .addFields(
+      { name: 'This month', value: `**${n(thisMonth.messages)}** messages${rank(rankIn(tm.from, tm.to, thisMonth.messages))}\n${hours(thisMonth.voice)} h voice · ${thisMonth.days} active days`, inline: true },
+      { name: 'Last month', value: `**${n(lastMonth.messages)}** messages${rank(rankIn(lm.from, lm.to, lastMonth.messages))}\n${hours(lastMonth.voice)} h voice · ${lastMonth.days} active days`, inline: true },
+      { name: 'All time', value: `**${n(all.messages)}** messages${rank(rankIn('0000-00-00', '9999-99-99', all.messages))}\n${hours(all.voice)} h voice · ${all.days} active days`, inline: true },
+      { name: 'Month by month', value: months.length ? months.map((m) => `\`${label(m.month).padEnd(8)}\` ${'▰'.repeat(Math.max(1, Math.round((m.n / max) * 12)))} ${n(m.n)}`).join('\n') : '*No messages counted yet.*' },
+      { name: 'Last active', value: last ?? 'never', inline: true },
+      { name: 'Joined', value: member?.joinedTimestamp ? ts(member.joinedTimestamp, 'D') : '-', inline: true },
+    ).setFooter({ text: `Ranks are by messages.${all.bf ? ` Includes ${n(all.bf)} counted from older history.` : ''} Pick a period in /stats member for other ranges.` });
+}
+
 const closeVoiceSnapshot = (ctx) => { closeVoice(ctx); flush(ctx); };
 
 // ------------------------------------------------------------------ dashboard
 /** Every member with any activity: when they were last active and how much, live and backfilled together. */
 export function memberActivity(ctx, limit = 200) {
-  const d30 = startDay(ctx, '30d');
+  const tm = periodRange(ctx, 'month'), lm = periodRange(ctx, 'lastmonth');
   return ctx.sql.all(`SELECT user_id AS id, MAX(day) AS last, SUM(messages + messages_bf) AS total,
       SUM(CASE WHEN day >= ? THEN messages + messages_bf ELSE 0 END) AS recent,
+      SUM(CASE WHEN day >= ? AND day < ? THEN messages + messages_bf ELSE 0 END) AS lastMonth,
       SUM(CASE WHEN day >= ? THEN voice_seconds ELSE 0 END) AS voice
     FROM stats_user_day WHERE guild_id = ? AND (messages + messages_bf + voice_seconds + reactions) > 0
-    GROUP BY user_id ORDER BY last DESC, total DESC LIMIT ?`, d30, d30, ctx.guildId, limit);
+    GROUP BY user_id ORDER BY last DESC, total DESC LIMIT ?`, tm.from, lm.from, lm.to, tm.from, ctx.guildId, limit);
 }
 
 // ------------------------------------------------------------------ inactive members (monthly clean-up)
@@ -637,7 +672,7 @@ const views = {
     flush(ctx); closeVoice(ctx); flush(ctx);
     const today = dayKey(Date.now(), tz(ctx));
     const ago = (day) => { const n = Math.round((Date.parse(today) - Date.parse(day)) / 86400000); return n <= 0 ? 'today' : n === 1 ? 'yesterday' : n < 60 ? `${n} days ago` : day; };
-    const rows = memberActivity(ctx).map((r) => ({ id: r.id, member: name(ctx, r.id).replace(/^<@(\d+)>$/, '$1'), last: ago(r.last), recent: r.recent, voice: hours(r.voice), total: r.total, here: ctx.guild?.members.cache.has(r.id) ? 'yes' : 'left' }));
+    const rows = memberActivity(ctx).map((r) => ({ id: r.id, member: name(ctx, r.id).replace(/^<@(\d+)>$/, '$1'), last: ago(r.last), recent: r.recent, lastMonth: r.lastMonth, voice: hours(r.voice), total: r.total, here: ctx.guild?.members.cache.has(r.id) ? 'yes' : 'left' }));
     return { rows, note: 'Live and backfilled messages together. Newest activity first. "Last active" counts messages, voice and reactions.' };
   },
   async overview(ctx) {
@@ -673,6 +708,7 @@ export default {
   commands: [{
     permission: 'stats.view',
     data: new SlashCommandBuilder().setName('stats').setDescription('Activity statistics')
+      .addSubcommand((s) => s.setName('member').setDescription('A member\'s messages this month, last month, all time and month by month').addUserOption((o) => o.setName('member').setDescription('Who').setRequired(true)).addStringOption((o) => o.setName('period').setDescription('Optional: one period instead of the full report').addChoices(...periodChoices)))
       .addSubcommand((s) => s.setName('me').setDescription('Your numbers (or someone else\'s)').addUserOption((o) => o.setName('member').setDescription('Whose')).addStringOption((o) => o.setName('period').setDescription('How far back').addChoices(...periodChoices)))
       .addSubcommand((s) => s.setName('server').setDescription('Server totals').addStringOption((o) => o.setName('period').setDescription('How far back').addChoices(...periodChoices)))
       .addSubcommand((s) => s.setName('top').setDescription('Leaderboard')
@@ -686,6 +722,14 @@ export default {
       .addSubcommand((s) => s.setName('optin').setDescription('Be counted again'))
       .addSubcommand((s) => s.setName('forget').setDescription('Erase your numbers in this server')),
     execute: statsCmd,
+  }, {
+    permission: 'stats.view',
+    data: new ContextMenuCommandBuilder().setName('Message stats').setType(ApplicationCommandType.User),
+    async execute(ctx, i) {
+      const user = i.targetUser ?? i.options?.getUser?.('user');
+      if (out(ctx.guildId).has(user.id)) return i.reply({ content: 'That member opted out of statistics.', flags: EPH });
+      return i.reply({ embeds: [memberReport(ctx, user.id)], flags: EPH, allowedMentions: NOPING });
+    },
   }, {
     permission: 'stats.manage',
     data: new SlashCommandBuilder().setName('counter').setDescription('Voice channels that show live numbers in their name (staff)')
@@ -733,7 +777,7 @@ export default {
       rowActions: [{ action: 'inactive-kick', label: 'Kick', confirm: 'Kick this member for inactivity? They can rejoin with an invite.', danger: true, done: 'Kicked' }],
       globalActions: [{ action: 'inactive-kick-all', label: 'Kick everyone listed', confirmWord: 'KICK', confirm: 'Kick every member on this list? Each one is checked again first, and they can rejoin with an invite.' }] },
     { id: 'charts', title: 'Activity charts', view: 'charts', permission: 'stats.manage', columns: [], description: 'Live and backfilled messages together.' },
-    { id: 'members', title: 'Active members', view: 'members', permission: 'stats.manage', columns: [{ key: 'member', label: 'Member' }, { key: 'last', label: 'Last active' }, { key: 'recent', label: 'Messages (30 days)' }, { key: 'voice', label: 'Voice hours (30 days)' }, { key: 'total', label: 'Messages (all time)' }, { key: 'here', label: 'Still here' }] },
+    { id: 'members', title: 'Active members', view: 'members', permission: 'stats.manage', columns: [{ key: 'member', label: 'Member' }, { key: 'last', label: 'Last active' }, { key: 'recent', label: 'Messages this month' }, { key: 'lastMonth', label: 'Last month' }, { key: 'voice', label: 'Voice hours this month' }, { key: 'total', label: 'Messages (all time)' }, { key: 'here', label: 'Still here' }] },
     { id: 'overview', title: 'Activity (7 days)', view: 'overview', permission: 'stats.manage', columns: [{ key: 'member', label: 'Member' }, { key: 'messages', label: 'Messages' }, { key: 'voice', label: 'Voice hours' }] },
   ],
   async init(ctx) {

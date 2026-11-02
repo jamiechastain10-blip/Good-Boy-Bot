@@ -35,7 +35,28 @@ export function oldBots(guild) {
     .map((m) => ({ id: m.id, name: KNOWN_BOTS[m.id] ?? m.user.username }));
 }
 
-const EMOJI_RE = /<a?:\w+:(\d+)>|(\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*)/u;
+// Custom emojis, keycaps (1️⃣ is a digit + U+FE0F + U+20E3) and normal emojis (with skin tones and joined sequences).
+const EMOJI_RE = /<a?:\w+:(\d+)>|([0-9#*]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*)/u;
+const norm = (s) => String(s ?? '').toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]/gu, '');
+/** The role a piece of text names: exact (ignoring case, spaces and symbols), then one name containing the other. */
+export function findRoleByName(guild, text) {
+  const t = norm(text);
+  if (t.length < 2) return null;
+  const roles = [...(guild.roles?.cache?.values?.() ?? [])].filter((r) => r.id !== guild.id && !r.managed);
+  const exact = roles.find((r) => norm(r.name) === t);
+  if (exact) return exact.id;
+  const close = roles.filter((r) => { const n = norm(r.name); return n.length >= 3 && (t.includes(n) || n.includes(t)); });
+  if (close.length === 1) return close[0].id;
+  // Small typos ("Seige" for "Siege"): at most 2 letters different, for names of 6 letters or more.
+  const near = roles.filter((r) => { const n = norm(r.name); return n.length >= 6 && Math.abs(n.length - t.length) <= 2 && editDistance(n, t) <= 2; });
+  return near.length === 1 ? near[0].id : null;
+}
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
 /** Lines like "🎮 : @Gamer" or "<:valo:123> Valorant players - <@&456>" -> [{ emojiKey, roleId }]. */
 export function parseRolePairs(text, guild) {
   const out = [];
@@ -44,18 +65,16 @@ export function parseRolePairs(text, guild) {
     if (!em) continue;
     const key = em[1] ?? em[2];
     let roleId = /<@&(\d{17,20})>/.exec(line)?.[1];
-    if (!roleId) {
-      const rest = line.replace(EMOJI_RE, '').replace(/[-:=→>|*_]/g, ' ').trim().toLowerCase();
-      roleId = [...(guild.roles?.cache?.values?.() ?? [])].find((r) => r.name && rest && rest.split(/\s{2,}|,/)[0].trim() === r.name.toLowerCase())?.id;
-    }
+    if (!roleId) roleId = findRoleByName(guild, line.replace(EMOJI_RE, '').replace(/[-:=→>|*_~`]/g, ' ').trim());
     if (key && roleId) out.push({ emojiKey: key, roleId });
   }
   return out;
 }
 
-const textOf = (msg) => [msg.content, ...(msg.embeds ?? []).flatMap((e) => [e.title, e.description, ...(e.fields ?? []).map((f) => `${f.name}\n${f.value}`), e.footer?.text].map((x) => x ?? ''))].join('\n');
+const embedText = (msg) => (msg.embeds ?? []).flatMap((e) => [e.author?.name, e.title, e.description, ...(e.fields ?? []).map((f) => `${f.name}\n${f.value}`), e.footer?.text].map((x) => x ?? '')).join('\n');
+const textOf = (msg) => `${msg.content ?? ''}\n${embedText(msg)}`;
 const LOG_KINDS = [
-  { key: 'logMessages', re: /message (was )?(deleted|edited|updated)|deleted message|edited message/i },
+  { key: 'logMessages', re: /message (was )?(deleted|edited|updated)|deleted message|edited message|(deleted|edited) in (<#\d+>|#)/i },
   { key: 'logJoins', re: /member (joined|left)|user (joined|left)|joined the server|left the server/i },
   { key: 'logRoles', re: /roles? (added|removed|updated|changed)|role (given|taken)/i },
   { key: 'logNicknames', re: /nickname/i },
@@ -63,18 +82,39 @@ const LOG_KINDS = [
 ];
 
 /** Looks through the server. Read-only. */
-export async function scanServer(guild, { perChannel = 100, maxChannels = 60 } = {}) {
+export async function scanServer(guild, { perChannel = 1000, timeBudgetMs = 12 * 60000, onProgress } = {}) {
   const bots = oldBots(guild);
   const botIds = new Set(bots.map((b) => b.id));
+  const botName = new Map(bots.map((b) => [b.id, b.name]));
+  const unreadable = [];
   const findings = [];
   const add = (f) => findings.push({ id: String(findings.length + 1), ...f });
-  const channels = [...guild.channels.cache.values()].filter((c) => c.isTextBased?.() && !c.isVoiceBased?.() && c.messages?.fetch && c.type !== ChannelType.GuildCategory).slice(0, maxChannels);
+  const channels = [...guild.channels.cache.values()].filter((c) => c.isTextBased?.() && !c.isVoiceBased?.() && c.messages?.fetch && c.type !== ChannelType.GuildCategory);
+  // Active threads too (forum posts and threads hold role pickers and logs in some servers).
+  const active = await guild.channels.fetchActiveThreads?.().catch(() => null);
+  for (const t of active?.threads?.values?.() ?? []) if (t.messages?.fetch) channels.push(t);
+  const started = Date.now();
+  let scannedMessages = 0, done = 0, stoppedEarly = false;
   const logHits = new Map(); // logKind -> Map(channelId -> count)
   const welcome = new Map(), goodbye = new Map(), star = new Map();
 
   if (botIds.size) for (const ch of channels) {
-    const batch = await ch.messages.fetch({ limit: perChannel }).catch(() => null);
-    for (const msg of batch?.values?.() ?? []) {
+    if (Date.now() - started > timeBudgetMs) { stoppedEarly = true; break; }
+    onProgress?.({ done, total: channels.length, current: ch.id, scannedMessages });
+    // Read up to perChannel messages, 100 at a time, going back in time.
+    const msgs = []; let before; let readable = true;
+    while (msgs.length < perChannel) {
+      const page = await ch.messages.fetch({ limit: 100, ...(before ? { before } : {}) }).catch(() => null);
+      if (!page) { readable = msgs.length > 0; break; }
+      const list = [...page.values()];
+      if (!list.length) break;
+      msgs.push(...list);
+      before = list.reduce((a, m) => (m.createdTimestamp < a.createdTimestamp ? m : a), list[0]).id;
+      if (list.length < 100) break;
+    }
+    done++; scannedMessages += msgs.length;
+    if (!readable) { unreadable.push(ch.id); continue; }
+    for (const msg of msgs) {
       if (!botIds.has(msg.author?.id)) continue;
       const text = textOf(msg);
       // reaction roles
@@ -83,7 +123,9 @@ export async function scanServer(guild, { perChannel = 100, maxChannels = 60 } =
         const pairs = parseRolePairs(text, guild).filter((p) => reacted.some((r) => (r.emoji?.id ?? r.emoji?.name) === p.emojiKey));
         if (pairs.length) add({ kind: 'reactionroles', title: `Reaction roles in #${ch.name}`, detail: pairs.map((p) => `${p.emojiKey.match(/^\d+$/) ? '(custom emoji)' : p.emojiKey} → <@&${p.roleId}>`).join(', '), data: { messageId: msg.id, pairs } });
       }
-      for (const k of LOG_KINDS) if (k.re.test(text)) { const m = logHits.get(k.key) ?? new Map(); m.set(ch.id, (m.get(ch.id) ?? 0) + 1); logHits.set(k.key, m); }
+      // Logs are boxes (embeds) from a moderation bot; TTS Bot's voice messages are not logs.
+      const box = embedText(msg);
+      if (box && !/tts/i.test(botName.get(msg.author.id) ?? '')) for (const k of LOG_KINDS) if (k.re.test(box)) { const m = logHits.get(k.key) ?? new Map(); m.set(ch.id, (m.get(ch.id) ?? 0) + 1); logHits.set(k.key, m); }
       const starM = /(?:⭐|🌟|✨)\s*\**(\d+)\**/.exec(msg.content ?? '');
       if (starM && /<#\d+>/.test(msg.content ?? '')) { const s = star.get(ch.id) ?? { n: 0, min: 99 }; s.n++; s.min = Math.min(s.min, Number(starM[1])); star.set(ch.id, s); }
       const mention = /<@!?(\d{17,20})>/.exec(msg.content ?? '');
@@ -91,6 +133,7 @@ export async function scanServer(guild, { perChannel = 100, maxChannels = 60 } =
       if (/(left|goodbye|has left|bye)/i.test(text) && !/voice/i.test(text) && !LOG_KINDS[1].re.test(text)) { const g = goodbye.get(ch.id) ?? { n: 0, sample: msg.content || msg.embeds?.[0]?.description || '' }; g.n++; goodbye.set(ch.id, g); }
     }
   }
+  for (const [k, m] of logHits) { for (const [c, n] of m) if (n < 2) m.delete(c); if (!m.size) logHits.delete(k); }
   const top = (m) => [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   const logKeys = [...logHits.keys()];
   if (logKeys.length) {
@@ -135,7 +178,7 @@ export async function scanServer(guild, { perChannel = 100, maxChannels = 60 } =
 
   const automod = await guild.autoModerationRules?.fetch?.().catch(() => null);
   const autoModCount = automod?.size ?? 0;
-  return { bots, findings, autoModCount, scannedChannels: channels.length };
+  return { bots, findings, autoModCount, scannedChannels: done, totalChannels: channels.length, scannedMessages, stoppedEarly, unreadable };
 }
 
 /** Applies one finding. Returns a short line for the report. */
@@ -212,8 +255,10 @@ function reportMessage(i, result) {
   const e = new EmbedBuilder().setColor(0x5865f2).setTitle('🔁 Move to Good Boy')
     .setDescription([
       bots.length ? `Found: ${bots.map((b) => `**${b.name}**`).join(', ')}.` : 'No Carl-bot, YAGPDB, Statbot or TTS Bot found in this server. (Medal is left alone.)',
+      `Read **${(result.scannedMessages ?? 0).toLocaleString('en-US')}** messages in ${result.scannedChannels ?? 0} of ${result.totalChannels ?? 0} channels and threads (up to 1,000 per channel).${result.stoppedEarly ? ' I stopped after 12 minutes; run the scan again to finish.' : ''}`,
       findings.length ? `Here is what they left behind that I can set up for you. **Nothing has changed yet.** Pick what to import:` : 'I found nothing to import automatically.',
       ...findings.map((f) => `**${f.id}. ${f.title}** · ${truncate(f.detail, 300)}`),
+      result.unreadable?.length ? `⚠️ I couldn't read ${result.unreadable.length} channel${result.unreadable.length === 1 ? '' : 's'} (${result.unreadable.slice(0, 6).map((id) => `<#${id}>`).join(' ')}${result.unreadable.length > 6 ? ' …' : ''}). If old logs are there, give me View Channel and Read Message History there and scan again.` : null,
       autoModCount ? `ℹ️ ${autoModCount} Discord AutoMod rule${autoModCount === 1 ? '' : 's'} (Server Settings > AutoMod) keep working after the old bots are removed.` : null,
       '**Not readable from Discord:** custom commands/tags (paste them with `/migrate tags`), each bot\'s private settings, and Statbot\'s history (run `/stats backfill` with days empty instead). TTS Bot users pick their voice again with `/tts voice`.',
     ].filter(Boolean).join('\n\n').slice(0, 4000));
@@ -256,9 +301,16 @@ export const migrateCommand = {
       return i.reply({ content: truncate(`✅ Imported **${done.length}** custom command${done.length === 1 ? '' : 's'}: ${done.map((n) => `\`${n}\``).join(' ')}${bad.length ? `\n❌ ${bad.join('\n❌ ')}` : ''}\nMembers use them like before, e.g. \`?${done[0] ?? 'name'}\`.`, 1900), flags: EPH, allowedMentions: NOPING });
     }
     await i.deferReply({ flags: EPH });
-    const result = await scanServer(i.guild);
+    // A full scan reads up to 1,000 messages in every channel, which takes a while: show where it is.
+    let last = 0;
+    const onProgress = (p) => {
+      if (Date.now() - last < 5000) return;
+      last = Date.now();
+      i.editReply({ content: `🔍 Scanning… channel ${p.done + 1} of ${p.total} (<#${p.current}>) · ${p.scannedMessages.toLocaleString('en-US')} messages read so far.`, allowedMentions: NOPING }).catch(() => {});
+    };
+    const result = await scanServer(i.guild, { onProgress });
     scans.set(`${i.guildId}:${i.user.id}`, { result, at: Date.now() });
-    return i.editReply(reportMessage(i, result));
+    return i.editReply({ content: null, ...reportMessage(i, result) });
   },
   components: [{
     prefix: `${NS}:`,
