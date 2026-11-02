@@ -22,6 +22,22 @@ right-click it and choose **Open** the first time.
 
 ---
 
+### Older versions
+
+| Version | Where to find it |
+|---|---|
+| **2.3.x** (latest) | `main` and the [releases page](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest) |
+| 2.2.0 | the [`v2.2.0` tag and release](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/tag/v2.2.0) (no branch, see below) |
+| 2.1.3, 2.1.2, 2.1.1 | the `v2.1.3`, `v2.1.2` and `v2.1.1` branches |
+| 1.0 | the `v1.0` branch (the original version) |
+
+**Why is there no 2.2 branch?** 2.2 was a short test build, made to check that the new update system could install,
+roll back and reload a big update safely. It was never meant to be used for long: 2.3 replaced it a day later and
+includes everything 2.2 had, plus fixes. So 2.2 only has a tag and a release page, kept so that apps still on 2.2 can
+update themselves. If you're starting fresh, use the latest version; there's no reason to install 2.2.
+
+---
+
 **Prefer to run it from the code?** That works too, as described below.
 
 Moderation, member management, roles, tickets, polls, leveling, voice TTS, feeds and image quotes, built as
@@ -113,7 +129,7 @@ Nothing needs typing anywhere: every command opens a popup (on/off and choices a
 | **integrations** | `/feed add\|remove\|list\|check` (RSS, YouTube, GitHub, Reddit) · `/minecraft` · `/webhook create\|list\|delete` |
 | **tempvoice** | `/voicehub add\|remove\|list` (pick "join to create" lobbies) · members get their own voice room, deleted when empty · `/room name\|limit\|privacy\|invite\|permit\|kick\|ban\|transfer\|claim\|info` |
 | **partyfinder** | `/party create\|list\|close\|kick` · a post with Join / Leave / Close buttons, spots left, start time, optional voice room and role ping · expires on its own, DMs go through the *party-invites* notification setting |
-| **stats** | `/stats me\|server\|top\|coverage\|recap\|backfill\|inactive\|optout\|optin\|forget` · `/counter add\|remove\|list` (live counter channels) · activity charts on the dashboard · counts messages, voice time and reactions (never message text), weekly recap, optional history backfill, dashboard overview |
+| **stats** | `/stats member\|me\|server\|top\|coverage\|recap\|backfill\|inactive\|optout\|optin\|forget` · right-click a member → **Message stats** (this month, last month, month by month) · `/counter add\|remove\|list` (live counter channels) · activity charts on the dashboard · counts messages, voice time and reactions (never message text), weekly recap, optional history backfill, dashboard overview |
 | **achievements** | `/achievements show\|list\|privacy\|optout\|optin` · 17 built-in achievements plus your own (`/achievements custom create\|delete\|grant\|revoke`) · announcements to a channel and/or DM |
 | **eclipseid** | `/id show\|edit\|privacy\|link\|unlink\|roblox\|delete` · a member card with an ID, about text, linked game accounts (shown as *not verified*), per-field public / staff / private visibility |
 | **economy** | `/balance` `/daily` `/pay` `/top` `/economy-admin` · right-click → **View wallet** / **Pay member** · daily streaks with Streak Shields and milestone bonuses · a live, paginated leaderboard (coins, streaks, fishing, casino) for the server or across servers that opt in. Every amount is typed in a popup |
@@ -152,7 +168,7 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 
 ## 5. Honest status & limits
 
-**What was verified, and how.** Good Boy was built and tested against *simulated* Discord: 365 automated tests (module lifecycle, permissions, AutoMod rules, tickets and the watch log, popups, polls and suggestions, the live leaderboard, no-mic reading rules, the GIF codec, dashboard access control and design assets, and for the newer parts: temporary voice, party finder, statistics, achievements, member IDs, the update system with real child processes and a local update server, and the desktop app's logic). The same suite also passes on a PC with the real `discord.js`. Key rules were checked by *breaking the code on purpose* to make sure a test fails. The GIF reader and writer were compared against an independent library (Pillow); real animated quotes were rendered with the real canvas library. The dashboard was opened in a real browser to check the layout, themes and animations.
+**What was verified, and how.** Good Boy was built and tested against *simulated* Discord: 369 automated tests (module lifecycle, permissions, AutoMod rules, tickets and the watch log, popups, polls and suggestions, the live leaderboard, no-mic reading rules, the GIF codec, dashboard access control and design assets, and for the newer parts: temporary voice, party finder, statistics, achievements, member IDs, the update system with real child processes and a local update server, and the desktop app's logic). The same suite also passes on a PC with the real `discord.js`. Key rules were checked by *breaking the code on purpose* to make sure a test fails. The GIF reader and writer were compared against an independent library (Pillow); real animated quotes were rendered with the real canvas library. The dashboard was opened in a real browser to check the layout, themes and animations.
 
 **Not verified on real Discord yet** (please try these first, see "First-run checklist" below): everything new in 2.2 (the button-then-popup flow, popups with pickers and dropdowns, the leaderboard buttons, the games and the fishing mini-game; see [`docs/V2.2-TEST-PLAN.md`](docs/V2.2-TEST-PLAN.md)), temporary voice rooms (moving members, permissions), the party finder buttons and DMs, the member ID popup, achievement announcements, the statistics weekly recap and history backfill, the popups (modals), a full ticket from open to close, the watch-log flags, the live leaderboard message editing itself, animated quotes as uploaded to Discord, and the dashboard login with your own Client Secret. **Text-to-speech audio** (including the no-mic channel) can only be proven on a machine with a voice channel and speakers: the rules for *what* gets read are tested, the sound is not.
 

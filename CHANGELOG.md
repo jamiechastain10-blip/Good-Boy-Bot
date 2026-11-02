@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.3.1
+**Purge without limits, member message stats, and `/migrate` fixes from the first real scan.**
+
+- **Number-emoji role lists now work**: 1️⃣ to 9️⃣ weren't recognised as emojis (only 🔟 was), so most game roles were missed.
+- **Role names are matched more loosely**: case, spaces and symbols are ignored, and small typos are forgiven ("Rainbow SIx Seige" still finds "Rainbow Six Siege").
+- **The scan goes through everything**: every channel and active thread, up to 1,000 messages in each (it used to read 100 messages in at most 60 channels). It shows its progress while it works and says how much it read.
+- **Log channels are found correctly**: TTS Bot's messages in the no-mic channel no longer look like logs, Carl-bot's "Message deleted in #…" logs are recognised, and a channel needs a few log messages before it counts.
+- The report lists channels it couldn't read, so you can give Good Boy access and scan again.
+
+**Purge without limits**
+- `/purge` with no amount deletes **every** message in the channel, and amounts go up to 100,000. Messages older than 14 days are deleted too (Discord only bulk-deletes newer ones, so older ones go one by one, about one a second). Big purges ask first, run in the background with progress and a **Stop** button, and message you if they take longer than 15 minutes. Pinned messages are kept unless you say otherwise. Up to 100 recent messages still go straight away.
+- **Recreate**: `/purge` with method "Recreate the channel" removes everything at once. The channel is cloned with the same permissions, topic, slowmode, category and position, the old one is deleted, and Good Boy's settings that pointed at it (clips channel, logs, sticky messages...) move to the new one.
+
+**Member message stats**
+- **`/stats member`** (or right-click a member → Apps → **Message stats**): messages **this month** and **last month** with their rank, all time, voice hours and active days, a month-by-month list of the last 6 months, when they were last active and when they joined.
+- New periods everywhere in `/stats`: **this month** and **last month** (calendar months).
+- The dashboard's Active members box shows this month and last month.
+
+<!-- members -->
+- **Your message stats:** `/stats member`, or right-click someone → Apps → **Message stats**, shows messages this month, last month, all time and month by month.
+<!-- /members -->
+
 ## 2.3.0
 **Everything is live, and other people can test the dashboard.**
 

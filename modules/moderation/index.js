@@ -5,7 +5,7 @@
  * Moderation suite: warn / timeout / kick / ban / unban / purge / history,
  * AutoMod (spam, words, links, mass mentions), raid protection, anti-nuke, logging.
  */
-import { SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType, EmbedBuilder, AuditLogEvent, PermissionFlagsBits as P, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType, EmbedBuilder, AuditLogEvent, PermissionFlagsBits as P, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonStyle, ButtonBuilder } from 'discord.js';
 import { UserError, hierarchyError, parseDuration, formatDuration, truncate, escapeRegex, ts, SNOWFLAKE } from '../../src/util.js';
 import { formStore } from '../../src/forms.js';
 import { createPipeline } from '../../src/modalpipe.js';
@@ -69,6 +69,106 @@ async function logVoice(ctx, before, after) {
   if (!m || m.user?.bot || before.channelId === after.channelId) return;
   const text = !before.channelId ? `joined 🔊 <#${after.channelId}>` : !after.channelId ? `left 🔊 <#${before.channelId}>` : `moved 🔊 <#${before.channelId}> → <#${after.channelId}>`;
   await serverLog(ctx, 'logVoice', new EmbedBuilder().setColor(0x3ba7a0).setDescription(`${who(m)} ${text}`));
+}
+
+// ---- purge (2.3.1): no 100 and no 14-day limit.
+// Discord only bulk-deletes messages younger than 14 days, so those go 100 at a time, and older ones are deleted one by
+// one (Discord allows about one a second: big purges take a while and run in the background, with progress and Stop).
+// "Recreate" clones the channel (same permissions, topic, category, position) and deletes the old one: instant,
+// everything gone. Good Boy's own settings that pointed at the old channel are moved to the new one.
+const purges = (globalThis[Symbol.for('goodboy.moderation.purges')] ??= new Map()); // channelId -> job
+const FOURTEEN_DAYS = 14 * 86400000 - 60000;
+
+export async function runPurge(ctx, ch, { amount = Infinity, userId = null, keepPinned = true, onProgress, job = { stop: false } } = {}) {
+  let before, deleted = 0, scanned = 0;
+  const done = () => deleted >= amount || job.stop;
+  while (!done()) {
+    const page = await ctx.queue(() => ch.messages.fetch({ limit: 100, ...(before ? { before } : {}) })).catch(() => null);
+    const list = [...(page?.values?.() ?? [])];
+    if (!list.length) break;
+    scanned += list.length;
+    before = list.reduce((a, m) => (m.createdTimestamp < a.createdTimestamp ? m : a), list[0]).id;
+    const pick = list.filter((m) => (!userId || m.author?.id === userId) && !(keepPinned && m.pinned)).slice(0, amount - deleted);
+    const young = pick.filter((m) => Date.now() - m.createdTimestamp < FOURTEEN_DAYS);
+    const old = pick.filter((m) => !young.includes(m));
+    if (young.length > 1) { const r = await ctx.queue(() => ch.bulkDelete(young.map((m) => m.id), true)).catch(() => null); deleted += r?.size ?? 0; }
+    else if (young.length === 1) { if (await ctx.queue(() => young[0].delete()).then(() => true).catch(() => false)) deleted++; }
+    for (const m of old) { if (job.stop) break; if (await ctx.queue(() => m.delete()).then(() => true).catch(() => false)) deleted++; onProgress?.({ deleted, scanned }); }
+    onProgress?.({ deleted, scanned });
+    if (list.length < 100) break;
+  }
+  return { deleted, scanned, stopped: job.stop };
+}
+
+/** Clone the channel, put it where the old one was, delete the old one, and point Good Boy's settings at the new one. */
+export async function recreateChannel(ctx, ch, by) {
+  const fresh = await ch.clone({ reason: `Purge all by ${by}` });
+  await fresh.setPosition?.(ch.position).catch(() => {});
+  await ch.delete(`Purge all by ${by} (recreated as #${fresh.name})`);
+  const like = `%${ch.id}%`;
+  ctx.sql.run('UPDATE module_config SET value = REPLACE(value, ?, ?) WHERE guild_id = ? AND value LIKE ?', ch.id, fresh.id, ctx.guildId, like);
+  ctx.sql.run('UPDATE module_data SET value = REPLACE(value, ?, ?) WHERE guild_id = ? AND value LIKE ?', ch.id, fresh.id, ctx.guildId, like);
+  ctx.sql.run('UPDATE OR IGNORE module_data SET key = REPLACE(key, ?, ?) WHERE guild_id = ? AND key LIKE ?', ch.id, fresh.id, ctx.guildId, like);
+  return fresh;
+}
+
+async function purgeCmd(ctx, i) {
+  const ch = i.channel;
+  if (!ch?.messages?.fetch) throw new UserError("I can't purge in this kind of channel.");
+  const amount = i.options.getInteger('amount') ?? null;
+  const user = i.options.getUser('user');
+  const method = i.options.getString('method') ?? 'delete';
+  const keepPinned = i.options.getBoolean('keep_pinned') ?? true;
+  if (purges.has(ch.id)) throw new UserError('A purge is already running in this channel.');
+  if (method === 'recreate') {
+    if (amount || user) throw new UserError('Recreate removes everything, so leave amount and user empty (or pick "Delete the messages").');
+    ctx.data.set(`purge:${i.user.id}`, { channelId: ch.id, method, at: Date.now() });
+    return i.reply({ content: `⚠️ **Recreate <#${ch.id}>?** Every message is gone at once, including pins. Permissions, topic, slowmode and position stay the same. Webhooks in this channel are removed.`, flags: EPH, allowedMentions: NOPING,
+      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mpurge:yes:${i.user.id}`).setLabel('Yes, recreate it').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId(`mpurge:no:${i.user.id}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary))] });
+  }
+  // Up to 100 recent messages: straight away, like before. Anything bigger asks first and runs in the background.
+  if (amount && amount <= 100) {
+    await i.deferReply({ flags: EPH });
+    const r = await runPurge(ctx, ch, { amount, userId: user?.id, keepPinned });
+    await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle('Purge').setDescription(`<@${i.user.id}> deleted **${r.deleted}** message(s) in <#${ch.id}>${user ? ` from <@${user.id}>` : ''}.`).setTimestamp());
+    return i.editReply({ content: `🧹 Deleted ${r.deleted} message(s).` });
+  }
+  ctx.data.set(`purge:${i.user.id}`, { channelId: ch.id, method, amount, userId: user?.id ?? null, keepPinned, at: Date.now() });
+  const what = `${amount ? `up to **${amount.toLocaleString('en-US')}**` : '**every**'} message${user ? ` from <@${user.id}>` : ''} in <#${ch.id}>${keepPinned ? ' (pins are kept)' : ''}`;
+  return i.reply({ content: `⚠️ Delete ${what}? Messages older than 14 days are deleted one by one, about one a second, so a big purge takes a while. It runs in the background and you can stop it.`, flags: EPH, allowedMentions: NOPING,
+    components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mpurge:yes:${i.user.id}`).setLabel('Yes, delete them').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId(`mpurge:no:${i.user.id}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary))] });
+}
+
+async function purgeClick(ctx, i) {
+  const [, kind, owner] = i.customId.split(':');
+  if (owner !== i.user.id) throw new UserError('That belongs to someone else.');
+  if (!ctx.perms.check(i.member, 'moderation.purge')) throw new UserError("You don't have permission for that (`moderation.purge`).");
+  const p = ctx.data.get(`purge:${owner}`);
+  if (kind === 'stop') { const job = purges.get(p?.channelId ?? i.channelId); if (job) job.stop = true; return i.update({ content: '⏹️ Stopping…', components: [] }); }
+  ctx.data.delete(`purge:${owner}`);
+  if (kind === 'no') return i.update({ content: 'Cancelled. Nothing was deleted.', components: [] });
+  if (!p || Date.now() - p.at > 10 * 60000) throw new UserError('That confirmation expired. Run `/purge` again.');
+  const ch = ctx.guild.channels.cache.get(p.channelId);
+  if (!ch) throw new UserError('That channel is gone.');
+  if (p.method === 'recreate') {
+    await i.update({ content: '⏳ Recreating…', components: [] });
+    const fresh = await recreateChannel(ctx, ch, i.user.username);
+    await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle('Purge all (channel recreated)').setDescription(`<@${i.user.id}> recreated **#${fresh.name}**: every message removed.`).setTimestamp());
+    await ctx.queue(() => fresh.send({ content: `🧹 This channel was cleared by a moderator.`, allowedMentions: NOPING })).catch(() => {});
+    return;
+  }
+  const job = { stop: false };
+  purges.set(ch.id, job);
+  await i.update({ content: '🧹 Purging… 0 deleted so far.', components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mpurge:stop:${owner}`).setLabel('Stop').setStyle(ButtonStyle.Secondary))] });
+  ctx.data.set(`purge:${owner}`, { channelId: ch.id, at: Date.now() }); // so Stop can find it
+  const until = Date.now() + 14 * 60000; let last = 0;
+  const r = await runPurge(ctx, ch, { amount: p.amount ?? Infinity, userId: p.userId, keepPinned: p.keepPinned, job,
+    onProgress: ({ deleted }) => { if (Date.now() - last > 5000 && Date.now() < until) { last = Date.now(); i.editReply({ content: `🧹 Purging… ${deleted.toLocaleString('en-US')} deleted so far.` }).catch(() => {}); } } }).finally(() => purges.delete(ch.id));
+  ctx.data.delete(`purge:${owner}`);
+  await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle('Purge').setDescription(`<@${i.user.id}> deleted **${r.deleted}** message(s) in <#${ch.id}>${p.userId ? ` from <@${p.userId}>` : ''}${r.stopped ? ' (stopped early)' : ''}.`).setTimestamp());
+  const text = `${r.stopped ? '⏹️ Stopped' : '✅ Done'}: deleted ${r.deleted.toLocaleString('en-US')} message(s) in <#${ch.id}>.`;
+  if (Date.now() < until) await i.editReply({ content: text, components: [] }).catch(() => {});
+  else await i.user.send({ content: text, allowedMentions: NOPING }).catch(() => {});
 }
 
 async function modLog(ctx, embed) {
@@ -664,21 +764,12 @@ const commands = [
   },
   {
     permission: 'moderation.purge',
-    data: new SlashCommandBuilder().setName('purge').setDescription('Delete recent messages in this channel')
-      .addIntegerOption((o) => o.setName('amount').setDescription('How many (1-100)').setRequired(true).setMinValue(1).setMaxValue(100))
-      .addUserOption((o) => o.setName('user').setDescription('Only delete this user\'s messages')),
-    async execute(ctx, i) {
-      await i.deferReply({ flags: EPH });
-      const amount = i.options.getInteger('amount', true);
-      const user = i.options.getUser('user');
-      if (!i.channel?.bulkDelete) throw new UserError("I can't purge in this kind of channel.");
-      let msgs = await i.channel.messages.fetch({ limit: 100 });
-      if (user) msgs = msgs.filter((m) => m.author.id === user.id);
-      const picked = [...msgs.values()].slice(0, amount);
-      const deleted = await i.channel.bulkDelete(picked, true);
-      await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle('Purge').setDescription(`<@${i.user.id}> deleted **${deleted.size}** message(s) in <#${i.channelId}>${user ? ` from <@${user.id}>` : ''}.`).setTimestamp());
-      await i.editReply({ content: `Deleted ${deleted.size} message(s). (Discord can't bulk-delete messages older than 14 days.)` });
-    },
+    data: new SlashCommandBuilder().setName('purge').setDescription('Delete messages in this channel: a number, one member\'s, or everything')
+      .addIntegerOption((o) => o.setName('amount').setDescription('How many (empty = all of them)').setMinValue(1).setMaxValue(100000))
+      .addUserOption((o) => o.setName('user').setDescription('Only this member\'s messages'))
+      .addStringOption((o) => o.setName('method').setDescription('How').addChoices({ name: 'Delete the messages (keeps the channel)', value: 'delete' }, { name: 'Recreate the channel: everything gone at once', value: 'recreate' }))
+      .addBooleanOption((o) => o.setName('keep_pinned').setDescription('Keep pinned messages (default yes)')),
+    execute: purgeCmd,
   },
   {
     permission: 'moderation.history',
@@ -795,7 +886,7 @@ export default {
     recentColumns: [{ key: 'when', label: 'When' }, { key: 'member', label: 'Member' }, { key: 'channel', label: 'Channel' }, { key: 'rule', label: 'Rule' }, { key: 'action', label: 'What happened' }, { key: 'preview', label: 'Message' }],
   }],
   commands,
-  components: [{ prefix: 'modq:', execute: modPopupSubmit }, modPipe.component],
+  components: [{ prefix: 'modq:', execute: modPopupSubmit }, { prefix: 'mpurge:', execute: purgeClick }, modPipe.component],
   events: {
     messageCreate: onMessage,
     messageDelete: onDelete,
