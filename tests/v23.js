@@ -139,6 +139,20 @@ export default async function runV23Tests({ test }) {
     w.dash.close();
   });
 
+  await test('security: the AutoMod page works for roles given AutoMod access, and nobody else', async () => {
+    const w = await world(['moderation']);
+    const role = w.role('900000000000000714');
+    const testCookie = w.session(w.tester);
+    const path = `/api/guilds/${G}/modules/moderation/actions/automod-test`;
+    w.db.permAdd(G, 'dashboard.access', role.id); w.tester.roles.cache.set(role.id, role);
+    assert.equal((await w.req('POST', path, { cookie: testCookie, body: { text: 'hi' } })).status, 403, 'dashboard access alone is not enough');
+    w.db.permAdd(G, 'moderation.automod', role.id);
+    const ok = await w.req('POST', path, { cookie: testCookie, body: { text: 'hi' } });
+    assert.equal(ok.status, 200); assert.ok(Array.isArray(ok.json().result.results));
+    assert.equal((await w.req('GET', `/api/guilds/${G}/modules/moderation/views/automodpage`, { cookie: testCookie })).status, 200);
+    w.dash.close();
+  });
+
   await test('security: the desktop sign-in link is refused when it arrives through a proxy or the shared link', async () => {
     const w = await world();
     w.mm.ownerIds.add(w.admin.id);

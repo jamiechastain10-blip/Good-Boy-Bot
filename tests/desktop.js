@@ -781,6 +781,9 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(html, /default-src 'none'/); assert.ok(!/<script>|unsafe-inline|unsafe-eval|https?:\/\/(?!cdn\.discordapp\.com;)/.test(html), 'no inline script; no outside address except Discord\'s image server');
     const app = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'app.js'), 'utf8');
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/.test(app));
+    // the shared 3.0 design system: same files as the dashboard, and no HTML strings in its script either
+    for (const f of ['liquid.css', 'liquid.js']) assert.ok(fs.readFileSync(path.join(root, 'desktop', 'renderer', f)).equals(fs.readFileSync(path.join(root, 'src', 'dashboard', 'public', f))), `run "npm run sync" in desktop/ after changing ${f}`);
+    assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/.test(fs.readFileSync(path.join(root, 'desktop', 'renderer', 'liquid.js'), 'utf8')));
     assert.doesNotMatch(app + html + main, new RegExp(['Eclip' + 'se', 'Clau' + 'de', 'Anthro' + 'pic'].join('|')));
   });
 

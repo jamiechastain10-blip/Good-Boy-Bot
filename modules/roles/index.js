@@ -45,29 +45,58 @@ async function menuForm(ctx, i) {
   return postMenu(ctx, i, { title: v.title, description: v.description, roles, type: v.style ?? 'buttons', mode: v.mode ?? 'toggle' });
 }
 
-async function postMenu(ctx, i, o) {
-  const guild = i.guild;
-  const roles = o.roles;
-  for (const r of roles) must(guild, r, i.member);
-  const type = o.type;
-  const mode = o.mode;
-  const embed = new EmbedBuilder().setColor(0x5865f2).setTitle(truncate(o.title, 200));
-  const desc = o.description;
-  if (desc) embed.setDescription(truncate(desc, 1500));
-  embed.setFooter({ text: mode === 'unique' ? 'Pick one - choosing another swaps it.' : 'Click to add or remove a role.' });
-
+/**
+ * The role menu message (2.3.2): a box listing each role with its emoji and how many members have it, and a button per
+ * role (or a dropdown). Counts are refreshed after people click. Used by /rolemenu and by /migrate when it replaces
+ * another bot's reaction-role message.
+ */
+export function buildMenu(guild, menu) {
+  const roles = menu.roleIds.map((id) => guild.roles.cache.get(id)).filter(Boolean);
+  const em = menu.emojis ?? {};
+  const count = (r) => r.members?.size ?? 0;
+  const lines = roles.map((r) => `${em[r.id] ? `${em[r.id]} ` : ''}<@&${r.id}> · **${count(r).toLocaleString('en-US')}** ${count(r) === 1 ? 'member' : 'members'}`);
+  const embed = new EmbedBuilder().setColor(menu.color ?? 0x4cc3ff).setTitle(truncate(menu.title || 'Pick your roles', 200))
+    .setDescription(truncate([menu.description, lines.join('\n')].filter(Boolean).join('\n\n'), 4000))
+    .setFooter({ text: menu.mode === 'unique' ? 'Pick one. Choosing another swaps it.' : 'Tap a button to add or remove a role. Tap again to take it off.' });
   let components;
-  if (type === 'dropdown') {
+  if (menu.type === 'dropdown') {
     components = [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('rolemenu:sel').setPlaceholder('Choose your roles')
-      .setMinValues(0).setMaxValues(mode === 'unique' ? 1 : roles.length)
-      .addOptions(roles.map((r) => ({ label: truncate(r.name, 100), value: r.id }))))];
+      .setMinValues(0).setMaxValues(menu.mode === 'unique' ? 1 : Math.min(25, roles.length))
+      .addOptions(roles.slice(0, 25).map((r) => { const o = { label: truncate(r.name, 100), value: r.id, description: `${count(r)} ${count(r) === 1 ? 'member' : 'members'}` }; if (em[r.id]) o.emoji = em[r.id]; return o; })))];
   } else {
-    components = chunk(roles, 5).map((row) => new ActionRowBuilder().addComponents(row.map((r) =>
-      new ButtonBuilder().setCustomId(`rolemenu:btn:${r.id}`).setLabel(truncate(r.name, 80)).setStyle(ButtonStyle.Secondary))));
+    components = chunk(roles.slice(0, 25), 5).map((row) => new ActionRowBuilder().addComponents(row.map((r) => {
+      const b = new ButtonBuilder().setCustomId(`rolemenu:btn:${r.id}`).setLabel(truncate(r.name, 80)).setStyle(ButtonStyle.Secondary);
+      if (em[r.id]) { const custom = /<(a?):(\w+):(\d+)>/.exec(em[r.id]); b.setEmoji(custom ? { id: custom[3], name: custom[2], animated: !!custom[1] } : em[r.id]); }
+      return b;
+    })));
   }
-  const msg = await i.channel.send({ embeds: [embed], components });
-  ctx.data.set(`menu:${msg.id}`, { roleIds: roles.map((r) => r.id), mode, type });
+  return { embeds: [embed], components, allowedMentions: NOPING };
+}
+
+/** Posts a role menu in a channel and remembers it. roles: [{ id, emoji? }] */
+export async function postRoleMenu(ctx, channel, { title, description, roles, type = 'buttons', mode = 'toggle', from = null }) {
+  const menu = { roleIds: roles.map((r) => r.id), emojis: Object.fromEntries(roles.filter((r) => r.emoji).map((r) => [r.id, r.emoji])), mode, type, title, description, from };
+  const msg = await ctx.queue(() => channel.send(buildMenu(channel.guild, menu)));
+  ctx.data.set(`menu:${msg.id}`, menu);
+  return msg;
+}
+
+async function postMenu(ctx, i, o) {
+  for (const r of o.roles) must(i.guild, r, i.member);
+  await postRoleMenu(ctx, i.channel, { title: o.title, description: o.description, roles: o.roles.map((r) => ({ id: r.id })), type: o.type, mode: o.mode });
   await i.reply({ content: `Role menu posted in <#${i.channelId}>.`, flags: EPH });
+}
+
+// Member counts on a menu are refreshed a few seconds after people click (at most once every 5 seconds per menu).
+const countTimers = new Map();
+function refreshCounts(ctx, message) {
+  if (countTimers.has(message.id)) return;
+  countTimers.set(message.id, setTimeout(async () => {
+    countTimers.delete(message.id);
+    const menu = ctx.data.get(`menu:${message.id}`);
+    if (menu) await ctx.queue(() => message.edit(buildMenu(message.guild, menu))).catch(() => {});
+  }, 5000));
+  countTimers.get(message.id).unref?.();
 }
 
 async function applyChoice(ctx, i, menu, wanted) {
@@ -106,6 +135,7 @@ async function menuClick(ctx, i) {
   }
   await i.deferReply({ flags: EPH });
   await i.editReply({ content: await applyChoice(ctx, i, menu, wanted), allowedMentions: NOPING });
+  refreshCounts(ctx, i.message);
 }
 
 // ------------------------------------------------------------------ reaction roles

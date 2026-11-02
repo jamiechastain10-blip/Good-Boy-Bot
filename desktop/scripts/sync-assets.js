@@ -1,7 +1,8 @@
 /**
  * Basic Ghost Labs - Good Boy
  * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
- * Copies the logo from the dashboard into the desktop window, so both always show the same one.
+ * Copies the logo and the shared 3.0 design system (liquid.css, liquid.js) from the dashboard into the desktop window,
+ * so both always look the same.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,4 +12,5 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const from = path.resolve(here, '..', '..', 'src', 'dashboard', 'public', 'good-boy-logo.png');
 if (!fs.existsSync(from)) { console.error(`Missing ${from}. Run this from inside the full Good Boy project.`); process.exit(1); }
 fs.copyFileSync(from, path.resolve(here, '..', 'renderer', 'good-boy-logo.png'));
-console.log('Logo copied into desktop/renderer.');
+for (const f of ['liquid.css', 'liquid.js']) fs.copyFileSync(path.join(path.dirname(from), f), path.resolve(here, '..', 'renderer', f));
+console.log('Logo and design system copied into desktop/renderer.');

@@ -1,6 +1,6 @@
 # Replacing other bots with Good Boy
 
-Good Boy 2.3 covers what Carl-bot, YAGPDB, Statbot and TTS Bot do. Medal stays for now (see `docs/ROADMAP-3.0.md`).
+Good Boy 2.3 covers what Carl-bot, YAGPDB, Statbot and TTS Bot do. Medal stays for now (see `docs/ROADMAP-CLIPPER.md`).
 
 ## Step by step
 1. Update to 2.3.

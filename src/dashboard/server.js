@@ -25,6 +25,8 @@ const STATIC = {
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
   '/glass.css': ['glass.css', 'text/css; charset=utf-8'],
+  '/liquid.css': ['liquid.css', 'text/css; charset=utf-8'],
+  '/liquid.js': ['liquid.js', 'text/javascript; charset=utf-8'],
   '/good-boy-logo.png': ['good-boy-logo.png', 'image/png'],
   '/favicon.ico': ['good-boy-logo.png', 'image/png'],
   // the phone app (iPhone: Add to Home Screen; Android: the Good Boy app opens /app)
@@ -160,8 +162,8 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
     // Server-wide destructive buttons (the ones that ask you to type a word, like RESET or KICK) are for admins only.
     if (kind === 'action' && mod?.panels?.some((p) => (p.globalActions ?? []).some((x) => x.action === name && x.confirmWord))) return false;
     return !!mod?.panels?.some((p) => p.permission && perms.check(a.member, p.permission) && (kind === 'view'
-      ? p.view === name
-      : [...(p.rowActions ?? []), ...(p.globalActions ?? [])].some((x) => x.action === name)));
+      ? p.view === name || (p.pageViews ?? []).includes(name)
+      : [...(p.rowActions ?? []), ...(p.globalActions ?? [])].some((x) => x.action === name) || (p.pageActions ?? []).includes(name)));
   }
 
   const sameOrigin = (req) => {

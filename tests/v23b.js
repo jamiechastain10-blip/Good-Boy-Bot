@@ -6,6 +6,7 @@
  * welcome back roles, "we miss you", and /migrate.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { PermissionFlagsBits as P } from 'discord.js';
 import { makeWorld } from './features.js';
 import { matchMessage } from '../modules/tags/index.js';
@@ -155,12 +156,15 @@ export default async function runV23bTests({ test }) {
       [stars.id, [cm(stars, `⭐ **4** <#${hello.id}>`), cm(stars, `⭐ **7** <#${hello.id}>`)]],
       [hello.id, [cm(hello, 'Welcome <@900000000000000507> to Test Guild!'), cm(hello, 'Welcome <@900000000000000508> to Test Guild!')]],
     ]);
-    for (const ch of [roles, logs, stars, hello]) ch.messages.fetch = async () => new Coll((feeds.get(ch.id) ?? []).map((x) => [x.id, x]));
+    for (const ch of [roles, logs, stars, hello]) {
+      for (const x of feeds.get(ch.id) ?? []) x.delete = async () => { x.deleted = true; };
+      ch.messages.fetch = async (o) => (typeof o === 'string' ? (feeds.get(ch.id) ?? []).find((x) => x.id === o) : new Coll((feeds.get(ch.id) ?? []).map((x) => [x.id, x])));
+    }
     const newbie = w.person('900000000000000509', { joinedDaysAgo: 0 }), newbie2 = w.person('900000000000000510', { joinedDaysAgo: 0 });
     guild.fetchAuditLogs = async () => ({ entries: new Coll([newbie, newbie2].map((n, k) => [String(k), { executorId: carl.id, targetId: n.id, createdTimestamp: n.joinedTimestamp + 2000, changes: [{ key: '$add', new: [{ id: artist.id }] }] }])) });
     const vc = w.channel('Members: 10'); vc.type = 2;
     guild.bans = { fetch: async () => new Coll([['x', { user: { id: '900000000000000511', tag: 'spammer#0' }, reason: 'Spam' }]]) };
-    assert.deepEqual(parseRolePairs(`🎮 : <@&${gamer.id}>\n🎨 Artist`, guild), [{ emojiKey: '🎮', roleId: gamer.id }, { emojiKey: '🎨', roleId: artist.id }]);
+    assert.deepEqual(parseRolePairs(`🎮 : <@&${gamer.id}>\n🎨 Artist`, guild), [{ emojiKey: '🎮', emoji: '🎮', roleId: gamer.id }, { emojiKey: '🎨', emoji: '🎨', roleId: artist.id }]);
     const res = await scanServer(guild);
     assert.deepEqual(res.bots.map((b) => b.name), ['Carl-bot']);
     const kinds = res.findings.map((f) => f.kind);
@@ -172,8 +176,12 @@ export default async function runV23bTests({ test }) {
     assert.equal(w.mm.ctx(G, 'moderation').config.get('logChannel') ?? null, null);
     for (const f of res.findings) await applyFinding(w.mm, G, f);
     const rr = w.mm.ctx(G, 'roles');
-    const rrMsg = res.findings.find((f) => f.kind === 'reactionroles').data.messageId;
-    assert.equal(rr.data.get(`rr:${rrMsg}:🎮`), gamer.id);
+    // the old reaction-role message is replaced by a Good Boy role menu in the same channel, keeping its heading
+    const menuPost = roles.sent.at(-1);
+    assert.equal(menuPost.embeds[0].data.title, 'Pick your roles!');
+    assert.match(menuPost.embeds[0].data.description, new RegExp(`🎮 <@&${gamer.id}> · \\*\\*0\\*\\* members`));
+    assert.equal(menuPost.components[0].components.length, 2, 'a button per role');
+    assert.ok(feeds.get(roles.id)[0].deleted, 'the old message is removed');
     assert.deepEqual(rr.data.get('autorole:members'), [artist.id]);
     assert.equal(w.mm.ctx(G, 'moderation').config.get('logChannel'), logs.id);
     assert.equal(w.mm.ctx(G, 'engagement').config.get('starboardChannel'), stars.id);
@@ -261,5 +269,102 @@ export default async function runV23bTests({ test }) {
     assert.match(lm.replies[0].embeds[0].data.fields[0].value, /^20/);
     const menu = w.ix({ command: 'Message stats', member: m }); menu.targetUser = m.user; await w.mm.handleCommand(menu);
     assert.match(menu.replies[0].embeds[0].data.title, /900000000000000524/);
+  });
+
+  console.log('\n2.3.2 role menus, migrate learning, AutoMod page');
+  await test('role menus: each role with its emoji and member count, a button per role, never pings', async () => {
+    const w = await makeWorld(['roles'], { guildId: G }).load();
+    const { buildMenu } = await import('../modules/roles/index.js');
+    const r1 = w.role('900000000000000530'); r1.name = 'Roblox'; r1.members = new Map([['a', {}], ['b', {}]]);
+    const r2 = w.role('900000000000000531'); r2.name = 'Fortnite'; r2.members = new Map([['a', {}]]);
+    const guild = w.person('900000000000000532').guild;
+    const msg = buildMenu(guild, { roleIds: [r1.id, r2.id], emojis: { [r1.id]: '1️⃣', [r2.id]: '<:fn:900000000000000533>' }, title: 'Game roles', description: 'Pick any', mode: 'toggle', type: 'buttons' });
+    const d = msg.embeds[0].data;
+    assert.equal(d.title, 'Game roles');
+    assert.match(d.description, /Pick any\n\n1️⃣ <@&900000000000000530> · \*\*2\*\* members\n<:fn:900000000000000533> <@&900000000000000531> · \*\*1\*\* member$/);
+    const buttons = msg.components[0].components.map((b) => b.data);
+    assert.deepEqual(buttons.map((b) => b.label), ['Roblox', 'Fortnite']);
+    assert.equal(buttons[1].emoji.id, '900000000000000533');
+    assert.deepEqual(msg.allowedMentions, { parse: [] }, 'listing roles never pings them');
+  });
+
+  await test('/migrate learns custom commands from chat (?ip answered by Carl-bot) and reports which commands people used', async () => {
+    const w = await makeWorld(['moderation'], { guildId: G }).load();
+    const carl = w.person('235148962103951360'); carl.user.bot = true; carl.user.username = 'Carl-bot';
+    const guild = carl.guild;
+    const general = w.channel('general');
+    const t0 = Date.now() - 86400000;
+    const um = (id, content, at) => ({ id, author: { id: '900000000000000540', bot: false }, content, embeds: [], createdTimestamp: at, reactions: { cache: new Coll() } });
+    const bm = (id, content, at, extra = {}) => ({ id, author: carl.user, content, embeds: [], createdTimestamp: at, reactions: { cache: new Coll() }, ...extra });
+    const msgs = [um('1', '?ip', t0), bm('2', 'play.boxboyz.net', t0 + 900, { reference: { messageId: '1' } }), um('3', '!rules', t0 + 5000), bm('4', '', t0 + 6000, { embeds: [{ title: 'Rules', description: 'Be nice' }] }),
+      um('5', '?rank', t0 + 9000), bm('6', 'You are level 5', t0 + 9500), bm('7', 'Your rank card', t0 + 20000, { interaction: { commandName: 'rank' } })];
+    general.messages.fetch = async () => new Coll(msgs.map((m) => [m.id, m]));
+    const res = await scanServer(guild);
+    const tags = res.findings.find((f) => f.kind === 'tags');
+    assert.deepEqual(tags.data.tags.map((t) => t.name).sort(), ['ip', 'rules'], 'learned ?ip and !rules, not the built-in ?rank');
+    assert.equal(tags.data.tags.find((t) => t.name === 'rules').response, '**Rules**\nBe nice');
+    const usage = res.findings.find((f) => f.kind === 'usage');
+    assert.ok(usage.info, 'a report, not something to import');
+    assert.match(usage.detail, /\/rank`? 1× → \*\*\/rank\*\*/);
+    await applyFinding(w.mm, G, tags);
+    const ctx = w.mm.ctx(G, 'tags');
+    assert.equal(ctx.data.get('cc:ip').response, 'play.boxboyz.net');
+    assert.equal(ctx.data.get('cc:ip').from, 'Carl-bot');
+  });
+
+  await test('AutoMod page: presets, one rule at a time, word and site lists, and a test that changes nothing', async () => {
+    const w = await makeWorld(['moderation'], { guildId: G }).load();
+    const actor = { userId: '900000000000000550', username: 'admin' };
+    const run = (a, body) => w.mm.runAction(G, 'moderation', a, body, actor);
+    await run('automod-preset', { preset: 'strict' });
+    let page = await w.mm.runView(G, 'moderation', 'automodpage');
+    assert.equal(page.preset, 'strict');
+    assert.ok(page.rules.every((r) => r.desc), 'every rule explains itself');
+    await run('automod-rule', { rule: 'caps', enabled: false });
+    await run('automod-rule', { rule: 'spam', limit: 7 });
+    page = await w.mm.runView(G, 'moderation', 'automodpage');
+    assert.equal(page.preset, 'custom', 'changing a rule makes it custom');
+    assert.equal(page.rules.find((r) => r.id === 'spam').limit, 7);
+    assert.equal(page.rules.find((r) => r.id === 'caps').on, false);
+    await run('automod-list', { list: 'words', op: 'add', value: 'freenitro' });
+    await run('automod-list', { list: 'domains', op: 'add', value: 'medal.tv' });
+    const t = (await run('automod-test', { text: 'get freenitro at https://scam.example and https://medal.tv/x' })).results;
+    assert.ok(t.find((x) => x.id === 'words').hit); assert.match(t.find((x) => x.id === 'links').why, /scam\.example/);
+    const clean = (await run('automod-test', { text: 'gg everyone, see https://medal.tv/clip' })).results;
+    assert.ok(clean.every((x) => !x.hit || !x.on), 'a normal message passes');
+    assert.equal((w.mm.ctx(G, 'moderation').data.get('automod:recent') ?? []).length, 0, 'testing records nothing');
+    await run('automod-list', { list: 'words', op: 'remove', value: 'freenitro' });
+    assert.ok(!(w.mm.ctx(G, 'moderation').config.get('bannedWords') ?? []).includes('freenitro'));
+    await assert.rejects(run('automod-set', { key: 'logChannel', value: '1' }), /not on this page/);
+  });
+
+  await test('big-win announcements: off by default; when on, only the chosen wins, one per member every 10 minutes (jackpots always)', async () => {
+    const { shouldShout } = await import('../modules/games/index.js');
+    const w = await makeWorld(['economy', 'games'], { guildId: G }).load();
+    const cfg = w.mm.ctx(G, 'games').config;
+    assert.equal(cfg.get('announceBigWins'), false, 'off unless an admin turns it on');
+    assert.equal(shouldShout({ announceBigWins: false, bigWinLevel: 'rare' }, 'jackpot', null), false);
+    const on = { announceBigWins: true, bigWinLevel: 'mythical' };
+    assert.equal(shouldShout(on, 'legendary', null), false, 'Legendary fish are not announced on the default level');
+    assert.equal(shouldShout(on, 'mythical', null), true);
+    const now = Date.now();
+    assert.equal(shouldShout(on, 'mythical', now - 60000, now), false, 'one per member every 10 minutes');
+    assert.equal(shouldShout(on, 'mythical', now - 11 * 60000, now), true);
+    assert.equal(shouldShout(on, 'jackpot', now - 1000, now), true, 'jackpots always');
+    assert.equal(shouldShout({ announceBigWins: true, bigWinLevel: 'jackpots' }, 'mythical', null), false);
+  });
+
+  console.log('\n2.3.2 design system');
+  await test('new look: one shared design system for the dashboard, phone page and app; motion stops when asked; dark dropdowns; island and new Modules page', () => {
+    const pub = (f) => fs.readFileSync(new URL(`../src/dashboard/public/${f}`, import.meta.url), 'utf8');
+    const css = pub('liquid.css'), js = pub('liquid.js'), app = pub('app.js');
+    for (const page of ['index.html', 'app.html']) { assert.match(pub(page), /liquid\.css/); assert.match(pub(page), /liquid\.js/); }
+    assert.match(fs.readFileSync(new URL('../desktop/renderer/index.html', import.meta.url), 'utf8'), /liquid\.css[\s\S]*liquid\.js/);
+    assert.match(css, /prefers-reduced-motion:reduce/); assert.match(css, /\.motion-off \*/);
+    assert.match(css, /select option\{background:var\(--gb-solid\)/, 'the open list of a dropdown is dark too');
+    assert.match(css, /@supports \(appearance: base-select\)/);
+    assert.ok(!/innerHTML/.test(js), 'no HTML strings');
+    for (const need of ['GB.island.mount', 'island.news(', 'renderModulePage', 'setupSheet', "'Needs setup'", 'Undo']) assert.ok(app.includes(need), need);
+    assert.ok(!/animation|@keyframes/.test(pub('style.css')), 'motion stays out of the layout stylesheet');
   });
 }

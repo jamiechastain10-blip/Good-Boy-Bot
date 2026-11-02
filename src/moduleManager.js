@@ -886,6 +886,7 @@ export class ModuleManager {
       values: this.getSettingValues(guildId, def.name),
       permissions: (def.permissions ?? []).map((p) => ({ key: p.key, label: p.label, default: p.default ?? 'admin', roles: this.db.permRoles(guildId, p.key) })),
       commands: (def.commands ?? []).map((c) => cmdJson(c).name),
+      commandInfo: (def.commands ?? []).map((c) => { const j = cmdJson(c); return { name: j.name, description: j.description ?? '', subs: (j.options ?? []).filter((o) => o.type === 1).map((o) => ({ name: o.name, description: o.description })) }; }),
       panels: def.panels ?? [],
     }));
   }
