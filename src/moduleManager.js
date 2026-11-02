@@ -20,6 +20,7 @@ import { Database } from './db.js';
 import { CORE_PERMISSIONS } from './permissions.js';
 import { loadSecret, packToken } from './modalpipe.js';
 import * as AP from './autopopup.js';
+import { publish } from './live.js';
 
 export const EPHEMERAL = 64; // MessageFlags.Ephemeral
 
@@ -27,6 +28,7 @@ export const EPHEMERAL = 64; // MessageFlags.Ephemeral
 export const EVENT_GUILD = {
   guildMemberAdd: (m) => m.guild?.id,
   guildMemberRemove: (m) => m.guild?.id,
+  guildMemberUpdate: (o, n) => n?.guild?.id ?? o?.guild?.id,
   messageCreate: (m) => m.guildId,
   messageDelete: (m) => m.guildId,
   messageDeleteBulk: (msgs, ch) => ch?.guild?.id,
@@ -300,6 +302,12 @@ export class ModuleManager {
       },
       queue: (fn, opts) => self.queue.run(name, fn, opts),
       backup: (label) => self.db.backup(`${name}-${label}`),
+      // Tell open dashboards something changed: ctx.live('data') refreshes this module's panels,
+      // ctx.live('activity', { icon, text }) adds a line to the live feed (never put message text in it).
+      live: (type = 'data', data = {}) => publish(guildId, type, { module: name, ...data }),
+      // Read-only facts about the installed modules (used by Bot news): a module's definition, and every module's name.
+      moduleDef: (other) => self.defs.get(other)?.def ?? null,
+      availableModules: () => [...self.defs.values()].map(({ def }) => ({ name: def.name, description: def.description ?? '' })),
       // Validated settings writes: the SAME path the dashboard and /config use, so commands and dashboard never disagree.
       settings: { set: (key, value, op = 'set') => self.setSetting(guildId, name, key, value, op) },
       sql: {
@@ -345,7 +353,7 @@ export class ModuleManager {
     const s = (def.settings ?? []).find((x) => x.key === key);
     if (!s) throw new UserError(`"${name}" has no setting called "${key}".`);
 
-    if (op === 'reset') { this.db.deleteConfig(guildId, name, key); return this.getSettingValues(guildId, name)[key]; }
+    if (op === 'reset') { this.db.deleteConfig(guildId, name, key); publish(guildId, 'settings', { module: name, key }); return this.getSettingValues(guildId, name)[key]; }
 
     let value;
     if (s.type === 'list') {
@@ -367,6 +375,7 @@ export class ModuleManager {
       }
     }
     this.db.setConfig(guildId, name, key, value);
+    publish(guildId, 'settings', { module: name, key });
     return value;
   }
 
@@ -452,6 +461,8 @@ export class ModuleManager {
     this.active.get(guildId).set(name, rec.def);
     this.db.setModuleState(guildId, name, true, rec.def.version);
     if (sync) this.scheduleSync(guildId);
+    publish(guildId, 'modules', { module: name, enabled: true });
+    publish(guildId, 'activity', { module: name, icon: '🟢', text: `${name} was turned on` });
   }
 
   dependentsOf(guildId, name) {
@@ -482,6 +493,8 @@ export class ModuleManager {
     for (const k of this.lastTask.keys()) if (k.startsWith(`${guildId}:${name}:`)) this.lastTask.delete(k);
     this.db.setModuleState(guildId, name, false, def.version);
     if (sync) this.scheduleSync(guildId);
+    publish(guildId, 'modules', { module: name, enabled: false });
+    publish(guildId, 'activity', { module: name, icon: '⬜', text: `${name} was turned off` });
   }
 
   /** Re-enable everything that was enabled before the bot last stopped, hosts before add-ons. */
@@ -777,7 +790,7 @@ export class ModuleManager {
     const def = this.active.get(guildId)?.get(name);
     const fn = def?.actions?.[action];
     if (!fn) throw new UserError('That action is not available.');
-    try { return await fn(this.ctx(guildId, name), body ?? {}, actor); }
+    try { const r = await fn(this.ctx(guildId, name), body ?? {}, actor); publish(guildId, 'data', { module: name }); return r; }
     catch (err) { if (!(err instanceof UserError)) this.recordError(name, guildId, `action ${action}`, err); throw err instanceof UserError ? err : new UserError('That action failed. The error was logged.'); }
   }
 

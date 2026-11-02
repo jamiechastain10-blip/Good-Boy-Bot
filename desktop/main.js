@@ -6,14 +6,14 @@
  * set up once, done. The token and other bot settings are kept encrypted by the operating system (safeStorage),
  * never in a plain .env file. Running from the source folder (no bundle) still works with a chosen Good Boy folder.
  */
-import { app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell, nativeImage, safeStorage, clipboard, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell, nativeImage, safeStorage, clipboard, powerSaveBlocker, Notification, nativeTheme } from 'electron';
 import QRCode from 'qrcode';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalize } from './lib/settings.js';
-import { checkBotDir, findNode, isSafeDashboardUrl, dashboardUrl, dashboardPort } from './lib/checks.js';
+import { checkBotDir, findNode, isSafeDashboardUrl, isDashboardWindowUrl, dashboardUrl, dashboardPort } from './lib/checks.js';
 import { BotRunner } from './lib/runner.js';
 import { Vault, SecretFile } from './lib/vault.js';
 import { parseEnv, safeBotSettings, looksLikeToken } from './lib/envfile.js';
@@ -23,7 +23,7 @@ import { runTool } from './lib/tools.js';
 import { verifyToken, verifySecret, addRedirectUri, linkFor, isSnowflake, appIdFromToken, redirectUriFor } from './lib/discord.js';
 import { takeControl } from './lib/takeover.js';
 import { Share, shareSettings, isTailscaleLink } from './lib/share.js';
-import { updateMode, channelFor, readLatest, latestApi, releasesPage } from './lib/updater.js';
+import { updateMode, channelFor, readLatest, latestApi, releasesPage, restartPlan } from './lib/updater.js';
 import { brandStatus, applyBrand, applyCustom } from './lib/brand.js';
 import { createLicense, verifyLicense, generateKeyPair, hasFeature, FEATURES } from './lib/license.js';
 import { signModule, verifyModule, moduleNameOf } from './lib/modsign.js';
@@ -121,7 +121,38 @@ const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.s
 const ready = () => folder.ok && nodeInfo.ok;
 
 function startBot() { if (!ready()) return false; runner.openedDashboard = false; return runner.start(); }
+/**
+ * 2.3: the full dashboard opens inside Good Boy, already signed in as the bot's owner. The running bot hands the app a
+ * one-time link over its private channel, so no Discord login (and no Client Secret) is needed on this computer.
+ * The window is sandboxed, has no access to the app's own functions, and only shows the dashboard: anything else
+ * opens in the browser. If the bot cannot give a link (an older bot, or it is not running) the browser is used.
+ */
+let dashWin = null;
 async function openDashboard() {
+  if (runner?.status().state === 'running') {
+    const r = await runner.control('dashboard-login', {}).catch(() => null);
+    if (r?.ok && isDashboardWindowUrl(r.url)) return openDashboardWindow(r.url);
+  }
+  return openDashboardInBrowser();
+}
+function openDashboardWindow(url) {
+  const allowed = new URL(url).origin;
+  if (dashWin && !dashWin.isDestroyed()) { dashWin.loadURL(url); dashWin.show(); dashWin.focus(); return; }
+  dashWin = new BrowserWindow({
+    width: 1320, height: 880, minWidth: 420, minHeight: 560, title: 'Good Boy · Dashboard', show: false, autoHideMenuBar: true,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#060C18' : '#EEF2F7', icon: path.join(here, 'renderer', 'brand', 'app-icon.png'),
+    webPreferences: { partition: 'persist:dashboard', contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
+  });
+  const ses = dashWin.webContents.session;
+  ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(false)); // the dashboard never needs camera, mic, location...
+  const external = (u) => { if (/^https:\/\//.test(u)) shell.openExternal(u); };
+  dashWin.webContents.setWindowOpenHandler(({ url: u }) => { external(u); return { action: 'deny' }; });
+  dashWin.webContents.on('will-navigate', (e, u) => { if (new URL(u).origin !== allowed) { e.preventDefault(); external(u); } });
+  dashWin.once('ready-to-show', () => dashWin.show());
+  dashWin.on('closed', () => { dashWin = null; });
+  dashWin.loadURL(url);
+}
+async function openDashboardInBrowser() {
   const u = dashboardUrl(folder.port);
   if (!isSafeDashboardUrl(u)) return;
   // Discord refuses the dashboard login unless this exact address is on the bot's Redirects list. Check first.
@@ -304,6 +335,9 @@ ipcMain.handle('gb:start', () => startBot());
 ipcMain.handle('gb:stop', () => runner.stop());
 ipcMain.handle('gb:restart', async () => { if (!ready()) return false; await runner.stop(); return startBot(); });
 ipcMain.handle('gb:open-dashboard', () => openDashboard());
+ipcMain.handle('gb:open-dashboard-browser', () => openDashboardInBrowser());
+// The Levels page: names and pictures come from the running bot (the database only has member numbers).
+ipcMain.handle('gb:levels', () => (runner?.status().state === 'running' ? runner.control('levels', {}) : { ok: false, error: 'The bot is not running.' }));
 ipcMain.handle('gb:recheck', () => { recheck(); return snapshot(); });
 ipcMain.handle('gb:summary', () => (prep.done ? runTool({ nodePath: nodePath(), botDir: botDir(), args: ['summary', dataDir()] }) : { ok: false, error: 'Still getting the bot ready.' }));
 ipcMain.handle('gb:chrome', (_e, dark) => setChrome(!!dark));
@@ -670,7 +704,7 @@ async function initUpdates() {
       autoUpdater.on('update-available', (i) => setU({ phase: 'downloading', version: i?.version ?? null, percent: 0 }));
       autoUpdater.on('update-not-available', () => setU({ phase: 'current', checkedAt: Date.now() }));
       autoUpdater.on('download-progress', (p) => setU({ phase: 'downloading', percent: p?.percent ?? null }));
-      autoUpdater.on('update-downloaded', (i) => { setU({ phase: 'ready', version: i?.version ?? U.version }); refreshTray(); });
+      autoUpdater.on('update-downloaded', (i) => { setU({ phase: 'ready', version: i?.version ?? U.version }); refreshTray(); scheduleRestart(); });
       autoUpdater.on('error', (e) => setU(noReleaseYet(e) ? { phase: 'none', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) }));
     } catch (e) { log(`updater unavailable: ${e.message}`); autoUpdater = null; U.mode = 'notify'; }
   }
@@ -692,7 +726,24 @@ async function checkUpdates() {
 }
 ipcMain.handle('gb:update-check', () => checkUpdates());
 ipcMain.handle('gb:update-open', () => { const u = U.url && U.url.startsWith('https://github.com/') ? U.url : releasesPage(); shell.openExternal(u); return true; });
+// Once an update has downloaded, warn for a minute and then restart by itself to install it (the bot is stopped
+// cleanly first and starts again with the app). "Later" puts it off; it then installs when the app is closed.
+let restartTimer = null;
+function scheduleRestart() {
+  clearTimeout(restartTimer);
+  const delay = restartPlan({ mode: U.mode, phase: U.phase, autoRestart: settings.autoRestartForUpdates, postponed: U.postponed });
+  if (delay == null) { setU({ restartAt: null }); return; }
+  setU({ restartAt: Date.now() + delay });
+  try {
+    if (Notification.isSupported()) new Notification({ title: `Good Boy ${U.version} is ready`, body: 'Good Boy restarts in 1 minute to finish the update. The bot is back online right after.' }).show();
+  } catch { /* notifications are optional */ }
+  restartTimer = setTimeout(() => { installUpdate().catch((e) => log(`automatic update restart failed: ${e.message}`)); }, delay);
+  restartTimer.unref?.();
+}
+ipcMain.handle('gb:update-later', () => { clearTimeout(restartTimer); setU({ restartAt: null, postponed: true }); return true; });
+
 async function installUpdate() {
+  clearTimeout(restartTimer);
   if (!autoUpdater || U.phase !== 'ready') return { ok: false, error: 'No update is ready yet.' };
   quitting = true;
   await runner?.stop();
@@ -707,6 +758,7 @@ async function applySettings(patch) {
   saveSettings();
   if (settings.startAtLogin !== before.startAtLogin) app.setLoginItemSettings({ openAtLogin: settings.startAtLogin, args: settings.startAtLogin ? ['--hidden'] : [] });
   if (settings.botDir !== before.botDir || settings.nodePath !== before.nodePath) { await runner?.stop(); recheck(); }
+  if (settings.autoRestartForUpdates !== before.autoRestartForUpdates && U.phase === 'ready') { U.postponed = false; scheduleRestart(); }
   send('state', snapshot());
   return snapshot();
 }

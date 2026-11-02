@@ -44,7 +44,11 @@ async function onMessage(ctx, message) {
     return cur;
   }, fresh());
 
-  if (counted && after > before) await levelUp(ctx, message, before, after);
+  if (counted) ctx.live?.('data', { panel: 'levels' });
+  if (counted && after > before) {
+    ctx.live?.('activity', { icon: '⭐', text: `${message.member?.displayName ?? message.author.username} reached level ${after}` });
+    await levelUp(ctx, message, before, after);
+  }
 }
 
 async function levelUp(ctx, message, from, to) {

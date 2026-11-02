@@ -354,7 +354,7 @@ const real = new ModuleManager({ db: new Database(':memory:'), perms: new Permis
 await real.discover(path.join(root, 'modules'));
 await test('every bundled module loads and validates', () => {
   assert.deepEqual([...real.loadErrors], [], 'load errors: ' + JSON.stringify([...real.loadErrors]));
-  const expected = ['achievements', 'community', 'deadchat', 'eclipseid', 'economy', 'engagement', 'games', 'integrations', 'member-management', 'moderation', 'partyfinder', 'quotes', 'reminders', 'roles', 'stats', 'support', 'support-html-transcripts', 'tempvoice', 'voice'];
+  const expected = ['achievements', 'botnews', 'clips', 'community', 'deadchat', 'eclipseid', 'economy', 'engagement', 'games', 'integrations', 'member-management', 'messages', 'moderation', 'partyfinder', 'quotes', 'reminders', 'roles', 'stats', 'support', 'support-html-transcripts', 'tags', 'tempvoice', 'voice'];
   assert.deepEqual([...real.defs.keys()].sort(), expected);
 });
 await test('bundled modules stay under Discord command limits when all enabled', () => {
@@ -518,6 +518,8 @@ console.log('\nBundled modules - behaviour with simulated Discord events');
 
 await (await import('./features.js')).default({ test, rejectsWith });
 await (await import('./v22.js')).default({ test, rejectsWith });
+await (await import('./v23.js')).default({ test, rejectsWith });
+await (await import('./v23b.js')).default({ test, rejectsWith });
 await (await import('./update.js')).default({ test, rejectsWith });
 await (await import('./desktop.js')).default({ test, rejectsWith });
 await (await import('./defer.js')).default({ test, rejectsWith });

@@ -21,6 +21,14 @@ import * as F from '../../src/fishing.js';
 import { UserError, sleep } from '../../src/util.js';
 
 const EPH = MessageFlags.Ephemeral;
+// Game results are private to the player by default: a public message per play notified everyone following the channel.
+const vis = (ctx) => (ctx.config.get('privateGames') ? { flags: EPH } : {});
+/** One public line for a big moment (jackpot, huge win, rare fish). Names only, never a ping. */
+function shout(ctx, i, text) {
+  if (!ctx.config.get('privateGames') || !ctx.config.get('announceBigWins') || !i.channel?.send) return;
+  ctx.queue(() => i.channel.send({ content: text, allowedMentions: NOPING })).catch(() => {});
+}
+const nameOf = (i) => `**${String(i.member?.displayName ?? i.user.globalName ?? i.user.username).replace(/[*_`~|>@]/g, '')}**`;
 const NOPING = { parse: [] };
 const SESSION_MAX_MS = 10 * 60000;
 const COLORS = { slots: 0xe91e63, blackjack: 0x2ecc71, coinflip: 0xf1c40f, fish: 0x1abc9c, lose: 0xed4245, push: 0x95a5a6 };
@@ -93,6 +101,9 @@ function playSlots(ctx, userId, bet) {
     record(ctx, userId, 'slots', bet, payout);
     result = { ...spin, payout, jackpotWon: jackpot, bet, balance: eco(ctx).wallet(ctx.guildId, userId).coins };
   });
+  const who = eco(ctx).wallet(ctx.guildId, userId).name ?? 'Someone';
+  if (result.jackpotWon) ctx.live('activity', { icon: '💥', text: `${who} hit the slots JACKPOT` });
+  else if (result.payout >= bet * 20) ctx.live('activity', { icon: '🎰', text: `${who} won ${result.multiplier}x on slots` });
   return result;
 }
 
@@ -115,10 +126,12 @@ function againRow(i, game, bet, label) {
 async function runSlots(ctx, i, bet, { update = false } = {}) {
   const r = playSlots(ctx, i.user.id, bet); // decided and paid now; the animation below only reveals it
   const first = { embeds: [slotsEmbed(ctx, r, 0)], components: [], allowedMentions: NOPING };
-  if (update) await i.update(first); else await i.reply(first);
+  if (update) await i.update(first); else await i.reply({ ...first, ...vis(ctx) });
   for (const stopped of [1, 2]) { await sleep(frameMs()); await i.editReply({ embeds: [slotsEmbed(ctx, r, stopped)] }).catch(() => {}); }
   await sleep(frameMs());
   await i.editReply({ embeds: [slotsEmbed(ctx, r, 3)], components: [againRow(i, 'slots', bet, 'Spin again')] }).catch(() => {});
+  if (r.jackpotWon) shout(ctx, i, `💥 ${nameOf(i)} hit the slots **JACKPOT** and won ${money(ctx, r.payout)}!`);
+  else if (r.payout >= bet * 20) shout(ctx, i, `🎰 ${nameOf(i)} won **${r.multiplier}x** on slots (${money(ctx, r.payout)})!`);
 }
 
 // ------------------------------------------------------------------ coin flip
@@ -132,7 +145,7 @@ async function runFlip(ctx, i, bet, side, { update = false } = {}) {
     res = { landed, payout, balance: eco(ctx).wallet(ctx.guildId, i.user.id).coins };
   });
   const spinning = new EmbedBuilder().setColor(COLORS.coinflip).setTitle('🪙 Coin flip').setDescription(`You called **${side}** for ${money(ctx, bet)}...\n# 🪙 *flipping*`);
-  if (update) await i.update({ embeds: [spinning], components: [] }); else await i.reply({ embeds: [spinning], allowedMentions: NOPING });
+  if (update) await i.update({ embeds: [spinning], components: [] }); else await i.reply({ embeds: [spinning], allowedMentions: NOPING, ...vis(ctx) });
   await sleep(frameMs() * 1.5);
   const won = res.payout > 0;
   const done = new EmbedBuilder().setColor(won ? COLORS.coinflip : COLORS.lose).setTitle('🪙 Coin flip')
@@ -183,7 +196,7 @@ async function startBlackjack(ctx, i, bet, { update = false } = {}) {
     balance = eco(ctx).wallet(ctx.guildId, i.user.id).coins;
   });
   const msg = { embeds: [bjEmbed(ctx, s, balance)], components: bjButtons(i, id, s, bet), allowedMentions: NOPING };
-  return update ? i.update(msg) : i.reply(msg);
+  return update ? i.update(msg) : i.reply({ ...msg, ...vis(ctx) });
 }
 async function blackjackClick(ctx, i, id, action) {
   let s, balance;
@@ -243,7 +256,7 @@ async function cast(ctx, i, setup, { update = false } = {}) {
     saveSession(ctx, id, i.user.id, 'fish', s);
   });
   const msg = { embeds: [reelEmbed(ctx, s)], components: reelButtons(id), allowedMentions: NOPING };
-  return update ? i.update(msg) : i.reply(msg);
+  return update ? i.update(msg) : i.reply({ ...msg, flags: EPH }); // fishing menus were already private
 }
 
 const rarityHint = (r) => ({ legendary: '✨ Something **huge** is fighting back!', mythical: '🌟 The water is glowing... this is no ordinary fish.' }[r] ?? '🐟 Something bit!');
@@ -297,6 +310,11 @@ async function reelClick(ctx, i, id, action) {
   const e = new EmbedBuilder().setTitle(`${b.emoji} ${b.label}`);
   if (s.status === 'caught') {
     const r = F.rarityById(s.fish.rarity);
+    if (['legendary', 'mythical'].includes(s.fish.rarity) || s.fish.mutation) {
+      ctx.live('activity', { icon: '🎣', text: `${i.member?.displayName ?? i.user.username} caught a ${s.fish.mutation ? `${F.MUTATIONS[s.fish.mutation].label} ` : ''}${F.FISH[s.fish.species].name} (${r.label})` });
+      shout(ctx, i, `🎣 ${nameOf(i)} caught a ${s.fish.mutation ? `${F.MUTATIONS[s.fish.mutation].label} ` : ''}**${F.FISH[s.fish.species].name}** (${r.label})!`);
+    }
+    ctx.live('data');
     e.setColor(s.fish.mutation === 'corrupted' ? 0x2c2f33 : r.color)
       .setDescription([`🎉 You caught a ${fishLine(s.fish)}!`, `Worth ${money(ctx, s.fish.value)} · +${landed.xp} XP`,
         landed.after > landed.before ? `⬆️ **Fishing level ${landed.after}!**${unlockText(landed.before, landed.after)}` : null].filter(Boolean).join('\n'));
@@ -430,7 +448,7 @@ function dexMessage(ctx, i) {
 }
 
 async function hubClick(ctx, i, owner, view) {
-  if (owner !== i.user.id) return i.reply({ ...hubMessage(ctx, i), content: 'That menu belongs to someone else, so here is your own.' });
+  if (owner !== i.user.id) return i.reply({ ...hubMessage(ctx, i), content: 'That menu belongs to someone else, so here is your own.', flags: EPH });
   if (view === 'again') return cast(ctx, i, lastSetup(profile(ctx, i.user.id)), { update: false });
   if (view === 'bag') return i.update(bagMessage(ctx, i));
   if (view === 'shop') return i.update(shopMessage(ctx, i));
@@ -570,6 +588,8 @@ export default {
   name: 'games',
   version: '1.0.0',
   description: 'Slots, blackjack, coin flip and fishing, played with economy coins',
+  memberIntroTitle: 'Games are open',
+  memberIntro: 'Play with your coins: **/slots** (with a server-wide jackpot), **/blackjack** and **/coinflip**. Or go **/fish**: cast in different places, catch rare and giant fish, fill your collection and upgrade your rod.',
   dependencies: [{ module: 'economy', version: '>=1.0.0' }],
   settings: [
     { key: 'slotsEnabled', type: 'toggle', label: 'Slots', default: true },
@@ -578,6 +598,8 @@ export default {
     { key: 'fishingEnabled', type: 'toggle', label: 'Fishing', default: true },
     { key: 'minBet', type: 'number', label: 'Smallest bet', default: 10, min: 1, max: 1000000 },
     { key: 'maxBet', type: 'number', label: 'Biggest bet', default: 50000, min: 1, max: 100000000 },
+    { key: 'privateGames', type: 'toggle', label: 'Only the player sees their game (keeps the channel quiet)', default: true },
+    { key: 'announceBigWins', type: 'toggle', label: 'Post a short public line for jackpots, 20x+ wins and rare fish (no pings)', default: true },
     { key: 'jackpotSeed', type: 'number', label: 'Jackpot pool starts at', default: 5000, min: 0, max: 100000000 },
     { key: 'jackpotPercent', type: 'number', label: 'Share of each slots bet added to the jackpot (%)', default: 3, min: 0, max: 20 },
   ],

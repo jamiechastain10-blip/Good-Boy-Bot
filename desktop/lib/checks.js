@@ -49,6 +49,12 @@ export function dashboardPort(envText) {
 export const dashboardUrl = (port) => `http://localhost:${port}`;
 
 /** Only our own dashboard (loopback, http) may be opened from the app. Anything else is refused. */
+/** The in-app dashboard window may show the dashboard on this computer, or through the owner's own Tailscale link. */
+export function isDashboardWindowUrl(u) {
+  if (isSafeDashboardUrl(u)) return true;
+  try { const x = new URL(String(u)); return x.protocol === 'https:' && x.hostname.endsWith('.ts.net') && !x.username && !x.password; } catch { return false; }
+}
+
 export function isSafeDashboardUrl(u) {
   try {
     const x = new URL(String(u));

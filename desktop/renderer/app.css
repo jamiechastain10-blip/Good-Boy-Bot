@@ -223,3 +223,4 @@ img.mini{width:26px;height:26px;object-fit:contain;flex:none}
 .qrrow{gap:16px;align-items:center}
 .qr{flex:none;width:180px;height:180px;border-radius:12px;background:#fff;padding:8px;image-rendering:pixelated}
 .group.steps{margin-top:10px}
+img.avatar{object-fit:cover;background:var(--field)}

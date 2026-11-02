@@ -22,9 +22,28 @@ const vars = (m) => ({ user: `<@${m.id}>`, username: m.user.username, server: m.
 const channelOf = (ctx, key) => { const id = ctx.config.get(key); const c = id ? ctx.guild?.channels.cache.get(id) : null; return c?.isTextBased?.() ? c : null; };
 
 // ------------------------------------------------------------------ welcome / goodbye
+// Welcome back (2.3): roles are remembered when someone leaves (or is kicked) and given back if they rejoin within
+// the set number of days. Staff roles and anything powerful are never given back automatically.
+export function rolesToRemember(ctx, member) {
+  const skip = new Set([member.guild.id, ctx.config.get('unverifiedRole')].filter(Boolean));
+  return [...(member.roles?.cache?.values?.() ?? [])].filter((r) => !skip.has(r.id) && !roleGrantProblem(member.guild, r, null, P)).map((r) => r.id);
+}
+async function restoreRoles(ctx, member) {
+  if (!ctx.config.get('restoreRoles') || member.user?.bot) return false;
+  const saved = ctx.data.get(`left:${member.id}`);
+  ctx.data.delete(`left:${member.id}`);
+  if (!saved || Date.now() - saved.at > ctx.config.get('restoreRolesDays') * 86400000) return false;
+  const roles = saved.roles.map((id) => member.guild.roles.cache.get(id)).filter((r) => r && !roleGrantProblem(member.guild, r, null, P));
+  if (!roles.length) return false;
+  await member.roles.add(roles, 'Welcome back: roles they had before leaving').catch((e) => ctx.log.warn(`Welcome back roles: ${e.message}`));
+  return true;
+}
+
 async function onJoin(ctx, member) {
+  const back = await restoreRoles(ctx, member);
   const unverified = ctx.config.get('unverifiedRole');
-  if (unverified && ctx.config.get('verificationRole')) await member.roles.add(unverified, 'Awaiting verification').catch((e) => ctx.log.warn(`Could not add unverified role: ${e.message}`));
+  // Someone who got their roles back was verified before, so they don't get the unverified role again.
+  if (!back && unverified && ctx.config.get('verificationRole')) await member.roles.add(unverified, 'Awaiting verification').catch((e) => ctx.log.warn(`Could not add unverified role: ${e.message}`));
   if (!ctx.config.get('welcomeEnabled')) return;
   const ch = channelOf(ctx, 'welcomeChannel');
   if (!ch) return;
@@ -33,6 +52,10 @@ async function onJoin(ctx, member) {
 }
 
 async function onLeave(ctx, member) {
+  if (ctx.config.get('restoreRoles') && !member.user?.bot) {
+    const roles = rolesToRemember(ctx, member);
+    if (roles.length) ctx.data.set(`left:${member.id}`, { roles, at: Date.now() });
+  }
   const prof = ctx.data.get(`profile:${member.id}`);
   if (prof?.roleId) { await member.guild.roles.cache.get(prof.roleId)?.delete('Member left').catch(() => {}); ctx.data.delete(`profile:${member.id}`); }
   ctx.data.delete(`afk:${member.id}`);
@@ -371,6 +394,8 @@ export default {
     { key: 'welcomeEnabled', type: 'toggle', label: 'Send welcome messages', default: false },
     { key: 'welcomeChannel', type: 'channel', label: 'Welcome channel' },
     { key: 'welcomeMessage', type: 'text', label: 'Welcome message', description: '{user} {username} {server} {count}', default: 'Welcome {user} to **{server}**! You are member #{count}.' },
+    { key: 'restoreRoles', type: 'toggle', label: 'Welcome back: give members their roles back if they leave and rejoin (never staff roles)', default: true },
+    { key: 'restoreRolesDays', type: 'number', label: 'Welcome back: remember roles for this many days', default: 180, min: 1, max: 3650 },
     { key: 'goodbyeEnabled', type: 'toggle', label: 'Send goodbye messages', default: false },
     { key: 'goodbyeChannel', type: 'channel', label: 'Goodbye channel' },
     { key: 'goodbyeMessage', type: 'text', label: 'Goodbye message', description: '{username} {server} {count}', default: '**{username}** has left the server.' },

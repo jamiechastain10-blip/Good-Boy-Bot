@@ -116,8 +116,8 @@ function memberRows(list, max, wide = false) {
   if (!list?.length) return el('div', { class: 'group' }, el('div', { class: 'empty' }, sum?.empty ? 'No server data yet. Once the bot is running, members earn XP as they chat.' : 'No one has earned XP yet.'));
   return el('div', { class: 'group' }, list.slice(0, max).map((m, i) => el('div', { class: 'row' },
     el('span', { class: 'rank' }, i + 1),
-    el('span', { class: 'avatar', style: { background: AVATAR[i % AVATAR.length] } }, m.id.slice(-2)),
-    el('div', { class: 'two' }, el('span', { class: 'lab' }, `Member …${m.id.slice(-4)}`), el('span', { class: 'bar', style: wide ? { width: '240px' } : {} }, el('i', { style: { width: `${Math.round((m.into / m.needed) * 100)}%` } }))),
+    m.avatar ? el('img', { class: 'avatar', src: m.avatar, alt: '' }) : el('span', { class: 'avatar', style: { background: AVATAR[i % AVATAR.length] } }, (m.name ?? m.id).slice(0, 2)),
+    el('div', { class: 'two' }, el('span', { class: 'lab' }, m.name ?? `Member …${m.id.slice(-4)}`), el('span', { class: 'bar', style: wide ? { width: '240px' } : {} }, el('i', { style: { width: `${Math.round((m.into / m.needed) * 100)}%` } }))),
     wide ? el('span', { class: 'meta', style: { marginLeft: 'auto', whiteSpace: 'nowrap' } }, `${num(m.into)} of ${num(m.needed)} XP to level ${m.level + 1}`) : null,
     el('div', { class: 'lvl', style: wide ? { marginLeft: '24px', width: '100px' } : {} }, el('b', {}, `Level ${m.level}`), el('small', {}, `${num(m.xp)} XP`)))));
 }
@@ -162,20 +162,20 @@ const PAGES = {
     return [el('h1', {}, 'Overview'), el('p', { class: 'sub' }, sum?.guild?.name ?? 'Your Discord bot, running on this computer.'),
       el('div', { class: 'cols' },
         el('div', {}, statusCard(), probs.map((p) => el('p', { class: 'problem' }, p)), el('div', { class: 'section-title' }, 'Top members'), memberRows(sum?.members, 5),
-          sum?.members?.length ? el('p', { class: 'note' }, 'Members are shown by the end of their Discord ID. The dashboard shows their names.') : null),
+          sum?.members?.length && !sum.named ? el('p', { class: 'note' }, 'Start the bot to see members\' names and pictures.') : null, dashboardCallout()),
         el('div', {}, el('div', { class: 'section-title' }, 'Modules'), moduleRows(6), el('div', { class: 'section-title' }, 'This computer'),
           el('div', { class: 'group' }, opt('startBotWithApp', 'Start the bot when Good Boy opens'), opt('startAtLogin', 'Open Good Boy when I sign in'), opt('closeAction', 'Keep running when I close the window', true))))];
   },
   levels() {
     return [el('h1', {}, 'Levels'), el('p', { class: 'sub' }, sum?.memberCount ? `${num(sum.memberCount)} members have earned XP${sum.guild ? ` in ${sum.guild.name}` : ''}.` : 'Members earn XP as they chat.'),
-      memberRows(sum?.members, 50, true), sum?.memberCount > 50 ? el('p', { class: 'note' }, `Showing the top 50 of ${num(sum.memberCount)}.`) : null];
+      memberRows(sum?.members, 50, true), sum?.memberCount > 50 ? el('p', { class: 'note' }, `Showing the top 50 of ${num(sum.memberCount)}.`) : null, dashboardCallout('Give or take XP, reset levels and set level rewards in the dashboard.')];
   },
   modules() {
     const running = S.bot.state === 'running';
     const add = async () => { const r = await gb.moduleAdd(); if (r.cancelled) return; if (!r.ok) return toast(r.error, true); toast(r.later ? `${prettyModule(r.name)} was added. It loads the next time the bot starts.` : `${prettyModule(r.name)} was added. Turn it on below.`); refreshModules(true); };
     return [el('div', { class: 'titlerow' }, el('div', {}, el('h1', {}, 'Modules'), el('p', { class: 'sub' }, running ? `Features for ${MOD.live?.guildName ?? 'your server'}. Switch them on or off here.` : 'Start the bot to switch modules on or off.')),
         el('div', { class: 'actions' }, el('button', { class: 'btn', onclick: add }, 'Add module...'), has('licenses') ? el('button', { class: 'btn quiet', onclick: async () => { const r = await gb.moduleSign(); if (r.cancelled) return; toast(r.ok ? `Signed ${r.name}. Anyone's Good Boy can now add it.` : r.error, !r.ok); } }, 'Sign a module...') : null)),
-      moduleRows(999),
+      moduleRows(999), dashboardCallout('Every module\'s settings, panels and permissions are in the dashboard.'),
       el('p', { class: 'note' }, S.edition.id === 'consumer' ? 'For safety, only modules signed by Basic Ghost Labs can be added. A module is code that runs inside your bot.' : 'A module is code that runs inside your bot. Only add modules you trust.')];
   },
   log() {
@@ -185,13 +185,14 @@ const PAGES = {
   },
   updates() {
     const u = S.update ?? { phase: 'off' };
-    const text = { off: 'Updates are checked by the installed app.', idle: 'Checking soon after Good Boy opens.', checking: 'Checking for updates...', downloading: `Downloading version ${u.version ?? ''}${u.percent != null ? ` (${Math.round(u.percent)}%)` : ''}...`, ready: `Version ${u.version} is downloaded and ready.`, available: `Version ${u.version} is out.`, current: 'You have the latest version.', none: 'No version has been published yet, so there is nothing to update to.', error: `Could not check: ${u.error ?? 'unknown problem'}` }[u.phase] ?? '';
+    const text = { off: 'Updates are checked by the installed app.', idle: 'Checking soon after Good Boy opens.', checking: 'Checking for updates...', downloading: `Downloading version ${u.version ?? ''}${u.percent != null ? ` (${Math.round(u.percent)}%)` : ''}...`, ready: u.restartAt ? `Version ${u.version} is ready. Good Boy restarts by itself ${new Date(u.restartAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} to install it (the bot is back right after).` : `Version ${u.version} is downloaded and ready.`, available: `Version ${u.version} is out.`, current: 'You have the latest version.', none: 'No version has been published yet, so there is nothing to update to.', error: `Could not check: ${u.error ?? 'unknown problem'}` }[u.phase] ?? '';
     const tag = { current: ['tag ok', 'Up to date'], none: ['tag off', 'Nothing published'], ready: ['tag ok', 'Ready'], downloading: ['tag wait', 'Downloading'], checking: ['tag wait', 'Checking'], available: ['tag wait', 'New version'], error: ['tag off', 'Problem'], off: ['tag off', 'Off'], idle: ['tag off', 'Waiting'] }[u.phase] ?? ['tag off', ''];
-    const how = u.mode === 'auto' ? 'New versions download by themselves and install when you restart Good Boy. Your settings, token and server data are kept.'
+    const how = u.mode === 'auto' ? (S.settings.autoRestartForUpdates ? 'New versions download by themselves; Good Boy then restarts after a 1-minute warning to install them. Your settings, token and server data are kept.' : 'New versions download by themselves and install when you restart Good Boy. Your settings, token and server data are kept.')
       : u.mode === 'notify' ? (S.edition.id === 'owner' ? 'The Owner build is not published, so it tells you when a new version is out. Ask for the new Owner build.' : 'This copy cannot replace itself (portable or Mac), so it tells you when a new version is out and opens the download page.')
         : 'Running from source: no update checks.';
     const actions = [];
-    if (u.phase === 'ready') actions.push(el('button', { class: 'btn', onclick: async () => { const r = await gb.updateInstall(); if (!r.ok) toast(r.error, true); } }, 'Restart and update'));
+    if (u.phase === 'ready') actions.push(el('button', { class: 'btn', onclick: async () => { const r = await gb.updateInstall(); if (!r.ok) toast(r.error, true); } }, u.restartAt ? 'Restart now' : 'Restart and update'));
+    if (u.phase === 'ready' && u.restartAt) actions.push(el('button', { class: 'btn quiet', onclick: async () => { await gb.updateLater(); toast('Postponed. The update installs the next time Good Boy closes.'); } }, 'Later'));
     if (u.phase === 'available') actions.push(el('button', { class: 'btn', onclick: () => gb.updateOpen() }, 'Get the new version'));
     if (u.mode !== 'off' && !['checking', 'downloading', 'ready'].includes(u.phase)) actions.push(el('button', { class: 'btn quiet', onclick: async () => { await gb.updateCheck(); } }, 'Check now'));
     return [el('h1', {}, 'Updates'), el('p', { class: 'sub' }, 'Good Boy checks GitHub for new versions. The bot and dashboard update together with the app.'),
@@ -211,7 +212,7 @@ const PAGES = {
     return [el('h1', {}, 'Settings'), el('p', { class: 'sub' }, 'How Good Boy looks and runs on this computer.'),
       el('div', { class: 'cols' },
         el('div', {}, el('div', { class: 'section-title' }, 'Appearance'), el('div', { class: 'group' }, el('div', { class: 'row' }, el('span', { class: 'lab' }, 'Look'), el('span', { class: 'val' }, themeSeg))),
-          el('div', { class: 'section-title' }, 'This computer'), el('div', { class: 'group' }, opt('startBotWithApp', 'Start the bot when Good Boy opens'), opt('startAtLogin', 'Open Good Boy when I sign in'), opt('closeAction', 'Keep running when I close the window', true), opt('dashboardOnStart', 'Open the dashboard when the bot is running')),
+          el('div', { class: 'section-title' }, 'This computer'), el('div', { class: 'group' }, opt('startBotWithApp', 'Start the bot when Good Boy opens'), opt('startAtLogin', 'Open Good Boy when I sign in'), opt('closeAction', 'Keep running when I close the window', true), opt('dashboardOnStart', 'Open the dashboard when the bot is running'), opt('autoRestartForUpdates', 'Restart by itself to install updates (after a 1-minute warning)')),
           S.bundled ? brandGroup() : null, S.bundled && S.edition.id !== 'owner' ? licenceGroup() : null),
         el('div', {}, S.bundled ? [el('div', { class: 'section-title' }, 'Bot'), el('div', { class: 'group' },
           el('div', { class: 'row inset' }, tile('key', 'amber'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Bot token'), el('span', { class: 'meta' }, S.secure ? 'Saved, encrypted by this computer' : 'This computer cannot encrypt it')), el('span', { class: 'val' }, el('span', { class: v?.hasToken ? 'tag ok' : 'tag wait' }, v?.hasToken ? 'Saved' : 'Missing'))),
@@ -572,7 +573,23 @@ async function refreshSummary() {
   if (!S || S.setupNeeded) { render(); return; }
   const r = await gb.summary();
   if (r?.ok) sum = r;
+  // The database only knows member numbers; the running bot knows names and pictures.
+  if (sum?.members?.length && S.bot.state === 'running') {
+    const l = await gb.levels().catch(() => null);
+    if (l?.ok) {
+      const byId = new Map(l.rows.map((x) => [x.id, x]));
+      sum = { ...sum, named: true, members: sum.members.map((m) => ({ ...m, name: byId.get(m.id)?.name, avatar: byId.get(m.id)?.avatar })) };
+    }
+  }
   render();
+}
+
+/** The way into everything the desktop screens do not cover. Opens inside Good Boy, already signed in. */
+function dashboardCallout(text = 'Settings for every module, the Levels, AutoMod and ticket panels, permissions and live activity.') {
+  const on = S?.bot?.state === 'running';
+  return el('div', { class: 'callout' }, el('b', {}, 'Manage everything in the dashboard'), el('p', {}, on ? text : 'Start the bot to open the dashboard.'),
+    el('div', { class: 'row-btns' }, el('button', { class: 'btn', disabled: !on, onclick: () => gb.openDashboard() }, 'Open dashboard'),
+      el('button', { class: 'btn quiet', disabled: !on, onclick: () => gb.openDashboardBrowser() }, 'In my browser')));
 }
 
 gb.onState((s) => { const was = S?.bot?.state; S = s; if (s.bot.state !== 'running') MOD.live = null; if (s.bot.state !== was && s.bot.state === 'running') toast('The bot is online.'); if (was === 'running' && s.bot.state === 'failed') toast(s.bot.error || 'The bot stopped.', true); refreshSummary(); });

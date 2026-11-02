@@ -45,7 +45,7 @@ export function describe(u) {
     case 'off': return 'Updates are checked in the installed app.';
     case 'checking': return 'Checking for updates...';
     case 'downloading': return `Downloading version ${u.version}${u.percent != null ? ` (${Math.round(u.percent)}%)` : ''}...`;
-    case 'ready': return `Version ${u.version} is ready. Restart Good Boy to finish.`;
+    case 'ready': return u.restartAt ? `Version ${u.version} is ready. Good Boy restarts in a moment to finish.` : `Version ${u.version} is ready. Restart Good Boy to finish.`;
     case 'available': return `Version ${u.version} is out.`;
     case 'current': return 'You have the latest version.';
     // No release at all yet: say so, instead of claiming this is the latest (it hides a publishing problem).
@@ -53,4 +53,11 @@ export function describe(u) {
     case 'error': return `Could not check for updates: ${u.error}`;
     default: return 'Not checked yet.';
   }
+}
+
+/** How long to wait before restarting by itself once an update is ready (null = do not restart by itself). */
+export const RESTART_DELAY_MS = 60000;
+export function restartPlan({ mode, phase, autoRestart = true, postponed = false }) {
+  if (mode !== 'auto' || phase !== 'ready' || !autoRestart || postponed) return null;
+  return RESTART_DELAY_MS;
 }
