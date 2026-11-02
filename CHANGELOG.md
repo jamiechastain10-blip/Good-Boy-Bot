@@ -1,5 +1,91 @@
 # Changelog
 
+## 2.3.0
+**Everything is live, and other people can test the dashboard.**
+
+<!-- members -->
+- **Clips:** share your best plays in the clips channel (upload a video or paste a link). Vote with 🔥, the top clips go to Best clips, and every Monday the **clip of the week** wins coins. See the best ones with `/clips top`.
+- **Quieter games:** slots, blackjack, coin flip, fishing, `/daily`, `/balance` and `/top` are now only shown to you, so playing no longer pings the channel. Jackpots and rare fish still get a shout-out.
+- **Fishing Wiki:** every place, fish, rod, bait and tip, in one guide.
+- **Live dashboard:** if you have been given access, changes show up as they happen, and the **💬 Feedback** button tells the admins what is broken, confusing or great.
+<!-- /members -->
+
+**The dashboard updates by itself**
+- Open dashboards hear about changes the moment they happen: a module switched on or off, a setting changed (from Discord, the app or another dashboard), XP gained, coins moved, an AutoMod catch, a ticket, a moderation case.
+- Changed rows in the tables light up, new ones slide in, and numbers give a little bump. A **Live** chip at the top shows the connection and the bot's response time.
+- **Live activity** on the overview: level-ups, AutoMod catches, moderation actions, daily streaks, jackpots, rare fish and dead chat pings, as they happen. It never shows what anyone wrote.
+- The member and voice counts and the uptime refresh every 15 seconds.
+- If something changes while you are filling in a form, nothing is yanked away: a banner offers to show the latest instead.
+
+**Testers**
+- A **Testers** card on the overview: pick the testers' role and give it access to the dashboard (or access plus every tool) in one click, and copy the link to send them. If the link only works on your computer, it says so and points to Settings > Dashboard link in the app.
+- Everyone gets a **💬 Feedback** button: "something is broken", "confusing", "idea" or "I like this", plus what happened. It records which page they were on.
+- Admins see every report under **Tester feedback**, and new ones arrive live.
+
+**Desktop app**
+- **The full dashboard opens inside Good Boy**, already signed in as you: no Discord login and no Client Secret needed on your own computer. Every module's settings, every panel, permissions, live activity and tester feedback. **In my browser** is still there if you prefer it.
+- The **Levels** and **Overview** pages show members' real **names and pictures** (from the running bot) instead of the end of their ID.
+- **Updates finish by themselves.** Once a new version has downloaded, the app shows a one-minute countdown and a Windows notification, then restarts to install it. The bot is stopped cleanly and is back as soon as the app reopens. **Restart now** skips the wait, **Later** puts it off until you close Good Boy, and Settings > This computer can turn it off. (Updating to 2.3 itself still needs one restart, because 2.2 doesn't have this yet.)
+
+**Replace your other bots (Carl-bot, YAGPDB, Statbot, TTS Bot)**
+- **`/migrate scan`** looks at what the other bots left in your server and offers to set it up in Good Boy: reaction-role messages (Good Boy takes over the existing messages), log channels, starboard, welcome and goodbye messages (with their wording), roles given on join (from the audit log), counter channels and the ban list (copied into `/modhistory`). Nothing changes until you pick what to import. Step by step: `docs/REPLACING-OTHER-BOTS.md`.
+- **`/migrate tags`**: paste custom commands from another bot and they work straight away.
+- **Custom commands and auto-replies (new tags module)**: `?rules`, `!ip`, or replies when a message is, starts with or contains a phrase. Replies can use {user} {username} {server} {channel} {args}, never ping anyone, and have a cooldown per channel. `/tags add`, `/tags list`, `/tags remove`, and a dashboard list. The prefixes are a setting (`?` and `!` by default) so old habits keep working.
+- **Server logs**: members joining and leaving (with account age and roles), role changes, nickname changes, voice joins/leaves/moves. Each can be turned on, in their own channel or the mod log.
+- **`/say send` and `/say edit` (new messages module)**: post as Good Boy (plain or in a box with title, colour and picture) and change it later. Never pings.
+- **Sticky messages**: `/sticky set` keeps a message at the bottom of a channel, reposted after a pause (at most every 30 seconds) with the old copy removed.
+- **Counter channels**: `/counter add` turns a voice channel's name into a live number ({members} {humans} {bots} {online} {boosts} {voice}), updated every 10 minutes.
+- **Activity charts** on the dashboard's Stats page: messages per day, busiest hours, members joining per day.
+- **Welcome back**: roles are remembered when someone leaves (or is kicked) and given back if they rejoin within 180 days. Staff roles and anything powerful never come back automatically.
+- **"We miss you"**: optional message a week before the monthly review to members who are about to be listed as inactive.
+
+**Clips (new module)**
+- Point it at your clips channel with **/clips setup**. Medal's **Send to Discord** button keeps working: MedalBot's "@Member shared a clip" post is credited to the member it mentions. Pasted clip links (Medal, YouTube, Twitch, Streamable, Outplayed, Allstar, TikTok) count too, credited to whoever pasted them. Normal chat in the channel is left alone.
+- **Uploaded videos count too**, so you don't need Medal at all: clips saved with Steam, NVIDIA, AMD, Xbox Game Bar, OBS or a phone can be dropped straight into the channel. When one reaches Best clips, Good Boy uploads the file again (if it fits Discord's limit), because Discord's file links stop working after a while.
+- Good Boy adds a 🔥 vote reaction to every clip. Votes from bots and the clip's owner don't count.
+- With enough votes (5 by default), the clip is reposted to a **Best clips** channel with its playable video, once.
+- **Clip of the week**: every Monday the most-voted clip of last week is announced and its owner wins 1,000 coins.
+- 25 coins for sharing a clip (the first 3 a day), when the economy module is on.
+- **/clips top** (this week, this month, all time); "Clips shared" and "Clip votes" boards in `/top`; a Top clips box in the dashboard. All amounts and the emoji can be changed.
+
+**Bot news (new module)**
+- Every time Good Boy is updated, the **admin channel** gets the full notes for each new version, and the **announcements** channel gets only the part meant for members (if that version has one). Several updates at once are posted oldest first.
+- When an update brings a **new module**, the admin channel is told it is available. When a module is **turned on or off**, the admin channel hears about it.
+- The first time a member feature is turned on (economy, games, dead chat ping), announcements get a short intro telling members how to use it. Only once per feature.
+- Optional role ping for member news. Each of the four kinds of post can be switched off. Nothing is posted twice, and turning Bot news on posts nothing about the past.
+- Set it up with **/botnews setup** (pick the two channels), check it with **/botnews test**, or change it from the dashboard.
+
+**Quieter games**
+- Slots, blackjack, coin flip, fishing, `/daily`, `/balance` and `/top` now answer privately: only the player sees them. Before, every play was a new public message, which notified everyone following the channel.
+- Big moments still show: a jackpot, a 20x+ slots win or a legendary, mythical or mutated fish posts one short public line with the player's name (never a ping).
+- Admins can switch either back in the games and economy settings.
+
+**Message history (stats)**
+- `/stats backfill` no longer gets stuck on "thinking". It used to count inside the command, and a big server took longer than the 15 minutes Discord allows. It now runs in the background: you get an answer straight away, the private reply shows live progress, and the bot **messages you when it's done** (or posts in the channel if your DMs are closed). `/stats coverage` shows the progress too.
+- Leave **days** empty to count **all time**, back to the server's first message. The old 5,000-per-channel and 50,000-total caps are gone.
+- Threads and forum posts are counted too, both active and archived.
+- Counted history now shows up everywhere: pick **all time** in `/stats me`, `/stats top` or `/stats server` (it used to be called "since tracking began"), and once history has been counted that is the default. New periods: **last 90 days** and **last year**.
+- New **Active members** box in the dashboard's Stats page: every member with activity, when they were last active, messages and voice in the last 30 days, all-time messages (live and counted history together), and whether they are still in the server.
+- If the bot restarts mid-count, it starts the count again by itself. A second `/stats backfill` while one is running just shows the progress.
+
+**Monthly inactive-member clean-up (stats)**
+- **`/stats inactive`** lists members with no messages, voice time or reactions in the last 30 days (or any number you pick). Members who were never active come first, then whoever has been quiet longest, with when they joined. Live and backfilled history both count.
+- Never listed: bots, the owner, staff (anyone who can kick, ban, manage the server or is an admin), roles you exempt, and anyone who joined less than the window ago.
+- Kick from the list: pick members from a dropdown or press **Kick all**, then confirm. Every member is checked again just before the kick, so someone who spoke in the meantime is skipped. By default they get a friendly message first ("You're welcome back any time!"), which you can change or turn off.
+- The same list is on the dashboard (Stats > **Inactive members**), with a Kick button per row and **Kick everyone listed** (type KICK to confirm).
+- **Monthly activity review**: pick a staff channel and on the 1st of each month the bot posts how many members have gone quiet, with a link to the list.
+- If activity has been tracked for less time than the window, the list says so, because "never active" might just mean "before tracking began". Run `/stats backfill` first for an accurate list.
+- New permission "See inactive members and kick them" (admins by default).
+
+**Safety**
+- **Tester access, "every tool" is now "every read-only box".** One click only gives boxes that just show information. Boxes with buttons (kick, reset XP, AutoMod switches) or private information (tickets, the watch log) are never handed out in one click; admins can still give them on the Permissions page.
+- **Server-wide destructive buttons are admin-only**, whatever roles have been given: the ones that ask you to type a word (Reset everyone, Kick everyone listed).
+- **The desktop app's sign-in link is refused if it arrives through the shared dashboard link** or any proxy, not just from other computers.
+- **Clips only downloads from Discord's own file servers** when reposting an uploaded video.
+- The in-app dashboard window is sandboxed and can't reach the app's own functions. It only shows the dashboard; any other link opens in your browser.
+- The desktop sign-in uses a one-time link (48 random characters, works once, for one minute) that only the running bot hands to the app.
+- The live stream needs the same sign-in and permissions as the rest of the dashboard.
+
 ## 2.2.0
 **The first test build for the update system.** 2.2 is a big change on purpose: two new modules, a new way commands collect input, and new database tables. Use it to check that an update can be installed, rolled back and hot-reloaded while people are in the middle of using the bot. Step-by-step: `docs/V2.2-TEST-PLAN.md`. Nothing here has been tried on real Discord yet.
 

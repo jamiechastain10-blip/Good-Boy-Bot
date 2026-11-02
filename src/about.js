@@ -41,7 +41,8 @@ export function parseChangelog(text) {
 
 /** Markdown for one changelog section, trimmed to fit a Discord embed (max 4000 characters) without cutting a line in half. */
 export function sectionForDiscord(section, max = 3800) {
-  const body = section.body.replace(/^\*\*(.+?)\*\*$/gm, '__**$1**__');
+  // The <!-- members --> markers are for Bot news; Discord would show them as text.
+  const body = section.body.replace(/<!--\s*\/?members\s*-->\n?/gi, '').replace(/^\*\*(.+?)\*\*$/gm, '__**$1**__');
   if (body.length <= max) return body;
   const cut = body.slice(0, max);
   return cut.slice(0, cut.lastIndexOf('\n')).trimEnd() + '\n…\n*(Shortened. The full list is in CHANGELOG.md.)*';

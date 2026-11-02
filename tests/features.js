@@ -3091,8 +3091,98 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     await backfill(w.ctx(), { days: 7, perChannel: 8 });
     assert.match(embedOf(await w.stats(w.b, 'me', { period: '7d' })), /Messages\n9 \(9 backfilled\)/);
     assert.match((await w.stats(w.a, 'backfill', { days: 3 })).text(), /permission/);
-    const ok = await w.stats(w.admin, 'backfill', { days: 3 });
-    assert.match(ok.text(), /Done/);
+    // With counted history, the default period is all time, and the dashboard lists every active member with both kinds together.
+    assert.match(embedOf(await w.stats(w.b, 'me')), /Messages\n9 \(9 backfilled\)/, 'no period picked: all time once history is counted');
+    const v = await w.mm.runView('1', 'stats', 'members');
+    const b = v.rows.find((r) => r.id === 'sb');
+    assert.equal(b.total, 9, 'backfilled and live messages in one list'); assert.match(b.last, /today|yesterday|days ago/);
+  });
+
+  await test('backfill runs in the background: answers at once, counts all time including threads, refuses a second run, DMs the result', async () => {
+    const w = await stWorld();
+    const now = Date.now();
+    const feed = (ch, list) => {
+      const msgs = list.map(([uid, ageD], n) => ({ id: `${ch.id}-${n}`, createdTimestamp: now - ageD * 86400000, author: { id: uid, bot: false } }));
+      ch.messages.fetch = async (o = {}) => {
+        await new Promise((r) => setTimeout(r, 5));
+        let pool = [...msgs].sort((x, y) => y.createdTimestamp - x.createdTimestamp);
+        if (o.before) { const ref = msgs.find((m) => m.id === o.before); pool = pool.filter((m) => m.createdTimestamp < ref.createdTimestamp); }
+        return new Coll(pool.slice(0, o.limit ?? 50).map((m) => [m.id, m]));
+      };
+    };
+    feed(w.chat, [['sa', 1], ['sa', 900], ['sb', 2000]]); // up to 5 years old
+    const thread = { id: '800000000000009999', name: 'old-thread', isTextBased: () => true, messages: {}, parentId: w.chat.id };
+    feed(thread, [['sb', 400]]);
+    w.chat.threads = { fetchArchived: async ({ type }) => ({ threads: new Coll(type === 'public' ? [[thread.id, thread]] : []), hasMore: false }) };
+    w.ctx().data.set('coverage', { trackingSince: now - 1000 });
+    const admin = w.admin; admin.user.sent = []; w.client.users.fetch = async (id) => (id === admin.id ? admin.user : null);
+    const first = await w.stats(admin, 'backfill', {});
+    assert.match(first.text(), /Started counting message history \(\*\*all time\*\*/);
+    const { backfillRunning } = await import('../modules/stats/index.js');
+    assert.ok(backfillRunning('1'), 'the job is running after the command has answered');
+    assert.match((await w.stats(admin, 'backfill', {})).text(), /Already counting/);
+    assert.match((await w.stats(admin, 'coverage')).text(), /Counting history/);
+    for (let k = 0; k < 200 && backfillRunning('1'); k++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(backfillRunning('1'), null, 'finished');
+    assert.match(String(admin.user.sent.at(-1)?.content), /Message history counted.*4 messages/s, 'all four messages, including the 5-year-old one and the thread');
+    assert.equal(w.ctx().data.get('backfillJob'), undefined, 'nothing left to resume');
+  });
+
+  await test('inactive members: who went quiet, never staff, bots, exempt roles or newcomers; kick asks first, re-checks and DMs', async () => {
+    const w = await stWorld();
+    w.ctx().data.set('coverage', { trackingSince: Date.now() - 100 * 86400000 });
+    const kicked = [];
+    const kickable = (m) => Object.assign(m, { kickable: true, kick: async () => { kicked.push(m.id); m.guild.members.cache.delete(m.id); } });
+    const quiet = kickable(w.person('900000000000000801'));                       // joined 400 days ago, never active
+    const old = kickable(w.person('900000000000000802'));                         // last active 60 days ago
+    const recent = kickable(w.person('900000000000000803'));                      // active today
+    const newbie = kickable(w.person('900000000000000804', { joinedDaysAgo: 3 })); // too new to judge
+    const mod = kickable(w.person('900000000000000805', { bits: [P.KickMembers] }));
+    const vip = kickable(w.person('900000000000000806')); vip.roles.cache.set('900000000000000899', { id: '900000000000000899' });
+    w.mm.setSetting('1', 'stats', 'inactiveExemptRoles', ['900000000000000899']);
+    for (const m of [w.a, w.b, w.c]) kickable(m);
+    await w.say(old, w.chat, Date.now() - 60 * 86400000); await w.say(recent); await w.say(w.a); await w.say(w.b); await w.say(w.c);
+    const first = await w.mm.runView('1', 'stats', 'inactive');
+    assert.deepEqual(first.rows.map((r) => r.id), [quiet.id, old.id], 'never active first, then the longest quiet');
+    assert.equal(first.rows[0].last, 'never');
+    assert.doesNotMatch(first.note, /only been tracked/);
+    const list = await w.stats(w.admin, 'inactive', {});
+    const embed = list.edits[0].embeds[0].data;
+    assert.match(embed.title, /Inactive for 30\+ days · 2 members/);
+    assert.match(embed.description, /no activity on record/);
+    assert.match((await w.stats(w.a, 'inactive', {})).text(), /permission/, 'members cannot see it');
+    // pick one, confirm, it is kicked and told why
+    const sel = w.ix({ customId: `st:ik:${w.admin.id}:30`, member: w.admin }); sel.values = [old.id];
+    await w.mm.handleComponent(sel);
+    assert.match(sel.updated.content, /Kick \*\*1\*\* member/);
+    assert.deepEqual(kicked, [], 'nothing happens before Yes');
+    const steal = w.ix({ customId: `st:ic:${w.admin.id}`, member: w.a }); await w.mm.handleComponent(steal);
+    assert.match(steal.text(), /belongs to someone else/);
+    const yes = w.ix({ customId: `st:ic:${w.admin.id}`, member: w.admin }); await w.mm.handleComponent(yes);
+    assert.deepEqual(kicked, [old.id]);
+    assert.match(String(old.user.sent.at(-1)?.content), /haven't been active for 30 days/);
+    assert.match(yes.edits.at(-1).content, /Kicked \*\*1\*\*/);
+    // the dashboard re-checks: someone who became active is skipped
+    await w.say(quiet);
+    const r = await w.mm.runAction('1', 'stats', 'inactive-kick', { userId: quiet.id }, { userId: w.admin.id, username: 'admin' });
+    assert.deepEqual([r.kicked, r.skipped], [0, 1]);
+    await assert.rejects(w.mm.runAction('1', 'stats', 'inactive-kick-all', {}, { userId: w.admin.id, username: 'admin' }), /Type KICK/);
+    const v = await w.mm.runView('1', 'stats', 'inactive');
+    assert.equal(v.rows.length, 0, 'nobody left to clean up');
+  });
+
+  await test('inactive members: warns when tracking is shorter than the window; monthly review posts once a month', async () => {
+    const w = await stWorld();
+    w.ctx().data.set('coverage', { trackingSince: Date.now() - 5 * 86400000 });
+    assert.match((await w.mm.runView('1', 'stats', 'inactive')).note, /only been tracked for 5 days/);
+    const staff = w.channel('staff'); w.mm.setSetting('1', 'stats', 'reviewChannel', staff.id);
+    const task = w.mm.active.get('1').get('stats').tasks.find((t) => t.name === 'review');
+    await task.run(w.ctx()); assert.equal(staff.sent.length, 0, 'first run starts the clock');
+    w.ctx().data.set('lastReviewMonth', '2000-01');
+    await task.run(w.ctx()); assert.equal(staff.sent.length, 1);
+    assert.match(staff.sent[0].embeds[0].data.title, /Monthly activity review/);
+    assert.match(staff.sent[0].embeds[0].data.description, /only been tracked for \*\*5 days\*\*/);
+    await task.run(w.ctx()); assert.equal(staff.sent.length, 1, 'once a month');
   });
 
   await test('weekly recap: first run only starts the clock, the next week posts once, personal recaps need opt-in', async () => {

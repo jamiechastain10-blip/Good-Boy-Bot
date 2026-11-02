@@ -8,6 +8,7 @@ import { EPHEMERAL, cmdJson } from './moduleManager.js';
 import { CATEGORIES } from './notifications.js';
 import { readChangelog, sectionForDiscord } from './about.js';
 import { modulesCommand, modulePopupCommand, configPopupCommand } from './modulepanel.js';
+import { migrateCommand } from './migrate.js';
 
 const STATUS_ICON = { healthy: '🟢', warning: '🟡', failing: '🔴' };
 const NO_PINGS = { parse: [] };
@@ -183,5 +184,5 @@ const notificationsCommand = {
   },
 };
 
-export const builtins = [modulePopupCommand, modulesCommand, configPopupCommand, permissionsCommand, notificationsCommand, healthCommand, helpCommand, aboutCommand, whatsNewCommand];
+export const builtins = [modulePopupCommand, modulesCommand, configPopupCommand, permissionsCommand, notificationsCommand, healthCommand, helpCommand, aboutCommand, whatsNewCommand, migrateCommand];
 export { cmdJson };

@@ -80,6 +80,17 @@ async function control(action, p = {}) {
     if (!extraModules) return { ok: false, error: 'Adding modules is not set up for this bot.' };
     return { ok: true, ...(await manager.loadNew(extraModules)) };
   }
+  if (action === 'dashboard-login') {
+    if (!dashboard?.localLogin) return { ok: false, error: 'The dashboard is not running.' };
+    return dashboard.localLogin();
+  }
+  if (action === 'levels') {
+    // The desktop app's Levels page: the same list as the dashboard, with names and pictures from Discord.
+    const g = pickGuild();
+    if (!g) return { ok: false, error: 'The bot is not in a server yet.' };
+    if (!manager.isActive(g.id, 'community')) return { ok: false, error: 'Community is off in this server.' };
+    return { ok: true, guildId: g.id, guildName: g.name, ...(await manager.runView(g.id, 'community', 'levels')) };
+  }
   return { ok: false, error: 'Unknown request.' };
 }
 const queue = new ApiQueue();

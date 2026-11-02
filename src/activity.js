@@ -21,7 +21,7 @@ export function weekStartKey(ms, offsetHours = 0) {
 }
 
 /** Periods people can ask for. Returns the first day (inclusive) to count, or null for "all time". */
-export const PERIODS = { '7d': 7, '30d': 30, all: null };
+export const PERIODS = { '7d': 7, '30d': 30, '90d': 90, '365d': 365, all: null };
 export function periodStart(period, now, offsetHours = 0) {
   if (!(period in PERIODS)) throw new Error(`Unknown period "${period}".`);
   return PERIODS[period] == null ? null : addDays(dayKey(now, offsetHours), -(PERIODS[period] - 1));

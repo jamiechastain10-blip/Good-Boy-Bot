@@ -424,6 +424,42 @@ export default async function ({ test }) {
     assert.ok(handler.indexOf('verifySecret') < handler.indexOf('vault.merge'), 'checked before it is saved');
   });
 
+  await test('2.3: the dashboard opens inside the app, signed in by a one-time link from the running bot, in a locked-down window', async () => {
+    const C = await import('../desktop/lib/checks.js');
+    assert.ok(C.isDashboardWindowUrl('http://127.0.0.1:3000/login/local?t=x'));
+    assert.ok(C.isDashboardWindowUrl('https://my-pc.tail1234.ts.net/login/local?t=x'), 'the owner\'s own Tailscale link');
+    for (const bad of ['https://evil.example.com/', 'http://my-pc.tail1234.ts.net/', 'file:///etc/passwd', 'https://user:pw@x.ts.net/']) assert.ok(!C.isDashboardWindowUrl(bad), bad);
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    const open = main.slice(main.indexOf('async function openDashboard()'), main.indexOf('async function openDashboardInBrowser'));
+    assert.match(open, /runner\.control\('dashboard-login'/, 'asks the running bot for the link');
+    assert.match(open, /isDashboardWindowUrl\(r\.url\)/, 'and only opens addresses it trusts');
+    assert.match(open, /sandbox: true/); assert.match(open, /contextIsolation: true/); assert.match(open, /nodeIntegration: false/);
+    assert.ok(!/preload/.test(open), 'the dashboard window gets no access to the app');
+    assert.match(open, /setPermissionRequestHandler\(\(_wc, _perm, cb\) => cb\(false\)\)/);
+    assert.match(open, /will-navigate/); assert.match(open, /setWindowOpenHandler/);
+    const bot = fs.readFileSync(path.join(root, 'src', 'index.js'), 'utf8');
+    assert.match(bot, /action === 'dashboard-login'/); assert.match(bot, /action === 'levels'/);
+    const r = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'app.js'), 'utf8');
+    assert.match(r, /gb\.levels\(\)/, 'the Levels page asks the bot for names');
+  });
+
+  await test('after an update downloads, the installed app warns for a minute and restarts by itself (unless turned off or put off)', async () => {
+    const U = await import('../desktop/lib/updater.js');
+    const S = await import('../desktop/lib/settings.js');
+    assert.equal(U.restartPlan({ mode: 'auto', phase: 'ready' }), 60000);
+    assert.equal(U.restartPlan({ mode: 'auto', phase: 'ready', autoRestart: false }), null, 'switched off in Settings');
+    assert.equal(U.restartPlan({ mode: 'auto', phase: 'ready', postponed: true }), null, 'Later was pressed');
+    assert.equal(U.restartPlan({ mode: 'notify', phase: 'ready' }), null, 'portable, Mac and Owner builds cannot replace themselves');
+    assert.equal(U.restartPlan({ mode: 'auto', phase: 'downloading' }), null, 'not before the download finished');
+    assert.equal(S.normalize({}).autoRestartForUpdates, true, 'on by default');
+    assert.equal(S.normalize({ autoRestartForUpdates: false }).autoRestartForUpdates, false);
+    const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
+    assert.match(main, /'update-downloaded'[^\n]*scheduleRestart\(\)/, 'a finished download schedules the restart');
+    const inst = main.slice(main.indexOf('async function installUpdate'), main.indexOf("ipcMain.handle('gb:update-install'"));
+    assert.ok(inst.indexOf('runner?.stop()') < inst.indexOf('quitAndInstall'), 'the bot is stopped cleanly before the app restarts');
+    assert.match(inst, /quitAndInstall\(true, true\)/, 'and the app opens again after installing');
+  });
+
   await test('levels files: export holds only XP and messages; merge keeps everyone\'s higher level, twice is harmless, full import refuses it', async () => {
     const id = (n) => String(900000000000000000n + BigInt(n));
     const live = tmp(); const db = new Database(path.join(live, 'eclipse.db'));
@@ -728,7 +764,7 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
     const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
     const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'updateCheck', 'updateInstall', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'levels', 'openDashboardBrowser', 'updateCheck', 'updateInstall', 'updateLater', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
     assert.match(main, /const ownerOnly = \(\) =>/); for (const h of ['gb:lic-keygen', 'gb:lic-create', 'gb:lic-revoke']) assert.match(main.slice(main.indexOf(`'${h}'`), main.indexOf(`'${h}'`) + 200), /ownerOnly\(\)/, `${h} only works in the Owner version`);
     assert.ok(!/privateKey/.test(main.slice(main.indexOf("'gb:lic-state'"), main.indexOf("'gb:lic-keygen'"))), 'the signing key is never sent to the window');
     assert.match(main, /url && url\.startsWith\('https:\/\/discord\.com\/'\)/, 'setup only ever opens discord.com pages');

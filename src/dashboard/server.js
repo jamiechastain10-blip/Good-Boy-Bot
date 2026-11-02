@@ -10,6 +10,7 @@
  * secrets, codes or tokens) is written to the log. Visit /auth/diagnose to see the exact values to configure.
  */
 import http from 'node:http';
+import { subscribe, publish, recentActivity } from '../live.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -78,6 +79,8 @@ export async function startDashboard({ manager, client, db, logger, perms, dataD
   const secret = process.env.DISCORD_CLIENT_SECRET?.trim().replace(/^["']|["']$/g, '');
   const legalDataDir = dataDir ?? process.env.GOODBOY_DATA_DIR ?? null;
   const sessions = new Map();
+  const localTokens = new Map(); // one-time sign-in links for the desktop app on this computer
+  const liveConns = new Map();   // session id -> open live streams
   const states = new Map();
   const hookHits = new Map();
   let base = normalizeBase(process.env.DASHBOARD_BASE_URL, port); // refined below if the OS picks the port
@@ -154,6 +157,8 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
   function panelAllows(a, moduleName, kind, name) {
     if (a.access === 'admin') return true;
     const mod = manager.describeForGuild(a.guild.id).find((d) => d.name === moduleName && d.enabled);
+    // Server-wide destructive buttons (the ones that ask you to type a word, like RESET or KICK) are for admins only.
+    if (kind === 'action' && mod?.panels?.some((p) => (p.globalActions ?? []).some((x) => x.action === name && x.confirmWord))) return false;
     return !!mod?.panels?.some((p) => p.permission && perms.check(a.member, p.permission) && (kind === 'view'
       ? p.view === name
       : [...(p.rowActions ?? []), ...(p.globalActions ?? [])].some((x) => x.action === name)));
@@ -301,6 +306,27 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       return send(res, 302, '', { Location: '/', 'Set-Cookie': [`gb_sid=${sid}; ${attrs}; Max-Age=${SESSION_MS / 1000}`, `gb_state=; ${attrs}; Max-Age=0`], 'Cache-Control': 'no-store' });
     }
 
+    // The desktop app runs the bot, so it may open the dashboard already signed in as the bot's owner. It asks the bot
+    // (over its private channel) for a one-time link that works once, within a minute, and only from this computer.
+    if (p === '/login/local' && req.method === 'GET') {
+      const t = url.searchParams.get('t') ?? '';
+      const rec = localTokens.get(t);
+      localTokens.delete(t);
+      const ip = String(req.socket?.remoteAddress ?? '');
+      const proxied = ['x-forwarded-for', 'forwarded', 'x-real-ip', 'tailscale-funnel-request', 'tailscale-user-login'].some((h) => req.headers[h] !== undefined);
+      const loopback = !proxied && (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1');
+      // The link itself is the secret (48 random characters, one use, one minute, only ever handed to the desktop app).
+      // Requests also have to come straight from this computer: anything relayed by a proxy (the shared dashboard link,
+      // which also arrives from 127.0.0.1) is refused.
+      if (!rec || rec.exp < Date.now() || !loopback) return errorPage(res, 403, 'That sign-in link has expired', 'Open the dashboard again from the Good Boy app.', 'Links from the app work once, for one minute.');
+      const sid = crypto.randomBytes(32).toString('hex');
+      for (const [k, v] of sessions) if (v.user.id === rec.user.id) sessions.delete(k);
+      sessions.set(sid, { user: rec.user, guilds: [...client.guilds.cache.values()].map((g) => ({ id: g.id, name: String(g.name).slice(0, 100), icon: g.icon ?? null, owner: g.ownerId === rec.user.id, permissions: '0' })), expires: Date.now() + SESSION_MS, local: true });
+      logger.info('Dashboard opened from the desktop app (signed in as the bot owner)');
+      const attrs = `HttpOnly; SameSite=Lax; Path=/${secure() ? '; Secure' : ''}`;
+      return send(res, 302, '', { Location: '/', 'Set-Cookie': `gb_sid=${sid}; ${attrs}; Max-Age=${SESSION_MS / 1000}`, 'Cache-Control': 'no-store' });
+    }
+
     if (p === '/logout') {
       sessions.delete(parseCookies(req.headers.cookie).gb_sid);
       return send(res, 302, '', { Location: '/', 'Set-Cookie': 'gb_sid=; Max-Age=0; Path=/' });
@@ -333,7 +359,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         const access = member ? accessOf(member) : null;
         return access ? { id: g.id, name: g.name, icon: g.icon, access } : null;
       }));
-      return json(res, 200, { user: s.user, guilds: checked.filter(Boolean), version, botOwner: manager.isBotOwner(s.user.id) });
+      return json(res, 200, { user: s.user, guilds: checked.filter(Boolean), version, botOwner: manager.isBotOwner(s.user.id), dashboardUrl: base, local: !!s.local });
     }
 
     // Updating changes the bot for every server, so only the bot's owner may see or do this.
@@ -350,6 +376,56 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         logger.info(`Update requested from the dashboard by ${s.user.username} (${s.user.id})`);
       }
       return json(res, 200, { supervised: true, ...(await updates.request(p.endsWith('/apply') ? 'apply' : 'check')) });
+    }
+
+    // ---- live updates (2.3): a stream of "something changed" events for one server, plus a pulse every 15 seconds
+    m = p.match(/^\/api\/guilds\/(\d+)\/live$/);
+    if (m && req.method === 'GET') {
+      const a = await authorize(req, res, m[1], { level: 'panel' }); if (!a) return;
+      const sid = parseCookies(req.headers.cookie).gb_sid;
+      const open = liveConns.get(sid) ?? 0;
+      if (open >= 6) return json(res, 429, { error: 'Too many live windows open.' });
+      liveConns.set(sid, open + 1);
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+      const write = (type, data) => { try { res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* closed */ } };
+      const pulse = () => {
+        const g = client.guilds.cache.get(a.guild.id);
+        const mods = manager.describeForGuild(a.guild.id).filter((d) => d.enabled);
+        write('pulse', { at: Date.now(), members: g?.memberCount ?? null, inVoice: g?.voiceStates?.cache?.filter?.((v) => v.channelId).size ?? null,
+          ping: Number.isFinite(client.ws?.ping) ? Math.round(client.ws.ping) : null, uptimeSeconds: Math.round(process.uptime()),
+          modulesOn: mods.length, problems: mods.filter((d) => d.status && d.status !== 'healthy').length });
+      };
+      write('hello', { activity: recentActivity(a.guild.id), at: Date.now() });
+      pulse();
+      const stop = subscribe(a.guild.id, (e) => write(e.type, { ...e.data, at: e.at }));
+      const timers = [setInterval(pulse, 15000), setInterval(() => { try { res.write(': keep-alive\n\n'); } catch { /* closed */ } }, 25000)];
+      const close = () => { stop(); timers.forEach(clearInterval); liveConns.set(sid, Math.max(0, (liveConns.get(sid) ?? 1) - 1)); };
+      req.on('close', close);
+      return;
+    }
+
+    // ---- feedback from testers (anyone who can open the dashboard), shown live to the server's admins
+    m = p.match(/^\/api\/guilds\/(\d+)\/feedback$/);
+    if (m) {
+      const a = await authorize(req, res, m[1], { level: req.method === 'GET' ? 'admin' : 'panel' }); if (!a) return;
+      if (req.method === 'GET') {
+        const rows = db.dataList(a.guild.id, 'core-feedback', 'fb:').map((r) => r.value).sort((x, y) => y.at - x.at).slice(0, 100);
+        return json(res, 200, { rows });
+      }
+      const body = await readJson(req);
+      const kinds = { bug: '🐞 Something is broken', idea: '💡 Idea', confusing: '🤔 Confusing', praise: '💚 I like this' };
+      const kind = Object.hasOwn(kinds, body.kind) ? body.kind : 'idea';
+      const text = String(body.text ?? '').trim().slice(0, 1000);
+      if (text.length < 3) return json(res, 400, { error: 'Write a few words about it.' });
+      const mine = db.dataList(a.guild.id, 'core-feedback', 'fb:').filter((r) => r.value.userId === a.s.user.id && r.value.at > Date.now() - 3600000);
+      if (mine.length >= 10) return json(res, 429, { error: 'Thanks! That is a lot of feedback for one hour, try again a bit later.' });
+      const entry = { id: crypto.randomBytes(4).toString('hex'), at: Date.now(), kind, text, page: String(body.page ?? '').slice(0, 60), userId: a.s.user.id, username: a.s.user.username, version };
+      db.dataSet(a.guild.id, 'core-feedback', `fb:${entry.at}-${entry.id}`, entry);
+      const all = db.dataList(a.guild.id, 'core-feedback', 'fb:');
+      if (all.length > 300) for (const r of all.sort((x, y) => x.value.at - y.value.at).slice(0, all.length - 300)) db.dataDelete(a.guild.id, 'core-feedback', r.key);
+      publish(a.guild.id, 'feedback', entry);
+      publish(a.guild.id, 'activity', { module: 'core', icon: '💬', text: `New feedback from ${entry.username}: ${kinds[kind]}` });
+      return json(res, 200, { ok: true });
     }
 
     m = p.match(/^\/api\/guilds\/(\d+)$/);
@@ -405,7 +481,35 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       db.permClear(a.guild.id, key);
       for (const r of roles) db.permAdd(a.guild.id, key, r);
       db.addLog(a.guild.id, 'dashboard', 'security', `${a.s.user.username} set roles for ${key}`);
+      publish(a.guild.id, 'settings', { module: 'core', key });
       return json(res, 200, { ok: true });
+    }
+
+    // One click for admins: let a role test the dashboard (and optionally use every tool panel).
+    m = p.match(/^\/api\/guilds\/(\d+)\/testers$/);
+    if (m && req.method === 'POST') {
+      const a = await authorize(req, res, m[1]);
+      if (!a) return;
+      const { roleId, everything } = await readJson(req);
+      const role = SNOWFLAKE.test(String(roleId)) ? a.guild.roles.cache.get(String(roleId)) : null;
+      if (!role || role.id === a.guild.id || role.managed) throw new UserError('Choose a normal role (not @everyone or a bot role).');
+      const keys = new Set(['dashboard.access']);
+      // "Every read-only box": only permissions whose boxes all just show numbers. A permission that also unlocks buttons
+      // (kick, reset, AutoMod switches) or private boxes (tickets, the watch log) is never handed out in one click;
+      // admins can still give those deliberately on the Permissions page.
+      if (everything) {
+        const risky = new Set(), safe = new Set();
+        for (const d of manager.describeForGuild(a.guild.id)) for (const pn of d.panels ?? []) {
+          if (!pn.permission) continue;
+          if (pn.private || pn.rowActions?.length || pn.globalActions?.length) risky.add(pn.permission);
+          else if (d.enabled) safe.add(pn.permission);
+        }
+        for (const k of safe) if (!risky.has(k)) keys.add(k);
+      }
+      for (const key of keys) if (!db.permRoles(a.guild.id, key).includes(role.id)) db.permAdd(a.guild.id, key, role.id);
+      db.addLog(a.guild.id, 'dashboard', 'security', `${a.s.user.username} gave @${role.name} tester access${everything ? ' with every read-only box' : ''}`);
+      publish(a.guild.id, 'settings', { module: 'core', key: 'dashboard.access' });
+      return json(res, 200, { ok: true, message: everything ? `@${role.name} can now open the dashboard and see every read-only box. Boxes with buttons or private information are only given out on the Permissions page.` : `@${role.name} can now open the dashboard.` });
     }
 
     m = p.match(/^\/api\/guilds\/(\d+)\/modules\/([a-z0-9-]+)\/views\/([A-Za-z0-9_-]+)$/);
@@ -448,5 +552,17 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
   const actualPort = server.address().port;
   if (portOverride === 0 && !process.env.DASHBOARD_BASE_URL) base = `http://${host}:${actualPort}`; // tests: let the OS choose a free port
   logger.info(`Dashboard: ${base}  ${secret ? '' : '(login disabled - add DISCORD_CLIENT_SECRET to .env)'}`);
-  return { close: () => { clearInterval(cleanup); server.close(); server.closeAllConnections?.(); }, port: actualPort, baseUrl: () => base, sessions };
+  /** For the desktop app: a one-time link that opens the dashboard signed in as the bot's owner (this computer only). */
+  async function localLogin() {
+    const ownerId = [...(manager.ownerIds ?? [])][0];
+    if (!ownerId) return { ok: false, error: 'The bot does not know its owner yet. Try again in a moment.' };
+    const u = await client.users.fetch(ownerId).catch(() => null);
+    const t = crypto.randomBytes(24).toString('hex');
+    for (const [k, v] of localTokens) if (v.exp < Date.now()) localTokens.delete(k);
+    localTokens.set(t, { exp: Date.now() + 60000, user: { id: ownerId, username: String(u?.globalName || u?.username || 'Owner').slice(0, 64), avatar: u?.avatar ?? null } });
+    // The configured address, so the sign-in cookie belongs to the same site the dashboard redirects everyone to.
+    return { ok: true, url: `${base}/login/local?t=${t}`, base };
+  }
+
+  return { close: () => { clearInterval(cleanup); server.close(); server.closeAllConnections?.(); }, port: actualPort, baseUrl: () => base, sessions, localLogin };
 }

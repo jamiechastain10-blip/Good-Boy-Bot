@@ -7,7 +7,7 @@ const pref = {
   get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* blocked: the choice just won't be remembered */ } },
 };
-const state = { me: null, gid: null, data: null, page: 'overview', theme: pref.get('gb-theme', 'dark'), motion: pref.get('gb-motion', 'on') !== 'off' };
+const state = { me: null, gid: null, data: null, live: null, pulse: null, activity: [], panels: new Map(), page: 'overview', theme: pref.get('gb-theme', 'dark'), motion: pref.get('gb-motion', 'on') !== 'off' };
 
 function applyAppearance() {
   document.body.classList.toggle('theme-light', state.theme === 'light');
@@ -60,6 +60,7 @@ function ask({ title, text, field = null, confirmWord = null, okLabel = 'OK', da
     const prev = document.activeElement;
     let input = null;
     if (field?.type === 'select') input = h('select', { class: 'field' }, field.options.map((o) => h('option', { value: o.value, selected: o.value === field.value }, o.label)));
+    else if (field?.type === 'paragraph') input = h('textarea', { class: 'field', placeholder: field.placeholder ?? '', maxlength: field.max ?? 1000 }, field.value ?? '');
     else if (field) input = h('input', { class: 'field', type: field.type === 'number' ? 'number' : 'text', value: field.value ?? '', placeholder: field.placeholder ?? '' });
     const word = confirmWord ? h('input', { class: 'field', type: 'text', placeholder: confirmWord, autocomplete: 'off' }) : null;
     const ok = h('button', { class: danger ? 'danger' : '' }, okLabel);
@@ -68,7 +69,7 @@ function ask({ title, text, field = null, confirmWord = null, okLabel = 'OK', da
     const value = () => (field ? (field.type === 'number' ? Number(input.value) : input.value) : true);
     const valid = () => (!word || word.value === confirmWord) && (!field || field.type === 'select' || String(input.value).trim() !== '') && (field?.type !== 'number' || Number.isFinite(Number(input.value)));
     const refresh = () => { ok.disabled = !valid(); };
-    const key = (e) => { if (e.key === 'Escape') done(null); if (e.key === 'Enter' && valid()) done(value()); };
+    const key = (e) => { if (e.key === 'Escape') done(null); if (e.key === 'Enter' && field?.type !== 'paragraph' && valid()) done(value()); };
     ok.addEventListener('click', () => valid() && done(value()));
     cancel.addEventListener('click', () => done(null));
     for (const x of [input, word]) x?.addEventListener('input', refresh);
@@ -103,7 +104,7 @@ async function boot() {
 }
 
 function showGuilds() {
-  state.gid = null; clear();
+  state.gid = null; stopLive(); clear();
   app.append(h('h2', {}, 'Your servers'));
   if (!state.me.guilds.length) {
     app.append(h('p', { class: 'muted' }, "I'm not in any server where you can use the dashboard. Add me to one, or ask an admin to give your role the dashboard.access permission."));
@@ -120,7 +121,72 @@ async function loadGuild() {
   try { state.data = await api(`/api/guilds/${state.gid}`); }
   catch (e) { toast(e.message, true); return showGuilds(); }
   if (!pages().some((p) => p.id === state.page)) state.page = 'overview';
+  const y = window.scrollY;
   render();
+  window.scrollTo(0, y);
+  startLive();
+}
+
+// ---------------------------------------------------------------- live updates (2.3)
+// One stream per open server. The bot sends a pulse every 15 seconds and an event whenever something changes,
+// so numbers, panels and the activity feed update by themselves.
+function stopLive() { state.live?.es.close(); state.live = null; }
+function startLive() {
+  if (state.live?.gid === state.gid || typeof EventSource === 'undefined') return;
+  stopLive();
+  const es = new EventSource(`/api/guilds/${state.gid}/live`);
+  state.live = { es, gid: state.gid };
+  const on = (type, fn) => es.addEventListener(type, (e) => { try { fn(JSON.parse(e.data)); } catch { /* ignore a bad event */ } });
+  on('hello', (d) => { state.activity = d.activity ?? []; paintFeed(); liveChip('on'); });
+  on('pulse', (d) => { state.pulse = d; paintPulse(); liveChip('on'); });
+  on('activity', (d) => { state.activity.unshift(d); state.activity.length = Math.min(state.activity.length, 30); paintFeed(true); });
+  on('data', (d) => refreshModule(d.module));
+  on('modules', () => softReload());
+  on('settings', () => softReload());
+  on('feedback', () => { if (state.page === 'feedback') render(); else if (state.data?.access === 'admin') toast('💬 New feedback from a tester'); });
+  es.onerror = () => liveChip('off');
+}
+function liveChip(mode) {
+  const c = document.getElementById('live-chip');
+  if (!c) return;
+  c.className = 'live-chip ' + (mode === 'on' ? 'on' : 'off');
+  c.textContent = mode === 'on' ? `● Live${state.pulse?.ping != null ? ` · ${state.pulse.ping} ms` : ''}` : '○ Reconnecting…';
+}
+/** Numbers on the page with data-stat="..." follow the pulse, with a small bump when they change. */
+function paintPulse() {
+  const p = state.pulse ?? {};
+  const values = { members: p.members, inVoice: p.inVoice, ping: p.ping != null ? `${p.ping} ms` : null, uptime: p.uptimeSeconds != null ? duration(p.uptimeSeconds) : null, modulesOn: p.modulesOn };
+  for (const el of document.querySelectorAll('[data-stat]')) {
+    const v = values[el.dataset.stat];
+    if (v == null || String(v) === el.textContent) continue;
+    el.textContent = String(v);
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  }
+  liveChip('on');
+}
+const ago = (t) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : `${Math.floor(s / 3600)} h ago`; };
+function paintFeed(fresh = false) {
+  const list = document.getElementById('feed');
+  if (!list) return;
+  put(list, state.activity.length ? state.activity.slice(0, 12).map((a, k) => h('li', { class: fresh && k === 0 ? 'enter' : '' },
+    h('span', { class: 'feed-icon', 'aria-hidden': 'true' }, a.icon ?? '•'), h('span', { class: 'feed-text' }, a.text), h('time', {}, ago(a.at))))
+    : h('li', { class: 'feed-empty' }, 'Quiet for now. Things that happen in the server appear here the moment they happen.'));
+}
+setInterval(() => paintFeed(), 30000); // keeps the "x min ago" labels current
+const pending = new Map();
+function refreshModule(mod) {
+  clearTimeout(pending.get(mod));
+  pending.set(mod, setTimeout(() => { for (const fn of state.panels.get(mod) ?? []) fn(); }, 400));
+}
+let reloadTimer = null;
+function softReload() {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    // Never yank a form out from under someone who is typing or has a dialog open: offer a refresh instead.
+    const busy = document.querySelector('.dialog-back') || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.closest('.workspace'));
+    if (busy) { const b = document.getElementById('changed-banner'); if (b) b.hidden = false; return; }
+    loadGuild();
+  }, 700);
 }
 
 // ---------------------------------------------------------------- pages and navigation
@@ -133,7 +199,7 @@ function pages() {
   const list = [{ id: 'overview', icon: '⌂', label: 'Overview', group: 'SERVER' }];
   if (admin) list.push({ id: 'modules', icon: '▦', label: 'Modules', group: 'SERVER' });
   for (const m of d.modules) if ((admin ? m.enabled : true) && (m.panels ?? []).length) list.push({ id: `tool:${m.name}`, icon: ICON[m.name] ?? '◆', label: TITLE[m.name] ?? cap(m.name), group: 'TOOLS' });
-  if (admin) list.push({ id: 'permissions', icon: '♙', label: 'Permissions', group: 'ADMIN' }, { id: 'logs', icon: '≡', label: 'Logs', group: 'ADMIN' });
+  if (admin) list.push({ id: 'permissions', icon: '♙', label: 'Permissions', group: 'ADMIN' }, { id: 'feedback', icon: '💬', label: 'Tester feedback', group: 'ADMIN' }, { id: 'logs', icon: '≡', label: 'Logs', group: 'ADMIN' });
   if (state.me?.botOwner) list.push({ id: 'updates', icon: '⬆', label: 'Updates', group: 'ADMIN' });
   list.push({ id: 'appearance', icon: '✦', label: 'Appearance', group: 'YOU' });
   return list;
@@ -155,8 +221,11 @@ function render() {
 
   const workspace = h('section', { class: 'workspace' });
   workspace.append(h('div', { class: 'card row' }, h('div', {}, h('strong', {}, current.label), h('div', { class: 'muted' }, d.guild.name)),
-    d.access === 'panel' ? h('span', { class: 'badge' }, 'limited access') : h('span', { class: 'badge healthy' }, '● Connected')));
-  app.append(h('div', { class: 'shell' }, side, workspace));
+    h('div', { class: 'row-end' }, d.access === 'panel' ? h('span', { class: 'badge' }, 'limited access') : null, h('span', { id: 'live-chip', class: 'live-chip off' }, '○ Connecting…'))));
+  workspace.append(h('div', { id: 'changed-banner', class: 'banner', hidden: true }, 'Something changed in this server while you were editing. ',
+    h('button', { class: 'ghost', onclick: () => loadGuild() }, 'Show the latest')));
+  app.append(h('div', { class: 'shell' }, side, workspace), feedbackButton());
+  state.panels = new Map();
 
   if (current.id === 'overview') renderOverview(workspace);
   else if (current.id === 'modules') renderModules(workspace);
@@ -164,7 +233,9 @@ function render() {
   else if (current.id === 'logs') renderLogs(workspace);
   else if (current.id === 'updates') renderUpdates(workspace);
   else if (current.id === 'appearance') renderAppearance(workspace);
+  else if (current.id === 'feedback') renderFeedback(workspace);
   else if (current.id.startsWith('tool:')) renderTool(workspace, current.id.slice(5));
+  if (state.live) { liveChip('on'); paintPulse(); paintFeed(); }
 }
 
 function duration(sec) {
@@ -178,9 +249,11 @@ function renderOverview(ws) {
     h('div', {}, h('h2', {}, d.guild.name), h('p', { class: 'muted' }, d.access === 'admin' ? 'Manage this server, configure features and keep your community safe.' : 'You can use the panels below. Ask an admin if you need more.'))));
   if (d.access === 'admin') {
     const on = d.modules.filter((m) => m.enabled);
-    const stats = [['Members', d.stats.members ?? '—'], ['Channels', d.stats.channels], ['Active modules', `${on.length} / ${d.modules.length}`], ['Bot uptime', duration(d.stats.uptimeSeconds)]];
-    ws.append(h('div', { class: 'stats' }, stats.map(([label, value]) => h('div', { class: 'card stat' }, h('div', { class: 'muted' }, label), h('strong', {}, value)))));
+    const stats = [['Members', d.stats.members ?? '—', 'members'], ['In voice now', '—', 'inVoice'], ['Active modules', `${on.length} / ${d.modules.length}`, null], ['Bot uptime', duration(d.stats.uptimeSeconds), 'uptime']];
+    ws.append(h('div', { class: 'stats' }, stats.map(([label, value, key]) => h('div', { class: 'card stat' }, h('div', { class: 'muted' }, label), h('strong', key ? { 'data-stat': key } : {}, value)))));
   }
+  ws.append(h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Live activity'), h('span', { class: 'hint' }, 'updates by itself')), h('ul', { id: 'feed', class: 'feed' })));
+  if (d.access === 'admin') ws.append(testersCard());
   const tools = pages().filter((p) => p.id.startsWith('tool:'));
   if (tools.length) {
     ws.append(h('h3', { class: 'section-title' }, 'Quick access'));
@@ -276,8 +349,19 @@ function legend(columns) {
 function panelBox(m, panel) {
   const box = h('div', { class: 'card' }, h('h3', {}, panel.title), h('p', { class: 'muted' }, 'Loading…'));
   const base = `/api/guilds/${state.gid}/modules/${m.name}`;
-  api(`${base}/views/${panel.view}`).then((data) => {
-    const run = async (action, body, ok) => { try { await api(`${base}/actions/${action}`, body); toast(ok); box.replaceWith(panelBox(m, panel)); } catch (e) { toast(e.message, true); } };
+  let seen = null; // id -> row as JSON, to light up what changed since the last paint
+  const load = () => api(`${base}/views/${panel.view}`).then(paint).catch((e) => put(box, h('h3', {}, panel.title), h('p', { class: 'muted' }, e.message)));
+  // Live: when this module reports a change, read the panel again and paint it in place.
+  if (!state.panels.has(m.name)) state.panels.set(m.name, new Set());
+  const refresher = () => { if (!box.isConnected) { state.panels.get(m.name)?.delete(refresher); return; } load(); };
+  state.panels.get(m.name).add(refresher);
+  load();
+  return box;
+
+  function paint(data) {
+    const before = seen;
+    seen = new Map((data.rows ?? []).map((r) => [String(r.id ?? JSON.stringify(r)), JSON.stringify(r)]));
+    const run = async (action, body, ok) => { try { await api(`${base}/actions/${action}`, body); toast(ok); load(); } catch (e) { toast(e.message, true); } };
     const rowAction = (a, r) => async () => {
       // Send the row's id under both names: modules read `id` or `userId`, whichever suits what the row is.
       const body = { id: r.id, userId: r.id };
@@ -291,7 +375,8 @@ function panelBox(m, panel) {
       run(a.action, body, a.done ?? 'Done');
     };
     const actions = panel.rowActions ?? [];
-    const rows = (data.rows ?? []).map((r) => h('tr', {}, panel.columns.map((c) => cell(c, r)),
+    const changeClass = (r) => { if (!before) return ''; const k = String(r.id ?? JSON.stringify(r)); return !before.has(k) ? 'enter' : before.get(k) !== JSON.stringify(r) ? 'flash' : ''; };
+    const rows = (data.rows ?? []).map((r) => h('tr', { class: changeClass(r) }, panel.columns.map((c) => cell(c, r)),
       actions.length ? h('td', { class: 'actions' }, actions.map((a) => h('button', { class: a.danger ? 'ghost danger-text' : 'ghost', onclick: rowAction(a, r) }, a.label))) : null));
     const recent = panel.recentColumns?.length ? h('div', { class: 'recent' }, h('h4', {}, panel.recentTitle ?? 'Recent activity'),
       (data.recent ?? []).length ? h('table', {}, h('tr', {}, panel.recentColumns.map((c) => h('th', { title: c.hint ?? null }, c.label))),
@@ -304,12 +389,76 @@ function panelBox(m, panel) {
         run(a.action, { confirm: a.confirmWord }, 'Done');
       } }, a.label)))),
       panel.description ? h('p', { class: 'muted' }, panel.description) : null,
-      rows.length ? h('table', {}, h('tr', {}, panel.columns.map((c) => h('th', { title: c.hint ?? null }, c.label, c.hint ? h('span', { class: 'q', 'aria-hidden': 'true' }, ' ⓘ') : null)), actions.length ? h('th', {}, '') : null), rows)
+      (data.charts ?? []).map(barChart),
+      !panel.columns?.length ? null : rows.length ? h('table', {}, h('tr', {}, panel.columns.map((c) => h('th', { title: c.hint ?? null }, c.label, c.hint ? h('span', { class: 'q', 'aria-hidden': 'true' }, ' ⓘ') : null)), actions.length ? h('th', {}, '') : null), rows)
         : h('p', { class: 'empty-note' }, panel.empty ?? 'Nothing here yet.'),
-      rows.length ? legend(panel.columns) : null,
+      rows.length && panel.columns?.length ? legend(panel.columns) : null,
       recent);
-  }).catch((e) => put(box, h('h3', {}, panel.title), h('p', { class: 'muted' }, e.message)));
-  return box;
+  }
+}
+
+/** A simple bar chart: { title, bars: [{ label, value }] }. Heights are set through the style object, never HTML. */
+function barChart(c) {
+  const max = Math.max(1, ...c.bars.map((b) => b.value));
+  return h('div', { class: 'chart' }, h('h4', {}, c.title),
+    h('div', { class: 'bars', role: 'img', 'aria-label': c.title }, c.bars.map((b) => {
+      const bar = h('div', { class: 'bar', title: `${b.label}: ${b.value.toLocaleString()}` });
+      bar.style.height = `${Math.max(2, Math.round((b.value / max) * 100))}%`;
+      return h('div', { class: 'barcol' }, bar, h('span', {}, b.short ?? b.label));
+    })));
+}
+
+// ---------------------------------------------------------------- testers and feedback (2.3)
+/** For admins: how to let other people test the dashboard. */
+function testersCard() {
+  const d = state.data;
+  const access = (d.corePermissions ?? []).find((p) => p.key === 'dashboard.access');
+  const roles = d.roles.filter((r) => !isDivider(r.name));
+  const holders = (access?.roles ?? []).map((id) => d.roles.find((r) => r.id === id)).filter(Boolean);
+  const link = state.me?.dashboardUrl ?? location.origin;
+  const isLocal = /\/\/(localhost|127\.0\.0\.1)/.test(link);
+  const pick = h('select', { class: 'add-role', 'aria-label': 'Role for testers' }, h('option', { value: '' }, 'Choose the testers\' role…'), roles.map((r) => h('option', { value: r.id }, '@' + r.name)));
+  const grant = async (everything) => {
+    if (!pick.value) return toast('Choose a role first.', true);
+    try {
+      const r = await api(`/api/guilds/${state.gid}/testers`, { roleId: pick.value, everything });
+      toast(r.message ?? 'Done'); await loadGuild();
+    } catch (e) { toast(e.message, true); }
+  };
+  return h('div', { class: 'card' }, h('h3', {}, '🧪 Testers'),
+    h('p', { class: 'muted' }, 'Testers sign in with their own Discord account. Give their role access here, then share the link.'),
+    h('div', { class: 'row' }, h('code', { class: 'link' }, link), h('button', { class: 'ghost', onclick: () => navigator.clipboard?.writeText(link).then(() => toast('Link copied')) }, 'Copy link')),
+    isLocal ? h('p', { class: 'hint warn' }, 'This link only works on this computer. In the Good Boy app, turn on Settings > Dashboard link to get one testers can open.') : null,
+    h('p', { class: 'hint' }, holders.length ? `Can open the dashboard now: ${holders.map((r) => '@' + r.name).join(', ')}` : 'No tester roles yet.'),
+    h('div', { class: 'row' }, pick,
+      h('button', { onclick: () => grant(false) }, 'Let them open the dashboard'),
+      h('button', { class: 'ghost', title: 'Also every box that only shows information. Boxes with buttons (kick, reset, AutoMod) or private information (tickets, watch log) are given out on the Permissions page.', onclick: () => grant(true) }, '…and see every read-only box')),
+    h('p', { class: 'hint' }, 'Everyone has a 💬 Feedback button at the bottom of the page. What they send shows up live under Tester feedback.'));
+}
+
+function feedbackButton() {
+  if (!state.gid) return null;
+  return h('button', { class: 'fab', onclick: async () => {
+    const kind = await ask({ title: 'Send feedback', text: 'Thanks for testing! What is it about?', field: { type: 'select', value: 'bug', options: [{ value: 'bug', label: '🐞 Something is broken' }, { value: 'confusing', label: '🤔 Something is confusing' }, { value: 'idea', label: '💡 I have an idea' }, { value: 'praise', label: '💚 I like this' }] }, okLabel: 'Next' });
+    if (kind === null) return;
+    const text = await ask({ title: 'Send feedback', text: 'Tell us what happened or what you would like. The page you are on is sent with it.', field: { type: 'paragraph', placeholder: 'For example: the Levels box did not update after I gave XP', max: 1000 }, okLabel: 'Send' });
+    if (text === null) return;
+    try { await api(`/api/guilds/${state.gid}/feedback`, { kind, text, page: state.page }); toast('Thanks! Your feedback was sent.'); }
+    catch (e) { toast(e.message, true); }
+  } }, '💬 Feedback');
+}
+
+async function renderFeedback(ws) {
+  const box = h('div', { class: 'card' }, h('h3', {}, 'Tester feedback'), h('p', { class: 'muted' }, 'Loading…'));
+  ws.append(box);
+  try {
+    const { rows } = await api(`/api/guilds/${state.gid}/feedback`);
+    const label = { bug: '🐞 Broken', confusing: '🤔 Confusing', idea: '💡 Idea', praise: '💚 Likes' };
+    put(box, h('div', { class: 'row' }, h('h3', {}, 'Tester feedback'), h('span', { class: 'hint' }, 'new reports appear here live')),
+      rows.length ? h('ul', { class: 'feed feedback' }, rows.map((r) => h('li', {}, h('span', { class: 'feed-icon' }, (label[r.kind] ?? '💬').split(' ')[0]),
+        h('span', { class: 'feed-text' }, h('strong', {}, r.username), ` · ${label[r.kind] ?? r.kind}${r.page ? ` · on ${r.page}` : ''}`, h('br'), r.text), h('time', {}, ago(r.at)))))
+        : h('p', { class: 'empty-note' }, 'No feedback yet. Testers send it with the 💬 Feedback button.'));
+  } catch (e) { put(box, h('h3', {}, 'Tester feedback'), h('p', { class: 'muted' }, e.message)); }
 }
 
 // ---------------------------------------------------------------- modules and their settings (admins)

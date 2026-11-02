@@ -126,7 +126,7 @@ export async function fetchText(url, { timeoutMs = 10000, maxBytes = 2_000_000, 
   await assertSafeUrl(url);
   const res = await fetch(url, {
     signal: AbortSignal.timeout(timeoutMs),
-    headers: { 'User-Agent': 'GoodBoy/2.2.0 (+Discord bot)', ...headers },
+    headers: { 'User-Agent': 'GoodBoy/2.3.0 (+Discord bot)', ...headers },
     redirect: 'follow',
   });
   if (!res.ok) throw new UserError(`The server answered ${res.status}.`);

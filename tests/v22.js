@@ -265,6 +265,22 @@ export default async function runV22Tests({ test }) {
     assert.match(allText(steal), /belongs to someone else/);
   });
 
+  await test('games and /daily are private by default, so playing never notifies the channel; admins can make them public', async () => {
+    const w = await gameWorld();
+    w.setCoins('alice', 5000);
+    const flagsOf = (m) => Number(m?.flags ?? 0);
+    const r = await w.form(await w.cmd('slots', w.alice), w.alice, { bet: '100' });
+    assert.ok(flagsOf(r.submit.replies[0]) & 64, 'slots result is only for the player');
+    const f = await w.form(await w.cmd('coinflip', w.alice), w.alice, { bet: '100', side: ['heads'] });
+    assert.ok(flagsOf(f.submit.replies[0]) & 64, 'coin flip result is only for the player');
+    const d = await w.cmd('daily', w.alice);
+    assert.ok(flagsOf(d.replies[0]) & 64, '/daily is only for the member');
+    assert.ok(!w.room.sent.some((p) => /<@/.test(String(p.content ?? ''))), 'nothing in the channel mentions anyone');
+    w.mm.setSetting('1', 'games', 'privateGames', 'false');
+    const pub = await w.form(await w.cmd('slots', w.alice), w.alice, { bet: '100' });
+    assert.equal(flagsOf(pub.submit.replies[0]) & 64, 0, 'public when the admin wants it');
+  });
+
   await test('bets are checked: too small, more than you have, and a game turned off', async () => {
     const w = await gameWorld();
     w.setCoins('alice', 50);

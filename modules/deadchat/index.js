@@ -99,6 +99,7 @@ export async function check(ctx, now = Date.now()) {
   const mins = Math.round((now - last) / MIN);
   const content = `${roleId && !problem ? `<@&${roleId}> ` : ''}💬 **Chat has been quiet for ${mins >= 120 ? `${Math.round(mins / 60)} hours` : `${mins} minutes`}!**\n${starter(ctx)}`;
   ctx.data.set('lastPingAt', now); // set first: a failed send must not turn into a ping every minute
+  ctx.live?.('activity', { icon: '💬', text: `Dead chat ping sent in #${ch.name ?? 'chat'} after ${mins} quiet minutes` });
   await ctx.queue(() => ch.send({ content, components: roleId ? [optRow()] : [], allowedMentions: roleId && !problem ? { roles: [roleId] } : { parse: [] } }))
     .catch((e) => ctx.log.warn(`Dead chat ping failed: ${e.message}`));
 }
@@ -151,6 +152,8 @@ export default {
   name: 'deadchat',
   version: '1.0.0',
   description: 'Pings a role with a conversation starter when a channel goes quiet',
+  memberIntroTitle: 'Dead chat pings',
+  memberIntro: 'When the chat goes quiet, Good Boy can ping people who want to talk, with a question to get things going. Want those pings? Press the button on the dead chat message to get the role, and press it again any time to stop.',
   settings: [
     { key: 'enabled', type: 'toggle', label: 'Dead chat ping on', default: false },
     { key: 'channel', type: 'channel', label: 'Channel to watch' },

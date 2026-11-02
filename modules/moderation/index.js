@@ -30,7 +30,45 @@ function addCase(ctx, { type, user, modId, reason, extra }) {
   const id = ctx.data.update('counter', (n) => n + 1, 0);
   const entry = { id, type, targetId: user.id, targetTag: user.tag ?? user.username ?? user.id, modId, reason, at: Date.now(), ...extra };
   ctx.data.update(`hist:${user.id}`, (arr) => [entry, ...arr].slice(0, 100), []);
+  const words = { warn: 'was warned', timeout: 'was timed out', untimeout: 'had a timeout lifted', kick: 'was kicked', ban: 'was banned', unban: 'was unbanned' };
+  if (modId && words[type]) ctx.live?.('activity', { icon: '🛡️', text: `${entry.targetTag} ${words[type]}` });
+  ctx.live?.('data');
   return entry;
+}
+
+// ---- server logs (2.3): joins, leaves, role and nickname changes, voice. Off unless turned on; their own channel or the mod log.
+async function serverLog(ctx, kind, embed) {
+  if (!ctx.config.get(kind)) return;
+  const id = ctx.config.get('serverLogChannel') || ctx.config.get('logChannel');
+  const ch = id && ctx.guild?.channels.cache.get(id);
+  if (!ch?.isTextBased?.()) return;
+  await ctx.queue(() => ch.send({ embeds: [embed.setTimestamp()], allowedMentions: NOPING })).catch(() => {});
+}
+const who = (m) => `<@${m.id}> · ${m.user?.username ?? m.id} (${m.id})`;
+const ageText = (ms) => { const d = Math.floor((Date.now() - ms) / 86400000); return d < 1 ? 'today' : d < 60 ? `${d} days ago` : `${Math.floor(d / 30)} months ago`; };
+async function logJoin(ctx, m) {
+  await serverLog(ctx, 'logJoins', new EmbedBuilder().setColor(0x22c38e).setTitle('📥 Member joined').setDescription(`${who(m)}\nAccount created ${ageText(m.user?.createdTimestamp ?? Date.now())}`).setFooter({ text: `Members: ${m.guild?.memberCount ?? '?'}` }));
+}
+async function logLeave(ctx, m) {
+  const roles = [...(m.roles?.cache?.values?.() ?? [])].filter((r) => r.id !== m.guild?.id).map((r) => `<@&${r.id}>`);
+  await serverLog(ctx, 'logJoins', new EmbedBuilder().setColor(0x8b97ab).setTitle('📤 Member left').setDescription(`${who(m)}${m.joinedTimestamp ? `\nJoined ${ageText(m.joinedTimestamp)}` : ''}${roles.length ? `\nRoles: ${roles.slice(0, 20).join(' ')}` : ''}`));
+}
+async function logMemberUpdate(ctx, before, after) {
+  if (!before || before.partial) return;
+  const had = new Set(before.roles?.cache?.keys?.() ?? []), has = new Set(after.roles?.cache?.keys?.() ?? []);
+  const added = [...has].filter((r) => !had.has(r)), removed = [...had].filter((r) => !has.has(r));
+  if (added.length || removed.length) {
+    await serverLog(ctx, 'logRoles', new EmbedBuilder().setColor(0x5865f2).setTitle('🎭 Roles changed').setDescription([who(after), added.length ? `Added: ${added.map((r) => `<@&${r}>`).join(' ')}` : null, removed.length ? `Removed: ${removed.map((r) => `<@&${r}>`).join(' ')}` : null].filter(Boolean).join('\n')));
+  }
+  if (before.nickname !== after.nickname) {
+    await serverLog(ctx, 'logNicknames', new EmbedBuilder().setColor(0xf2a93b).setTitle('🏷️ Nickname changed').setDescription(`${who(after)}\n**Before:** ${before.nickname ?? '*none*'}\n**After:** ${after.nickname ?? '*none*'}`));
+  }
+}
+async function logVoice(ctx, before, after) {
+  const m = after.member ?? before.member;
+  if (!m || m.user?.bot || before.channelId === after.channelId) return;
+  const text = !before.channelId ? `joined 🔊 <#${after.channelId}>` : !after.channelId ? `left 🔊 <#${before.channelId}>` : `moved 🔊 <#${before.channelId}> → <#${after.channelId}>`;
+  await serverLog(ctx, 'logVoice', new EmbedBuilder().setColor(0x3ba7a0).setDescription(`${who(m)} ${text}`));
 }
 
 async function modLog(ctx, embed) {
@@ -136,6 +174,8 @@ function remember(ctx, message, v, action, c) {
   const entry = { at: Date.now(), userId: message.author.id, tag: truncate(message.author.tag ?? message.author.username ?? message.author.id, 40), channelId: message.channelId, rule: v.rule, name: v.name, action, caseId: c?.id ?? null };
   if (ctx.config.get('automodKeepSnippets')) entry.snippet = snippet(message.content, 80);
   ctx.data.update('automod:recent', (arr) => [entry, ...arr].slice(0, RECENT_MAX), []);
+  ctx.live?.('data', { panel: 'automod' });
+  ctx.live?.('activity', { icon: '🤖', text: `AutoMod caught a message in #${ctx.guild?.channels.cache.get(message.channelId)?.name ?? 'a channel'} (${v.name})` });
 }
 
 async function onMessage(ctx, message) {
@@ -664,6 +704,11 @@ export default {
     { key: 'logChannel', type: 'channel', label: 'Mod log channel' },
     { key: 'dmOnAction', type: 'toggle', label: 'DM users when action is taken', default: true },
     { key: 'logMessages', type: 'toggle', label: 'Log message edits & deletes', default: true },
+    { key: 'serverLogChannel', type: 'channel', label: 'Server log channel for joins, roles, nicknames, voice (empty = the mod log)' },
+    { key: 'logJoins', type: 'toggle', label: 'Log members joining and leaving', default: false },
+    { key: 'logRoles', type: 'toggle', label: 'Log role changes', default: false },
+    { key: 'logNicknames', type: 'toggle', label: 'Log nickname changes', default: false },
+    { key: 'logVoice', type: 'toggle', label: 'Log voice joins, leaves and moves', default: false },
     { key: 'warnTimeoutThreshold', type: 'number', label: 'Auto-timeout every N warnings (0 = off)', default: 3, min: 0, max: 20 },
     { key: 'warnTimeoutMinutes', type: 'number', label: 'Auto-timeout length (minutes)', default: 60, min: 1, max: 40320 },
     { key: 'automodAction', type: 'select', label: 'AutoMod action', options: ['delete', 'delete-warn', 'delete-timeout'], default: 'delete-warn' },
@@ -755,7 +800,10 @@ export default {
     messageCreate: onMessage,
     messageDelete: onDelete,
     messageUpdate: onEdit,
-    guildMemberAdd: onJoin,
+    guildMemberAdd: async (ctx, m) => { await onJoin(ctx, m); await logJoin(ctx, m); },
+    guildMemberRemove: logLeave,
+    guildMemberUpdate: logMemberUpdate,
+    voiceStateUpdate: logVoice,
     guildAuditLogEntryCreate: onAudit,
   },
   tasks: [{

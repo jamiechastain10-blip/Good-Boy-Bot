@@ -16,6 +16,8 @@ import { PER_PAGE, pageCount, clampPage, renderRows, navComponents, unpackNav, n
 import { UserError, ts, sanitizeName } from '../../src/util.js';
 
 const EPH = MessageFlags.Ephemeral;
+// /daily, /balance and /top answer privately by default, so using them does not notify the whole channel.
+const quiet = (ctx) => (ctx.config.get('privateReplies') ? { flags: EPH } : {});
 const NOPING = { parse: [] };
 const LB = 'econlb:';
 const GOLD = 0xf1c40f;
@@ -45,6 +47,7 @@ function credit(ctx, userId, amount, reason) {
   ensure(ctx, userId);
   ctx.sql.run('UPDATE economy_wallets SET coins = coins + ?, earned = earned + ? WHERE guild_id = ? AND user_id = ?', amount, amount, ctx.guildId, userId);
   ledger(ctx, userId, amount, reason);
+  ctx.live?.('data');
   return ctx.sql.get('SELECT coins FROM economy_wallets WHERE guild_id = ? AND user_id = ?', ctx.guildId, userId).coins;
 }
 /** Takes coins only if they are there, in ONE statement, so two quick clicks can never spend the same coins twice. */
@@ -58,6 +61,7 @@ function debit(ctx, userId, amount, reason) {
     throw new UserError(`You only have ${money(ctx, have)}.`);
   }
   ledger(ctx, userId, -amount, reason);
+  ctx.live?.('data');
   return ctx.sql.get('SELECT coins FROM economy_wallets WHERE guild_id = ? AND user_id = ?', ctx.guildId, userId).coins;
 }
 
@@ -139,6 +143,7 @@ async function claim(ctx, i) {
     credit(ctx, i.user.id, out.total, `daily (streak ${out.streak})`);
   });
   if (!out.ok) return i.reply({ content: `⏳ You already claimed. Your next daily is ready ${ts(out.nextAt)}.`, flags: EPH });
+  ctx.live('activity', { icon: '🔥', text: `${displayName(i.user, i.member)} claimed their daily (day ${out.streak})` });
   const lines = [`You got ${money(ctx, out.reward)}${out.bonus ? ` + ${money(ctx, out.bonus)} **day ${out.streak} bonus!**` : ''}`];
   if (out.usedShield) lines.push('🛡️ A Streak Shield saved your streak.');
   if (out.lost) lines.push('💔 You missed a day, so your streak started again.');
@@ -146,7 +151,7 @@ async function claim(ctx, i) {
   lines.push(`Next daily ${ts(out.nextAt)}.`);
   const e = new EmbedBuilder().setColor(GOLD).setTitle(`🔥 Day ${out.streak} streak`).setDescription(lines.join('\n'))
     .setFooter({ text: `Streak bonus: +${Math.round((out.reward / ctx.config.get('dailyBase') - 1) * 100)}% · it grows every day you come back` });
-  return i.reply({ embeds: [e], components: [quickRow(ctx, i, { daily: false })], allowedMentions: NOPING });
+  return i.reply({ embeds: [e], components: [quickRow(ctx, i, { daily: false })], allowedMentions: NOPING, ...quiet(ctx) });
 }
 
 function quickRow(ctx, i, { daily = true } = {}) {
@@ -227,7 +232,10 @@ export default {
   name: 'economy',
   version: '1.0.0',
   description: 'Coins, daily streaks, paying members and live leaderboards',
+  memberIntroTitle: 'Coins are here',
+  memberIntro: 'Everyone now has a wallet. Claim free coins every day with **/daily** (keep a streak going for more), check your wallet with **/balance**, send coins to a friend with **/pay**, and see who is on top with **/top**.',
   settings: [
+    { key: 'privateReplies', type: 'toggle', label: 'Only the member sees /daily, /balance and /top (keeps the channel quiet)', default: true },
     { key: 'currencyName', type: 'text', label: 'Currency name', default: 'coins', maxLength: 20 },
     { key: 'currencyEmoji', type: 'text', label: 'Currency emoji', default: '🪙', maxLength: 64 },
     { key: 'startingCoins', type: 'number', label: 'Coins a new member starts with', default: 500, min: 0, max: 1000000 },
@@ -253,7 +261,7 @@ export default {
     {
       permission: 'economy.use',
       data: new SlashCommandBuilder().setName('balance').setDescription('Your wallet, streak and rank'),
-      async execute(ctx, i) { return i.reply({ embeds: [walletCard(ctx, i.user, i.member)], components: [quickRow(ctx, i)], allowedMentions: NOPING }); },
+      async execute(ctx, i) { return i.reply({ embeds: [walletCard(ctx, i.user, i.member)], components: [quickRow(ctx, i)], allowedMentions: NOPING, ...quiet(ctx) }); },
     },
     {
       permission: 'economy.use',
@@ -288,7 +296,7 @@ export default {
       data: new SlashCommandBuilder().setName('top').setDescription('Live leaderboards: coins, streaks, fishing and more'),
       async execute(ctx, i) {
         ensure(ctx, i.user.id, displayName(i.user, i.member)); // keeps the name shown on the global board current
-        return i.reply(boardMessage(ctx, i.user.id, 'coins', 'server', 0));
+        return i.reply({ ...boardMessage(ctx, i.user.id, 'coins', 'server', 0), ...quiet(ctx) });
       },
     },
     {

@@ -6,6 +6,8 @@
 # public repository jamiechastain10-blip/Good-Boy-Bot, where installed apps find their updates. Running in that
 # repository it uses its own built-in token; running anywhere else it needs the RELEASES_TOKEN secret.
 # Other branches (for example test/2.2) are built and checked but never published, so test builds reach no one.
+# Build files are kept only a few days (the published release keeps its own copies), so test builds don't fill the
+# account's Actions storage.
 # A version is published once: raise "version" in desktop/package.json to publish a new one. The Owner build is never published.
 name: Desktop app
 
@@ -77,6 +79,7 @@ jobs:
         if: always()
         with:
           name: smoke-windows-${{ matrix.edition }}
+          retention-days: 2
           path: |
             smoke/*.png
             smoke/*.json
@@ -86,6 +89,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-${{ matrix.edition }}
+          retention-days: 5
           path: |
             desktop/dist/*-Setup-*.exe
             desktop/dist/*-Setup-*.exe.blockmap
@@ -98,6 +102,7 @@ jobs:
         if: matrix.edition == 'owner'
         with:
           name: Windows-owner-unpacked
+          retention-days: 2
           path: desktop/dist/win-unpacked/
           if-no-files-found: error
 
@@ -127,6 +132,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Mac
+          retention-days: 5
           path: desktop/dist/*.dmg
           if-no-files-found: error
 
@@ -150,6 +156,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Android
+          retention-days: 5
           path: out/*.apk
           if-no-files-found: error
 
