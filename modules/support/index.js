@@ -30,17 +30,42 @@ const forms = formStore('support');
 
 // ------------------------------------------------------------------ transcript formats (extensible by add-ons)
 const formats = new Map();
+/** What a message's boxes (embeds) say, as plain text. The ticket's own reason lives in one, so it must not be dropped. */
+export const embedText = (m) => (m.embeds ?? []).map((e) => {
+  const d = e.data ?? e;
+  return [d.title, d.description, ...(d.fields ?? []).map((f) => `${f.name}: ${f.value}`)].filter(Boolean).join('\n');
+}).filter(Boolean);
+/**
+ * Why the ticket was opened, for the top of every transcript (2.3.3: transcripts didn't say why). Only what the member
+ * entered and what they can already see in the ticket; staff-only notes stay out because transcripts are DMed to them.
+ */
+export function ticketSummary(ticket) {
+  const rows = [
+    ['Type', ticket.typeLabel],
+    ['Urgency', ticket.priority ? (URGENCY[ticket.priority]?.label ?? ticket.priority) : null],
+    ['Opened by', ticket.openerTag],
+    ['Opened', ticket.createdAt ? new Date(ticket.createdAt).toUTCString() : null],
+    ['About', ticket.report?.name || ticket.report?.id || null],
+    ...(ticket.answers ?? []).filter((a) => a.a).map((a) => [a.q, a.a]),
+  ];
+  if (ticket.status === 'closed') rows.push(['Closed', ticket.closedAt ? new Date(ticket.closedAt).toUTCString() : 'yes'], ['Close reason', ticket.closeReason ?? null]);
+  return rows.filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '').map(([label, value]) => ({ label, value: String(value) }));
+}
 const lines = (messages) => messages.map((m) => {
   const when = new Date(m.createdTimestamp).toISOString().replace('T', ' ').slice(0, 16);
-  const extra = [...m.attachments.values()].map((a) => a.url).concat(m.embeds.length ? [`[${m.embeds.length} embed(s)]`] : []);
-  return `[${when}] ${m.author.tag}: ${m.cleanContent}${extra.length ? ' ' + extra.join(' ') : ''}`;
+  const boxes = embedText(m).map((t) => `\n    ${t.replace(/\n/g, '\n    ')}`).join('');
+  const files = [...m.attachments.values()].map((a) => a.url);
+  return `[${when}] ${m.author.tag}: ${m.cleanContent}${files.length ? ' ' + files.join(' ') : ''}${boxes}`;
 });
-formats.set('txt', { owner: null, fn: ({ ticket, messages, guild }) => ({
+formats.set('txt', { owner: null, fn: ({ ticket, messages, guild, summary = ticketSummary(ticket) }) => ({
   name: `ticket-${String(ticket.number).padStart(3, '0')}.txt`,
-  data: `Ticket #${ticket.number} (${ticket.typeLabel}) - ${guild.name}\nOpened by ${ticket.openerTag} at ${new Date(ticket.createdAt).toISOString()}\n${'-'.repeat(60)}\n${lines(messages).join('\n')}\n`,
+  data: [`Ticket #${ticket.number} (${ticket.typeLabel}) - ${guild.name}`, '', 'WHY THIS TICKET WAS OPENED', ...summary.map((r) => `${r.label}: ${r.value}`), '-'.repeat(60), ...lines(messages), ''].join('\n'),
 }) });
 
+const ctxs = (globalThis[Symbol.for('goodboy.support.ctxs')] ??= new Map());
 const api = {
+  /** Is this channel an open or closed ticket? Other modules use it (Levels gives no XP in tickets). */
+  isTicket(guildId, channelId) { return !!ctxs.get(guildId)?.data.get(`ticket:${channelId}`); },
   /** `owner` is the add-on's module name; the format only applies in servers where that add-on is enabled. */
   registerTranscriptFormat(name, fn, owner) { if (!/^[a-z0-9-]{2,20}$/.test(name) || typeof fn !== 'function') throw new Error('bad format'); formats.set(name, { fn, owner }); },
   formats,
@@ -153,7 +178,7 @@ async function makeTranscript(ctx, channel, ticket) {
     if (want !== 'txt') ctx.log.warn(`Transcript format "${want}" isn't available (is its add-on enabled?) - using txt`);
     entry = formats.get('txt');
   }
-  const out = await entry.fn({ ticket, messages, guild: ctx.guild, channel });
+  const out = await entry.fn({ ticket, messages, guild: ctx.guild, channel, summary: ticketSummary(ticket), embedText });
   return new AttachmentBuilder(Buffer.from(out.data), { name: out.name });
 }
 
@@ -502,6 +527,44 @@ async function watchForm(ctx, i, token) {
   return i.reply({ content: `Added to the watch log as **#${id}**. New tickets that mention them (or come from them) will be flagged to staff.`, flags: EPH });
 }
 
+// ------------------------------------------------------------------ /ticket setup (2.3.3)
+/** Where tickets go, where their logs go, and who staff are, in one command. With nothing filled in it shows the current setup. */
+async function ticketSetup(ctx, i) {
+  need(ctx, i, 'support.manage');
+  const catOpt = i.options.getChannel('category');
+  const cat = catOpt && (ctx.guild.channels.cache.get(catOpt.id) ?? catOpt), log = i.options.getChannel('log_channel'), role = i.options.getRole('staff_role');
+  const move = i.options.getBoolean('move_open_tickets') ?? false;
+  const done = [];
+  if (cat) {
+    if (cat.type !== ChannelType.GuildCategory) throw new UserError('Pick a **category** (the folders in your channel list), not a channel.');
+    ctx.settings.set('ticketCategory', cat.id); done.push(`📁 New tickets open in **${cat.name}**`);
+  }
+  if (log) { ctx.settings.set('logChannel', log.id); done.push(`📝 Transcripts and close notes go to <#${log.id}>`); }
+  if (role) { ctx.settings.set('staffRole', role.id); done.push(`🛡️ Staff role: <@&${role.id}>`); }
+  let moved = 0, failed = 0;
+  const target = ctx.config.get('ticketCategory');
+  if (move && target) {
+    await i.deferReply({ flags: EPH });
+    for (const { key } of ctx.data.list('ticket:')) {
+      const ch = ctx.guild.channels.cache.get(key.slice(7));
+      if (!ch || ch.parentId === target) continue;
+      const ok = await ctx.queue(() => ch.setParent(target, { lockPermissions: false, reason: 'Ticket setup: move tickets into the ticket category' })).then(() => true).catch(() => false);
+      if (ok) moved++; else failed++;
+    }
+    if (moved || failed) done.push(`🚚 Moved ${moved} existing ticket${moved === 1 ? '' : 's'} into the category${failed ? ` (${failed} couldn't be moved: I need Manage Channels, and categories hold at most 50 channels)` : ''}`);
+  }
+  const now = (id, fmt) => (id ? fmt(id) : '*not set*');
+  const catNow = ctx.config.get('ticketCategory');
+  const summary = [
+    done.length ? `**Saved:**\n${done.join('\n')}\n` : '**Ticket setup**',
+    `Category: ${now(catNow, (id) => `📁 ${ctx.guild.channels.cache.get(id)?.name ?? 'deleted category'}`)}${catNow ? '' : ' (tickets appear at the top of the channel list)'}`,
+    `Log channel: ${now(ctx.config.get('logChannel'), (id) => `<#${id}>`)}`,
+    `Staff role: ${now(ctx.config.get('staffRole'), (id) => `<@&${id}>`)}`,
+    done.length ? '' : '\nFill in the options to change any of these.',
+  ].join('\n');
+  return i.deferred ? i.editReply({ content: summary, allowedMentions: { parse: [] } }) : i.reply({ content: summary, flags: EPH, allowedMentions: { parse: [] } });
+}
+
 // ------------------------------------------------------------------ /ticket command
 async function ticketCommand(ctx, i) {
   const group = i.options.getSubcommandGroup(false);
@@ -531,6 +594,8 @@ async function ticketCommand(ctx, i) {
     ctx.data.set('types', [...list, { id, label, emoji: i.options.getString('emoji')?.trim().slice(0, 40) || undefined, questions, categoryId: catId }]);
     return i.reply({ content: `Added ticket type **${label}**${questions.length ? ` with ${questions.length} form question(s)` : ''}. Post a panel with \`/ticket panel\`.`, flags: EPH });
   }
+
+  if (sub === 'setup') return ticketSetup(ctx, i);
 
   if (sub === 'panel') {
     need(ctx, i, 'support.manage');
@@ -688,6 +753,8 @@ export default {
   version: '2.0.0',
   description: 'Tickets with categories and urgency, popups, a staff watch log for reports, required close notes and a history.',
   api,
+  async init(ctx) { ctxs.set(ctx.guildId, ctx); },
+  async destroy(ctx) { ctxs.delete(ctx.guildId); },
   settings: [
     { key: 'ticketCategory', type: 'channel', label: 'Category for ticket channels' },
     { key: 'staffRole', type: 'role', label: 'Staff role (more can be added with /permissions on support.staff)' },
@@ -725,8 +792,13 @@ export default {
   ` }],
   commands: [
     {
-      ownPopup: ['panel'], // opens its own popup when run with nothing filled in
+      ownPopup: ['panel', 'setup'], // opens its own popup when run with nothing filled in
       data: new SlashCommandBuilder().setName('ticket').setDescription('Support tickets')
+        .addSubcommand((s) => s.setName('setup').setDescription('(Staff) Where tickets open, where logs go, and the staff role')
+          .addChannelOption((o) => o.setName('category').setDescription('The category new ticket channels go in').addChannelTypes(ChannelType.GuildCategory))
+          .addChannelOption((o) => o.setName('log_channel').setDescription('Staff-only channel for transcripts and close notes').addChannelTypes(ChannelType.GuildText))
+          .addRoleOption((o) => o.setName('staff_role').setDescription('Who answers tickets'))
+          .addBooleanOption((o) => o.setName('move_open_tickets').setDescription('Also move tickets that are already open into the category')))
         .addSubcommand((s) => s.setName('panel').setDescription('Post the "open a ticket" buttons')
           .addChannelOption((o) => o.setName('channel').setDescription('Where to post it'))
           .addStringOption((o) => o.setName('title').setDescription('Panel title'))

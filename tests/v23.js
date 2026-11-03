@@ -215,6 +215,8 @@ export default async function runV23Tests({ test }) {
     w.staff = w.channel('staff'); w.news = w.channel('announcements');
     w.mm.setSetting(G, 'botnews', 'adminChannel', w.staff.id);
     w.mm.setSetting(G, 'botnews', 'announceChannel', w.news.id);
+    // the 2.3 tests below check posting itself; the 2.3.3 review step and plain style have their own test
+    w.mm.setSetting(G, 'botnews', 'reviewAnnouncements', false); w.mm.setSetting(G, 'botnews', 'announceStyle', 'box');
     w.ctx = () => w.mm.ctx(G, 'botnews');
     w.titles = (ch) => ch.sent.map((p) => p.embeds?.[0]?.data?.title ?? p.embeds?.[0]?.data?.description ?? p.content);
     return w;
@@ -247,6 +249,43 @@ export default async function runV23Tests({ test }) {
     assert.equal(w.news.sent.length, 1, 'member posts can be switched off');
   });
 
+  await test('bot news (2.3.3): member news goes to admins as a draft first; Edit posts your own words, Post as it is and Skip work once; plain style is a normal message', async () => {
+    const { announce, splitMessage } = await import('../modules/botnews/index.js');
+    const w = await newsWorld();
+    w.mm.setSetting(G, 'botnews', 'reviewAnnouncements', true); w.mm.setSetting(G, 'botnews', 'announceStyle', 'plain');
+    const admin = w.person('900000000000000741', { bits: [P.ManageGuild, P.Administrator], pos: 15 });
+    w.ctx().data.set('lastVersion', '2.3.0');
+    await announceUpdates(w.ctx(), { version: '2.4.0', sections: SECTIONS });
+    assert.equal(w.news.sent.length, 0, 'nothing reaches members before someone checks it');
+    const draft = w.staff.sent.find((p) => p.components?.length);
+    assert.match(draft.embeds[0].data.title, /Draft/); assert.equal(draft.embeds[0].data.description, 'Fishing tournaments!');
+    // Edit: a popup filled with the draft, and what you type is what gets posted
+    const edit = w.ix({ customId: 'botnews:edit:v2.4.0', member: admin, channel: w.staff });
+    await w.mm.handleComponent(edit);
+    assert.ok(edit.modal, 'opens the editor');
+    const submit = w.ix({ customId: 'botnews:submit:v2.4.0', member: admin, channel: w.staff });
+    submit.isModalSubmit = () => true; submit.fields = { getTextInputValue: () => 'yo, fishing tournaments are here. go catch something big' };
+    await w.mm.handleComponent(submit);
+    assert.equal(w.news.sent.length, 1);
+    assert.equal(w.news.sent[0].content, 'yo, fishing tournaments are here. go catch something big', 'plain message, your words');
+    assert.ok(!w.news.sent[0].embeds?.length, 'no card, no emoji title');
+    const again = w.ix({ customId: 'botnews:post:v2.4.0', member: admin, channel: w.staff });
+    await w.mm.handleComponent(again);
+    assert.equal(w.news.sent.length, 1, 'a draft is only posted once');
+    // members who don't manage bot news can't press the buttons
+    await announce(w.ctx(), 'mtest', 'Something new', 'Test');
+    const member = w.person('900000000000000742');
+    const nope = w.ix({ customId: 'botnews:post:mtest', member, channel: w.staff });
+    await w.mm.handleComponent(nope);
+    assert.equal(w.news.sent.length, 1);
+    const skip = w.ix({ customId: 'botnews:skip:mtest', member: admin, channel: w.staff });
+    await w.mm.handleComponent(skip);
+    assert.equal(w.ctx().data.get('draft:mtest').status, 'skipped');
+    // long posts are split between paragraphs
+    const parts = splitMessage(`${'a'.repeat(1500)}\n\n${'b'.repeat(1500)}`);
+    assert.equal(parts.length, 2); assert.ok(parts.every((x) => x.length <= 2000));
+  });
+
   await test('bot news: new modules are told to admins; turning a member feature on introduces it to members once', async () => {
     const w = await newsWorld(['botnews', 'economy']);
     await settle();
@@ -254,7 +293,7 @@ export default async function runV23Tests({ test }) {
     assert.match(JSON.stringify(w.staff.sent.at(-1)), /shiny/);
     await w.mm.enable(G, 'games'); await settle();
     assert.ok(w.titles(w.staff).some((t) => /\*\*games\*\* was turned on/.test(t)), 'admins hear about modules switching');
-    assert.equal(w.news.sent.length, 1); assert.equal(w.news.sent[0].embeds[0].data.title, '🎉 New: Games are open');
+    assert.equal(w.news.sent.length, 1); assert.equal(w.news.sent[0].embeds[0].data.title, 'games are open');
     await w.mm.disable(G, 'games'); await w.mm.enable(G, 'games'); await settle();
     assert.equal(w.news.sent.length, 1, 'members are introduced once');
     await w.mm.enable(G, 'moderation'); await settle();

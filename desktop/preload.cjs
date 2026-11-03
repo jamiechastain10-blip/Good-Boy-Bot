@@ -8,6 +8,8 @@ const listen = (channel) => (fn) => {
   return () => ipcRenderer.removeListener(channel, handler);
 };
 
+const rect = (b) => ({ x: Number(b?.x) || 0, y: Number(b?.y) || 0, width: Number(b?.width) || 0, height: Number(b?.height) || 0 });
+
 contextBridge.exposeInMainWorld('goodBoy', {
   state: () => ipcRenderer.invoke('gb:state'),
   start: () => ipcRenderer.invoke('gb:start'),
@@ -15,6 +17,13 @@ contextBridge.exposeInMainWorld('goodBoy', {
   restart: () => ipcRenderer.invoke('gb:restart'),
   openDashboard: () => ipcRenderer.invoke('gb:open-dashboard'),
   openDashboardBrowser: () => ipcRenderer.invoke('gb:open-dashboard-browser'),
+  // 2.3.3: the dashboard is a page of the main window. The page tells the app where its content area is.
+  dashShow: (b) => ipcRenderer.invoke('gb:dash-show', rect(b)),
+  dashBounds: (b) => ipcRenderer.invoke('gb:dash-bounds', rect(b)),
+  dashHide: () => ipcRenderer.invoke('gb:dash-hide'),
+  dashReload: (b) => ipcRenderer.invoke('gb:dash-reload', rect(b)),
+  onGoto: listen('goto'),
+  onDash: listen('dash'),
   levels: () => ipcRenderer.invoke('gb:levels'),
   recheck: () => ipcRenderer.invoke('gb:recheck'),
   summary: () => ipcRenderer.invoke('gb:summary'),

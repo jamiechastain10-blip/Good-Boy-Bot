@@ -224,3 +224,34 @@ img.mini{width:26px;height:26px;object-fit:contain;flex:none}
 .qr{flex:none;width:180px;height:180px;border-radius:12px;background:#fff;padding:8px;image-rendering:pixelated}
 .group.steps{margin-top:10px}
 img.avatar{object-fit:cover;background:var(--field)}
+
+/* ---- the Dashboard page (2.3.3): the real dashboard sits over .dash-host, the sidebar shrinks to icons */
+#app.on-dash{grid-template-columns:64px 1fr}
+#app.on-dash .side{padding:12px 8px;align-items:center}
+#app.on-dash .brand{padding:0;justify-content:center;font-size:0;gap:0}
+#app.on-dash .brand .edition,#app.on-dash .group-label,#app.on-dash .server div,#app.on-dash .nav .count{display:none}
+#app.on-dash .nav{width:44px;height:40px;justify-content:center;padding:0;font-size:0;gap:0}
+#app.on-dash .nav .ic{width:26px;height:26px}
+#app.on-dash .server{padding:8px 0;justify-content:center}
+.mac #app.on-dash .brand{padding-top:28px}
+main[data-page="dashboard"]{padding:0;display:flex;flex-direction:column;overflow:hidden}
+main[data-page="dashboard"] .wrap{max-width:none;margin:0;flex:1;display:flex;flex-direction:column;min-height:0}
+.dash-bar{height:38px;flex:none;display:flex;align-items:center;gap:10px;padding:0 150px 0 16px;border-bottom:1px solid var(--hair);-webkit-app-region:drag;font-size:13px}
+.mac .dash-bar{padding-right:16px}
+.dash-bar>*{-webkit-app-region:no-drag}
+.dash-bar b{font-weight:600}
+.dash-server{color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dash-bar .btn{margin-left:auto}
+.btn.small{height:26px;padding:0 10px;font-size:12px}
+.dash-host{flex:1;min-height:0;position:relative}
+.dash-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--ink-2)}
+.dash-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;padding:40px}
+.dash-empty h2{font:600 22px/1.2 var(--display);margin:6px 0 0}
+.dash-empty p{color:var(--ink-2);max-width:440px;margin:0 0 6px}
+
+/* 2.3.3 layout fixes: the shared liquid stylesheet resets switch margins, which pushed switches against their labels */
+.row>.switch,.row>input.switch{margin-left:auto}
+.row>.two{flex:1 1 auto}
+.two .lab,.two .meta{overflow:hidden;text-overflow:ellipsis}
+.titlerow{margin-bottom:16px}
+.titlerow .sub{margin-bottom:0}

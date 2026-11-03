@@ -18,6 +18,7 @@ import { createPipeline, packToken, unpackToken } from '../../src/modalpipe.js';
 import { parseAmount, fmtNum } from '../../src/economy.js';
 import * as C from '../../src/casino.js';
 import * as F from '../../src/fishing.js';
+import * as CH from '../../src/fishchallenges.js';
 import { UserError, sleep } from '../../src/util.js';
 
 const EPH = MessageFlags.Ephemeral;
@@ -292,14 +293,94 @@ function reelButtons(id) {
 function landFish(ctx, userId, s) {
   const c = s.fish, sp = F.FISH[c.species];
   const before = F.levelFromXp(profile(ctx, userId).xp).level;
-  const xp = F.catchXp(c);
+  const xp = F.catchXp(c, sp.biome);
   ctx.sql.run('INSERT INTO games_fish_bag (guild_id, user_id, species, rarity, mutation, giant, weight, value, biome, caught_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ctx.guildId, userId, c.species, c.rarity, c.mutation, c.giant ? 1 : 0, c.weight, c.value, sp.biome, Date.now());
   ctx.sql.run(`INSERT INTO games_fish_dex (guild_id, user_id, species, count, best_weight, first_at) VALUES (?, ?, ?, 1, ?, ?)
                ON CONFLICT(guild_id, user_id, species) DO UPDATE SET count = count + 1, best_weight = MAX(best_weight, excluded.best_weight)`, ctx.guildId, userId, c.species, c.weight, Date.now());
   ctx.sql.run('UPDATE games_fish_profile SET xp = xp + ?, caught = caught + 1, best_weight = MAX(best_weight, ?) WHERE guild_id = ? AND user_id = ?', xp, c.weight, ctx.guildId, userId);
+  const challenges = progressChallenges(ctx, userId, { type: 'catch', fish: c });
   const after = F.levelFromXp(profile(ctx, userId).xp).level;
-  return { xp, before, after };
+  return { xp, before, after, challenges };
+}
+
+// ------------------------------------------------------------------ fishing: challenges
+const dailyPeriod = (now) => `d:${CH.dayKey(now)}`;
+const weeklyPeriod = (now) => `w:${CH.weekKey(now)}`;
+/** Today's and this week's challenges for a member, made the first time they are needed (from their level then). */
+function challenges(ctx, userId, now = Date.now()) {
+  const lv = F.levelFromXp(profile(ctx, userId).xp).level;
+  const make = (period, list) => {
+    if (ctx.sql.get('SELECT 1 FROM games_fish_challenges WHERE guild_id = ? AND user_id = ? AND period = ?', ctx.guildId, userId, period)) return;
+    list.forEach((spec, slot) => ctx.sql.run('INSERT OR IGNORE INTO games_fish_challenges (guild_id, user_id, period, slot, spec) VALUES (?, ?, ?, ?, ?)', ctx.guildId, userId, period, slot, JSON.stringify(spec)));
+  };
+  const seed = `${ctx.guildId}:${userId}`;
+  make(dailyPeriod(now), CH.makeDailies(lv, `${seed}:${CH.dayKey(now)}`));
+  make(weeklyPeriod(now), [CH.makeWeekly(lv, `${seed}:${CH.weekKey(now)}`)]);
+  const rows = ctx.sql.all('SELECT * FROM games_fish_challenges WHERE guild_id = ? AND user_id = ? AND period IN (?, ?) ORDER BY period, slot', ctx.guildId, userId, dailyPeriod(now), weeklyPeriod(now));
+  const parsed = rows.map((r) => ({ ...r, spec: JSON.parse(r.spec), seen: JSON.parse(r.seen) }));
+  return { daily: parsed.filter((r) => r.period.startsWith('d:')), weekly: parsed.filter((r) => r.period.startsWith('w:')) };
+}
+/** Moves challenges along after a catch or a sale and pays any that finish. Returns lines to show the player. */
+function progressChallenges(ctx, userId, event, now = Date.now()) {
+  const lines = [];
+  if (!ctx.config.get('fishChallenges')) return lines;
+  const { daily, weekly } = challenges(ctx, userId, now);
+  const fmt = (n) => money(ctx, n);
+  let dailyFinished = false;
+  for (const row of [...daily, ...weekly]) {
+    if (row.done_at) continue;
+    const next = CH.advance(row.spec, row.progress, row.seen, event);
+    if (next.progress === row.progress && next.seen === row.seen) continue;
+    const done = next.progress >= row.spec.goal;
+    ctx.sql.run('UPDATE games_fish_challenges SET progress = ?, seen = ?, done_at = ? WHERE guild_id = ? AND user_id = ? AND period = ? AND slot = ?',
+      next.progress, JSON.stringify(next.seen), done ? now : null, ctx.guildId, userId, row.period, row.slot);
+    if (!done) continue;
+    const { coins, xp } = row.spec.reward;
+    if (coins) eco(ctx).credit(ctx.guildId, userId, coins, 'fishing challenge');
+    if (xp) ctx.sql.run('UPDATE games_fish_profile SET xp = xp + ? WHERE guild_id = ? AND user_id = ?', xp, ctx.guildId, userId);
+    lines.push(`📜 **${row.period.startsWith('w:') ? 'Weekly challenge' : 'Challenge'} done:** ${CH.describe(row.spec, fmt)} · +${fmt(coins)}${xp ? ` · +${fmtNum(xp)} XP` : ''}`);
+    if (row.period.startsWith('d:')) dailyFinished = true;
+  }
+  if (dailyFinished && ctx.sql.get('SELECT COUNT(*) AS n FROM games_fish_challenges WHERE guild_id = ? AND user_id = ? AND period = ? AND done_at IS NULL', ctx.guildId, userId, dailyPeriod(now)).n === 0) {
+    const p = profile(ctx, userId);
+    const streak = p.streak_day === CH.yesterdayKey(now) ? p.streak + 1 : 1;
+    const bonus = CH.streakBonus(F.levelFromXp(p.xp).level, streak);
+    ctx.sql.run('UPDATE games_fish_profile SET streak = ?, streak_day = ? WHERE guild_id = ? AND user_id = ?', streak, CH.dayKey(now), ctx.guildId, userId);
+    eco(ctx).credit(ctx.guildId, userId, bonus.coins, 'fishing challenge streak');
+    ctx.sql.run('INSERT INTO games_fish_bait (guild_id, user_id, bait, qty) VALUES (?, ?, ?, ?) ON CONFLICT(guild_id, user_id, bait) DO UPDATE SET qty = qty + excluded.qty', ctx.guildId, userId, bonus.bait, bonus.baitQty);
+    lines.push(`🔥 **All of today's challenges done!** Streak: ${streak} day${streak === 1 ? '' : 's'} · +${fmt(bonus.coins)} · +${bonus.baitQty} ${F.baitById(bonus.bait).label}`);
+  }
+  return lines;
+}
+/** The streak still counts if it was kept up yesterday or today. */
+const liveStreak = (p, now = Date.now()) => ([CH.dayKey(now), CH.yesterdayKey(now)].includes(p.streak_day) ? p.streak : 0);
+
+function challengesMessage(ctx, i, now = Date.now()) {
+  if (!ctx.config.get('fishChallenges')) throw new UserError('Fishing challenges are turned off in this server.');
+  const { daily, weekly } = challenges(ctx, i.user.id, now);
+  const p = profile(ctx, i.user.id);
+  const fmt = (n) => money(ctx, n);
+  const line = (r) => {
+    const g = r.spec.goal, pr = Math.min(r.progress, g);
+    const shown = r.spec.kind === 'sell' ? `${fmtNum(pr)}/${fmtNum(g)}` : `${pr}/${g}`;
+    return `${r.done_at ? '✅' : '▫️'} ${CH.describe(r.spec, fmt)}
+   ${F.meter((pr / g) * 100, 8)} ${shown} · ${fmt(r.spec.reward.coins)}${r.spec.reward.xp ? ` + ${fmtNum(r.spec.reward.xp)} XP` : ''}`;
+  };
+  const streak = liveStreak(p, now);
+  const doneToday = daily.filter((r) => r.done_at).length;
+  const bonus = CH.streakBonus(F.levelFromXp(p.xp).level, p.streak_day === CH.dayKey(now) ? streak : streak + 1);
+  const unix = (ms) => Math.floor(ms / 1000);
+  const e = new EmbedBuilder().setColor(COLORS.fish).setTitle('📜 Fishing challenges')
+    .setDescription(`Challenges count every fish you land (and fish you sell). Rewards are paid the moment you finish one.
+🔥 Streak: **${streak}** day${streak === 1 ? '' : 's'}${doneToday === 3 ? ' · all done today!' : ` · finish all 3 today for +${fmt(bonus.coins)} and ${bonus.baitQty} ${F.baitById(bonus.bait).label}`}`)
+    .addFields(
+      { name: `Today · ${doneToday}/3 · new <t:${unix(CH.nextDayAt(now))}:R>`, value: daily.map(line).join('\n') },
+      { name: `This week · new <t:${unix(CH.nextWeekAt(now))}:R>`, value: weekly.map(line).join('\n') },
+    );
+  return { embeds: [e], components: [new ActionRowBuilder().addComponents(
+    pipe.button(i, 'cast', [], { label: 'Cast', emoji: '🎣', style: ButtonStyle.Success }),
+    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary))], allowedMentions: NOPING };
 }
 
 function fishLine(c) {
@@ -331,7 +412,8 @@ async function reelClick(ctx, i, id, action) {
     ctx.live('data');
     e.setColor(s.fish.mutation === 'corrupted' ? 0x2c2f33 : r.color)
       .setDescription([`🎉 You caught a ${fishLine(s.fish)}!`, `Worth ${money(ctx, s.fish.value)} · +${landed.xp} XP`,
-        landed.after > landed.before ? `⬆️ **Fishing level ${landed.after}!**${unlockText(landed.before, landed.after)}` : null].filter(Boolean).join('\n'));
+        ...landed.challenges,
+        landed.after > landed.before ? `⬆️ **Fishing level ${landed.after}${landed.after >= F.MAX_LEVEL ? ' (max)' : ''}!**${unlockText(landed.before, landed.after)}` : null].filter(Boolean).join('\n'));
   } else {
     const why = { snapped: '💥 **Snap!** The line broke. Watch the tension bar, or fit a Steel Leader.', cut: '✂️ You cut the line.', idle: '⌛ You waited too long and it swam off.', tired: '😮‍💨 It tired you out and got away.' };
     e.setColor(COLORS.lose).setDescription(`${why[s.status === 'snapped' ? 'snapped' : s.reason] ?? '🐟 It got away!'}\nIt was a **${F.rarityById(s.fish.rarity).label}** fish.`);
@@ -356,18 +438,21 @@ function hubMessage(ctx, i) {
   const lv = F.levelFromXp(p.xp);
   const bag = ctx.sql.get('SELECT COUNT(*) AS n, COALESCE(SUM(value), 0) AS v FROM games_fish_bag WHERE guild_id = ? AND user_id = ? AND sold = 0', ctx.guildId, i.user.id);
   const setup = lastSetup(p);
+  const quest = ctx.config.get('fishChallenges') ? challenges(ctx, i.user.id) : null;
   const e = new EmbedBuilder().setColor(COLORS.fish).setTitle('🎣 Fishing')
-    .setDescription(`Level **${lv.level}** ${F.meter((lv.into / lv.needed) * 100)} ${fmtNum(lv.into)}/${fmtNum(lv.needed)} XP`)
+    .setDescription(lv.max ? `Level **${lv.level}** (max) ${F.meter(100)} ${fmtNum(p.xp)} XP` : `Level **${lv.level}** ${F.meter((lv.into / lv.needed) * 100)} ${fmtNum(lv.into)}/${fmtNum(lv.needed)} XP`)
     .addFields(
       { name: 'Last setup', value: `${F.biomeById(setup.biome).emoji} ${F.biomeById(setup.biome).label}\n🎣 ${F.rodById(setup.rod).label} · 🪱 ${F.baitById(setup.bait).label} · 🧰 ${F.tackleById(setup.tackle).label}` },
       { name: 'Bag', value: `${fmtNum(bag.n)} fish worth ${money(ctx, bag.v)}`, inline: true },
       { name: 'Caught', value: `${fmtNum(p.caught)} of ${fmtNum(p.casts)} casts`, inline: true },
+      ...(quest ? [{ name: 'Challenges', value: `📜 ${quest.daily.filter((r) => r.done_at).length}/3 today${quest.weekly[0]?.done_at ? ' · weekly ✅' : ''}${liveStreak(p) ? ` · 🔥 ${liveStreak(p)}` : ''}`, inline: true }] : []),
     ).setFooter({ text: 'Cast opens a form to pick where to fish, your rod, bait and tackle.' });
   return { embeds: [e], components: [new ActionRowBuilder().addComponents(
     pipe.button(i, 'cast', [], { label: 'Cast', emoji: '🎣', style: ButtonStyle.Success }),
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:bag`).setEmoji('🎒').setLabel('Bag').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:shop`).setEmoji('🛒').setLabel('Shop').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('Collection').setStyle(ButtonStyle.Secondary))], flags: EPH, allowedMentions: NOPING };
+    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('Collection').setStyle(ButtonStyle.Secondary),
+    ...(quest ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:quests`).setEmoji('📜').setLabel('Challenges').setStyle(ButtonStyle.Secondary)] : []))], flags: EPH, allowedMentions: NOPING };
 }
 
 function bagMessage(ctx, i, note) {
@@ -384,14 +469,15 @@ function bagMessage(ctx, i, note) {
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary))], allowedMentions: NOPING };
 }
 function sellFish(ctx, userId, all) {
-  let total = 0;
+  let total = 0, lines = [];
   ctx.sql.transaction(() => {
     const filter = all ? '' : "AND rarity NOT IN ('legendary', 'mythical') AND mutation IS NULL";
     total = ctx.sql.get(`SELECT COALESCE(SUM(value), 0) AS v FROM games_fish_bag WHERE guild_id = ? AND user_id = ? AND sold = 0 ${filter}`, ctx.guildId, userId).v;
     ctx.sql.run(`UPDATE games_fish_bag SET sold = 1 WHERE guild_id = ? AND user_id = ? AND sold = 0 ${filter}`, ctx.guildId, userId);
     if (total) eco(ctx).credit(ctx.guildId, userId, total, 'sold fish');
+    if (total) lines = progressChallenges(ctx, userId, { type: 'sell', coins: total });
   });
-  return total;
+  return { total, lines };
 }
 
 function shopMessage(ctx, i, note) {
@@ -448,17 +534,33 @@ function buyItem(ctx, userId, value, qty = 1) {
   return label;
 }
 
-function dexMessage(ctx, i) {
+/** Collection: an overview of every place, or one place's fish (`biome`). A button per place switches between them. */
+function dexMessage(ctx, i, biome = null) {
   const seen = Object.fromEntries(ctx.sql.all('SELECT species, count, best_weight FROM games_fish_dex WHERE guild_id = ? AND user_id = ?', ctx.guildId, i.user.id).map((r) => [r.species, r]));
-  const total = Object.keys(F.FISH).length, found = Object.keys(seen).length;
-  const e = new EmbedBuilder().setColor(COLORS.fish).setTitle(`📖 Collection · ${found}/${total}`)
-    .setDescription(`${F.meter((found / total) * 100, 15)} Catch every fish in every place.`);
-  for (const b of F.BIOMES) {
-    const list = Object.values(F.FISH).filter((f) => f.biome === b.id);
-    const have = list.filter((f) => seen[f.id]).length;
-    e.addFields({ name: `${b.emoji} ${b.label} · ${have}/${list.length}`, value: list.map((f) => (seen[f.id] ? `✅ ${f.name} (best ${seen[f.id].best_weight} kg)` : `❔ ${F.rarityById(f.rarity).label} fish`)).join('\n'), inline: true });
+  const total = Object.keys(F.FISH).length, found = Object.keys(seen).filter((id) => F.FISH[id]).length;
+  const lv = F.levelFromXp(profile(ctx, i.user.id).xp).level;
+  const e = new EmbedBuilder().setColor(COLORS.fish);
+  const place = biome && F.BIOMES.find((b) => b.id === biome);
+  if (place) {
+    const list = F.fishIn(place.id), have = list.filter((f) => seen[f.id]).length;
+    e.setTitle(`📖 ${place.emoji} ${place.label} · ${have}/${list.length}`)
+      .setDescription([place.level > lv ? `🔒 Unlocks at fishing level ${place.level}.` : place.blurb, '',
+        ...list.map((f) => (seen[f.id] ? `✅ **${f.name}** · ${F.rarityById(f.rarity).label} · best ${seen[f.id].best_weight} kg · caught ${fmtNum(seen[f.id].count)}` : `❔ ${F.rarityById(f.rarity).label} fish`))].join('\n'));
+  } else {
+    e.setTitle(`📖 Collection · ${found}/${total}`)
+      .setDescription(`${F.meter((found / total) * 100, 15)} Catch every fish in every place. Pick a place below to see its fish.`);
+    for (const b of F.BIOMES) {
+      const list = F.fishIn(b.id), have = list.filter((f) => seen[f.id]).length;
+      e.addFields({ name: `${b.emoji} ${b.label}`, value: b.level > lv ? `🔒 Level ${b.level}` : `${have === list.length ? '🏆' : F.meter((have / list.length) * 100, 6)} ${have}/${list.length}`, inline: true });
+    }
   }
-  return { embeds: [e], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary))], allowedMentions: NOPING };
+  const btn = (b) => new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex-${b.id}`).setEmoji(b.emoji).setLabel(b.label.replace(/^The /, '')).setStyle(b.id === biome ? ButtonStyle.Primary : ButtonStyle.Secondary);
+  return { embeds: [e], components: [
+    new ActionRowBuilder().addComponents(F.BIOMES.slice(0, 5).map(btn)),
+    new ActionRowBuilder().addComponents(F.BIOMES.slice(5, 10).map(btn)),
+    new ActionRowBuilder().addComponents(
+      ...(place ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('All places').setStyle(ButtonStyle.Secondary)] : []),
+      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary))], allowedMentions: NOPING };
 }
 
 async function hubClick(ctx, i, owner, view) {
@@ -467,10 +569,12 @@ async function hubClick(ctx, i, owner, view) {
   if (view === 'bag') return i.update(bagMessage(ctx, i));
   if (view === 'shop') return i.update(shopMessage(ctx, i));
   if (view === 'dex') return i.update(dexMessage(ctx, i));
+  if (view.startsWith('dex-')) return i.update(dexMessage(ctx, i, view.slice(4)));
+  if (view === 'quests') return i.update(challengesMessage(ctx, i));
   if (view === 'hub') { const { flags, ...m } = hubMessage(ctx, i); return i.update(m); }
   if (view === 'sellall' || view === 'sellcommon') {
     const got = sellFish(ctx, i.user.id, view === 'sellall');
-    return i.update(bagMessage(ctx, i, got ? `💰 Sold for ${money(ctx, got)}.` : 'Nothing to sell.'));
+    return i.update(bagMessage(ctx, i, got.total ? [`💰 Sold for ${money(ctx, got.total)}.`, ...got.lines].join('\n') : 'Nothing to sell.'));
   }
   throw new UserError('That button is no longer active.');
 }
@@ -600,16 +704,17 @@ const gameCommand = (name, description, form) => ({
 
 export default {
   name: 'games',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'Slots, blackjack, coin flip and fishing, played with economy coins',
-  memberIntroTitle: 'Games are open',
-  memberIntro: 'Play with your coins: **/slots** (with a server-wide jackpot), **/blackjack** and **/coinflip**. Or go **/fish**: cast in different places, catch rare and giant fish, fill your collection and upgrade your rod.',
+  memberIntroTitle: 'games are open',
+  memberIntro: "you can play games with your coins now. there's /slots (the jackpot keeps growing until someone hits it), /blackjack and /coinflip. there's also /fish, go catch stuff in different spots, find rare and giant fish, fill up your collection and get better rods",
   dependencies: [{ module: 'economy', version: '>=1.0.0' }],
   settings: [
     { key: 'slotsEnabled', type: 'toggle', label: 'Slots', default: true },
     { key: 'blackjackEnabled', type: 'toggle', label: 'Blackjack', default: true },
     { key: 'coinflipEnabled', type: 'toggle', label: 'Coin flip', default: true },
     { key: 'fishingEnabled', type: 'toggle', label: 'Fishing', default: true },
+    { key: 'fishChallenges', type: 'toggle', label: 'Fishing challenges (3 daily and 1 weekly, with coin and XP rewards)', default: true },
     { key: 'minBet', type: 'number', label: 'Smallest bet', default: 10, min: 1, max: 1000000 },
     { key: 'maxBet', type: 'number', label: 'Biggest bet', default: 50000, min: 1, max: 100000000 },
     { key: 'privateGames', type: 'toggle', label: 'Only the player sees their game (keeps the channel quiet)', default: true },
@@ -639,6 +744,12 @@ export default {
           CREATE INDEX games_fish_bag_user ON games_fish_bag (guild_id, user_id, sold);
           CREATE TABLE games_fish_dex (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, species TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, best_weight REAL NOT NULL DEFAULT 0,
             first_at INTEGER NOT NULL, PRIMARY KEY (guild_id, user_id, species));`,
+  }, {
+    id: 2, // 2.3.3: daily and weekly fishing challenges, and the challenge streak
+    sql: `CREATE TABLE games_fish_challenges (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, period TEXT NOT NULL, slot INTEGER NOT NULL, spec TEXT NOT NULL,
+            progress INTEGER NOT NULL DEFAULT 0, seen TEXT NOT NULL DEFAULT '[]', done_at INTEGER, PRIMARY KEY (guild_id, user_id, period, slot));
+          ALTER TABLE games_fish_profile ADD COLUMN streak INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE games_fish_profile ADD COLUMN streak_day TEXT;`,
   }],
   commands: [
     gameCommand('slots', 'Spin the slots (opens a bet form)', 'slots'),
@@ -663,6 +774,8 @@ export default {
     // Hands and fights nobody finished: blackjack stands automatically (and pays), fishing fights end.
     name: 'expire-sessions', everyMs: 60000,
     async run(ctx) {
+      // Challenges older than two weeks are no longer shown anywhere.
+      ctx.sql.run('DELETE FROM games_fish_challenges WHERE guild_id = ? AND substr(period, 3) < ?', ctx.guildId, CH.dayKey(Date.now() - 15 * 86400000));
       const old = ctx.sql.all('SELECT * FROM games_sessions WHERE guild_id = ? AND updated_at < ?', ctx.guildId, Date.now() - SESSION_MAX_MS);
       for (const row of old) {
         try {

@@ -62,7 +62,7 @@ Claims open every **20 hours**, so the time can drift a little each day, and the
 Every game result has **again** (same bet or setup, one click) and **change bet** (reopens the popup, pre-filled). Bets themselves are always typed in a popup, so changing the stake is a conscious act. The fishing hub remembers your last place, rod, bait and tackle. *Code: `modules/games` "again" buttons, `src/modalpipe.js` pre-fill.*
 
 ### Recommendation 3: visible rarity and a collection to finish *(built)*
-Fishing has 6 rarity tiers with colours, rare **Mutated** and **Corrupted** variants and giant weights. It also has a **collection log** (30 fish across 5 places, which unlock with level) and hype lines for legendary and mythical bites. Better rods, bait and tackle visibly change the odds and the reeling. *Code: `src/fishing.js`, `/fish` → Collection.*
+Fishing has 6 rarity tiers with colours, rare **Mutated** and **Corrupted** variants and giant weights. It also has a **collection log** (108 fish across 9 places, which unlock with level up to level 100) and daily and weekly challenges with a streak and hype lines for legendary and mythical bites. Better rods, bait and tackle visibly change the odds and the reeling. *Code: `src/fishing.js`, `/fish` → Collection.*
 
 ### Recommendation 4: a shared jackpot and live boards *(built)*
 Every slots bet feeds a **server-wide jackpot pool** shown on the arcade panel and the bet popup, so everyone is playing for the same prize. The pool is also a coin sink. The **live leaderboards** (`/top`) cover coins, streaks, catches, heaviest fish, fishing level and casino winnings, per server or globally for servers that opt in. *Code: `modules/games` jackpot, `modules/economy` boards.*

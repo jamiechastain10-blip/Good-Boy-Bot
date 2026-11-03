@@ -5,7 +5,7 @@
  * Moderation suite: warn / timeout / kick / ban / unban / purge / history,
  * AutoMod (spam, words, links, mass mentions), raid protection, anti-nuke, logging.
  */
-import { SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType, EmbedBuilder, AuditLogEvent, PermissionFlagsBits as P, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonStyle, ButtonBuilder } from 'discord.js';
+import { SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType, ChannelType, EmbedBuilder, AuditLogEvent, PermissionFlagsBits as P, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonStyle, ButtonBuilder } from 'discord.js';
 import { UserError, hierarchyError, parseDuration, formatDuration, truncate, escapeRegex, ts, SNOWFLAKE } from '../../src/util.js';
 import { formStore } from '../../src/forms.js';
 import { createPipeline } from '../../src/modalpipe.js';
@@ -724,7 +724,58 @@ const automodCommand = {
   },
 };
 
+// ---- /logs (2.3.3): set log channels and what gets logged with one command
+const LOG_EVENTS = [['message_edits', 'logMessages', 'Message edits and deletes'], ['joins', 'logJoins', 'Members joining and leaving'], ['roles', 'logRoles', 'Role changes'], ['nicknames', 'logNicknames', 'Nickname changes'], ['voice', 'logVoice', 'Voice joins, leaves and moves']];
+export function logsStatus(ctx) {
+  const ch = (id) => (id ? `<#${id}>` : '*not set*');
+  const mod = ctx.config.get('logChannel'), server = ctx.config.get('serverLogChannel');
+  return [
+    `**Mod log** (warnings, timeouts, kicks, bans, AutoMod): ${ch(mod)}`,
+    `**Server log** (the events below): ${server ? ch(server) : mod ? `${ch(mod)} (same as the mod log)` : '*not set*'}`,
+    '',
+    ...LOG_EVENTS.map(([, key, label]) => `${ctx.config.get(key) ? '✅' : '▫️'} ${label}`),
+    '',
+    'Ticket transcripts have their own channel: `/ticket setup`.',
+  ].join('\n');
+}
+async function logsCmd(ctx, i) {
+  const sub = i.options.getSubcommand();
+  if (sub === 'off') {
+    const which = i.options.getString('which', true);
+    if (which === 'mod' || which === 'all') ctx.settings.set('logChannel', null);
+    if (which === 'server' || which === 'all') { ctx.settings.set('serverLogChannel', null); for (const [, key] of LOG_EVENTS.slice(1)) ctx.settings.set(key, false); }
+    return i.reply({ content: `Logging turned off for: **${which === 'all' ? 'everything' : which === 'mod' ? 'the mod log' : 'the server log'}**.\n\n${logsStatus(ctx)}`, flags: EPH, allowedMentions: NOPING });
+  }
+  const mod = i.options.getChannel('mod_channel'), server = i.options.getChannel('server_channel');
+  const changed = [];
+  if (mod) { ctx.settings.set('logChannel', mod.id); changed.push('mod log channel'); }
+  if (server) { ctx.settings.set('serverLogChannel', server.id); changed.push('server log channel'); }
+  for (const [opt, key, label] of LOG_EVENTS) {
+    const v = i.options.getBoolean(opt);
+    if (v !== null && v !== undefined) { ctx.settings.set(key, v); changed.push(`${label.toLowerCase()} ${v ? 'on' : 'off'}`); }
+  }
+  // Turning an event on with nowhere to send it: say so instead of silently logging nothing.
+  const anyOn = LOG_EVENTS.slice(1).some(([, key]) => ctx.config.get(key));
+  const warn = anyOn && !ctx.config.get('serverLogChannel') && !ctx.config.get('logChannel') ? '\n\n⚠️ Pick a channel (`server_channel` or `mod_channel`) or nothing will be logged.' : '';
+  return i.reply({ content: `${changed.length ? `✅ Saved: ${changed.join(', ')}.\n\n` : ''}${logsStatus(ctx)}${warn}`, flags: EPH, allowedMentions: NOPING });
+}
+
 const commands = [
+  {
+    permission: 'moderation.logs',
+    ownPopup: true,
+    data: new SlashCommandBuilder().setName('logs').setDescription('(Admins) Choose log channels and what gets logged')
+      .addSubcommand((s) => {
+        s.setName('setup').setDescription('Set log channels and turn events on or off (empty = show the current setup)')
+          .addChannelOption((o) => o.setName('mod_channel').setDescription('Warnings, timeouts, kicks, bans and AutoMod').addChannelTypes(ChannelType.GuildText))
+          .addChannelOption((o) => o.setName('server_channel').setDescription('Joins, leaves, roles, nicknames, voice (empty = the mod log)').addChannelTypes(ChannelType.GuildText));
+        for (const [opt, , label] of LOG_EVENTS) s.addBooleanOption((o) => o.setName(opt).setDescription(`Log ${label.toLowerCase()}`));
+        return s;
+      })
+      .addSubcommand((s) => s.setName('off').setDescription('Stop logging')
+        .addStringOption((o) => o.setName('which').setDescription('Which log').setRequired(true).addChoices({ name: 'Mod log', value: 'mod' }, { name: 'Server log', value: 'server' }, { name: 'Everything', value: 'all' }))),
+    execute: logsCmd,
+  },
   {
     // 2.2: no typed options. The command only serves the private "Configure warning" button (src/modalpipe.js).
     permission: 'moderation.warn',
@@ -884,6 +935,7 @@ export default {
     { key: 'moderation.history', label: 'View moderation history', default: 'moderator' },
     { key: 'moderation.automod', label: 'Change AutoMod rules and exemptions', default: 'admin' },
     { key: 'moderation.bypass', label: 'Ignored by AutoMod', default: 'moderator' },
+    { key: 'moderation.logs', label: 'Choose log channels with /logs', default: 'admin' },
     { key: 'moderation.antinuke-immune', label: 'Trusted: not watched by anti-nuke (owner always is)', default: 'owner' },
   ],
   views: {

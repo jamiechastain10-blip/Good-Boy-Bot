@@ -130,8 +130,14 @@ There is no timer on purpose. A self-updating message would hit Discord's edit l
 | 🧊 Rimefall Shelf | 12 | |
 | 🌋 Cinder Vents | 20 | |
 | 🕳️ The Hollow Deep | 30 | +3% corruption |
+| ⛈️ Stormglass Reef | 40 | ×1.5 XP, hard 1 |
+| 🏛️ The Sunken Spire | 55 | ×2 XP, hard 2 |
+| 🌌 Aurora Trench | 70 | ×2.5 XP, hard 3, +1% corruption |
+| ✨ Starfall Abyss | 85 | ×3 XP, hard 4, +4% corruption |
 
-Each place has one fish of each rarity: **Common, Uncommon, Rare, Epic, Legendary, Mythical** (base odds 55 / 25 / 12 / 5.5 / 2 / 0.5). Luck from the rod and bait multiplies each higher tier by (1 + luck) per tier. Variants: **Mutated** (2%, ×2.5 value, ×1.3 weight), **Corrupted** (0.4% base, ×5 value), **Giant** (top 2% of weights, ×1.6 weight). Value scales with weight.
+`hard` adds to each fish's escape, adds twice that to its pull, and half of it (rounded down) to how far it moves. Levels cap at **100**; past level 32 the XP curve adds `40 × (level − 32)^2.2`, so existing levels are unchanged (level 100 = 528,614 XP).
+
+Each place has two fish of each rarity (108 fish in all; when a rarity bites, it's one of its two fish at random): **Common, Uncommon, Rare, Epic, Legendary, Mythical** (base odds 55 / 25 / 12 / 5.5 / 2 / 0.5). Luck from the rod and bait multiplies each higher tier by (1 + luck) per tier. Variants: **Mutated** (2%, ×2.5 value, ×1.3 weight), **Corrupted** (0.4% base, ×5 value), **Giant** (top 2% of weights, ×1.6 weight). Value scales with weight.
 
 | Rod | Price | Level | Luck | Zone | Power | Line |
 |---|---|---|---|---|---|---|
@@ -141,8 +147,13 @@ Each place has one fish of each rarity: **Common, Uncommon, Rare, Epic, Legendar
 | Rimeglass Rod | 25,000 | 14 | +35% | 7 | 17 | 130 |
 | Cinderspine Rod | 75,000 | 22 | +50% | 7 | 20 | 140 |
 | Voidreach Rod | 250,000 | 32 | +80% | 8 | 24 | 160 |
+| Stormglass Rod | 600,000 | 42 | +100% | 8 | 27 | 175 |
+| Spirebone Rod | 1,500,000 | 58 | +125% | 9 | 30 | 190 |
+| Starforged Rod | 4,000,000 | 75 | +160% | 9 | 34 | 210 |
 
-Bait (used up, one per cast): Earthworm, Glass Shrimp, Glowgrub, Void Lure (draws corruption). Tackle (kept, one fitted per cast): Steel Leader (tension 40% slower), Lead Sinker (calmer fish), Brass Spinner (+4 per good reel), Four-Leaf Charm (mutations ×2).
+Bait (used up, one per cast): Earthworm, Glass Shrimp, Glowgrub, Void Lure (draws corruption), Stormfly, Starlure (draws corruption). Tackle (kept, one fitted per cast): Steel Leader (tension 40% slower), Lead Sinker (calmer fish), Brass Spinner (+4 per good reel), Four-Leaf Charm (mutations ×2).
+
+**Challenges (2.3.3):** 3 dailies (midnight UTC) and 1 weekly (Monday) per member, seeded from server, member and day, picked from the member's three best unlocked places (`src/fishchallenges.js`). Kinds: catch N, catch N at a place, N of a rarity or better, a certain Common/Uncommon fish, a fish over a weight, sell for N coins, N different kinds; weekly: Mutated/Corrupted, Legendary (Epic ×2 under level 12), Giant, 60–90 fish, 30 at the best place. Rewards: coins `150 × (1 + level^1.3 / 6)` (×5 weekly) and 12% (60% weekly) of the XP to the next level. All 3 dailies: a streak bonus (+25% per day in a row, up to 7) and 3 bait. Stored in `games_fish_challenges`; rows older than 15 days are removed. Setting: `fishChallenges`.
 
 Simulated with a sensible player: the starter rod lands Rare fish almost every time and Legendary about 1 in 5. The Rimeglass Rod lands Legendary about 9 in 10, and the Voidreach Rod lands nearly everything. Upgrades matter.
 

@@ -367,4 +367,321 @@ export default async function runV23bTests({ test }) {
     for (const need of ['GB.island.mount', 'island.news(', 'renderModulePage', 'setupSheet', "'Needs setup'", 'Undo']) assert.ok(app.includes(need), need);
     assert.ok(!/animation|@keyframes/.test(pub('style.css')), 'motion stays out of the layout stylesheet');
   });
+
+  console.log('\n2.3.3 fishing expansion and voice XP');
+  await test('fishing expansion: 9 places up to level 85, cap at level 100, old levels unchanged, steeper past 32, late places pay more XP and fight harder', async () => {
+    const F = await import('../src/fishing.js');
+    assert.equal(F.BIOMES.length, 9);
+    assert.deepEqual(F.BIOMES.slice(5).map((b) => b.level), [40, 55, 70, 85]);
+    for (const b of F.BIOMES) for (const r of F.RARITIES) assert.ok(Object.values(F.FISH).some((f) => f.biome === b.id && f.rarity === r.id), `${b.id} ${r.id}`);
+    assert.equal(Object.keys(F.FISH).length, 108);
+    // Old curve kept up to 32, so nobody's level moved.
+    for (const l of [2, 12, 30, 32]) assert.equal(F.xpForLevel(l), Math.round(100 * (l - 1) ** 1.5), `level ${l}`);
+    let prev = 0;
+    for (let l = 2; l <= 100; l++) { const step = F.xpForLevel(l) - F.xpForLevel(l - 1); assert.ok(step > prev, `level ${l} costs more than the one before`); prev = step; }
+    assert.ok(F.xpForLevel(60) - F.xpForLevel(59) > 3 * (F.xpForLevel(33) - F.xpForLevel(32)), 'much steeper later');
+    const top = F.levelFromXp(1e9);
+    assert.equal(top.level, 100); assert.equal(top.max, true); assert.equal(top.needed, 0);
+    assert.equal(F.levelFromXp(F.xpForLevel(100) - 1).level, 99);
+    assert.equal(F.levelFromXp(F.xpForLevel(70)).level, 70);
+    // Rods unlock in order and each new one is better.
+    for (let k = 1; k < F.RODS.length; k++) assert.ok(F.RODS[k].level > F.RODS[k - 1].level && F.RODS[k].luck > F.RODS[k - 1].luck);
+    assert.ok(F.BAITS.find((b) => b.id === 'stormfly') && F.BAITS.find((b) => b.id === 'starlure'));
+    // XP multiplier by place.
+    const c = { rarity: 'epic', mutation: null, giant: false };
+    assert.equal(F.catchXp(c), 100); assert.equal(F.catchXp(c, 'bay'), 100); assert.equal(F.catchXp(c, 'abyss'), 300);
+    // Harder fish: the same fish, rod and presses lose more ground in the Abyss than in the Deep.
+    const play = (biome) => { const s = F.startReel({ rod: 'voidreach', tackle: 'none', fish: { rarity: 'rare' }, seed: 9, now: 0 }); s.biome = biome; s.zone = 0; s.pos = 19; F.reelStep(s, 'reel', 1); return s; };
+    const easy = play('deep'), hard = play('abyss');
+    assert.ok(hard.progress < easy.progress && hard.tension > easy.tension, 'late places fight harder');
+  });
+
+  await test('fishing expansion in the game: a catch in a late place gives its bonus XP; the hub shows max level', async () => {
+    const F = await import('../src/fishing.js');
+    const w = await makeWorld(['economy', 'games'], { guildId: G }).load();
+    const ctx = w.mm.ctx(G, 'games');
+    ctx.sql.run('INSERT OR IGNORE INTO games_fish_profile (guild_id, user_id) VALUES (?, ?)', G, 'u1');
+    ctx.sql.run('UPDATE games_fish_profile SET xp = ? WHERE guild_id = ? AND user_id = ?', F.xpForLevel(100) + 50, G, 'u1');
+    const p = ctx.sql.get('SELECT xp FROM games_fish_profile WHERE guild_id = ? AND user_id = ?', G, 'u1');
+    assert.equal(F.levelFromXp(p.xp).level, 100);
+    const src = fs.readFileSync(new URL('../modules/games/index.js', import.meta.url), 'utf8');
+    assert.match(src, /F\.catchXp\(c, sp\.biome\)/, 'landing a fish uses the place it came from');
+    assert.match(src, /lv\.max \?/, 'the hub has a max-level line instead of dividing by zero');
+  });
+
+  await test('voice XP: on by default, can be turned off; only members with someone else in the channel; never deafened, AFK or bots; muted is a setting; daily limit; level-ups announce and give roles', async () => {
+    const { voiceEarners, voiceTick, levelOf } = await import('../modules/community/index.js');
+    const w = await makeWorld(['community'], { guildId: G }).load();
+    const ctx = w.mm.ctx(G, 'community');
+    const vc = w.channel('lounge'), solo = w.channel('solo');
+    w.g.afkChannelId = 'afk';
+    const vs = (id, channel, extra = {}) => {
+      const member = w.people.get(id) ?? w.person(id);
+      return [id, { id, channelId: channel?.id ?? channel, channel: typeof channel === 'string' ? null : channel, member, selfDeaf: false, serverDeaf: false, selfMute: false, serverMute: false, ...extra }];
+    };
+    const botMember = { id: 'bot2', user: { id: 'bot2', bot: true } };
+    w.g.voiceStates = { cache: new Map([
+      vs('a', vc), vs('b', vc), vs('m', vc, { selfMute: true }), vs('d', vc, { selfDeaf: true }),
+      vs('s', solo), ['bot2', { id: 'bot2', channelId: solo.id, member: botMember }],
+      vs('z1', 'afk'), vs('z2', 'afk'),
+    ]) };
+    assert.deepEqual(voiceEarners(w.g).map((v) => v.id).sort(), ['a', 'b'], 'alone (with a bot), deafened, muted and AFK do not count');
+    assert.deepEqual(voiceEarners(w.g, { countMuted: true }).map((v) => v.id).sort(), ['a', 'b', 'm']);
+
+    assert.equal(ctx.config.get('voiceXp'), true, 'on by default (2.3.3)');
+    w.mm.setSetting(G, 'community', 'voiceXp', false);
+    assert.equal(await voiceTick(ctx), 0, 'admins can turn it off');
+    w.mm.setSetting(G, 'community', 'voiceXp', true);
+    w.mm.setSetting(G, 'community', 'voiceXpPerMinute', 10);
+    w.mm.setSetting(G, 'community', 'voiceXpDailyMinutes', 3);
+    assert.equal(await voiceTick(ctx), 2);
+    assert.equal(ctx.data.get('user:a').xp, 10);
+    assert.ok(!ctx.data.get('user:m'), 'muted members earn nothing by default');
+    for (let k = 0; k < 5; k++) await voiceTick(ctx);
+    assert.equal(ctx.data.get('user:a').xp, 30, 'stops at the daily limit');
+    assert.equal(ctx.data.get('user:a').voiceToday, 3);
+    assert.equal(await voiceTick(ctx, Date.now() + 86400000), 2, 'a new day starts again');
+
+    // Level-up: announced in the voice channel chat (no level-up channel set), with the level role.
+    w.role('lvl1', { pos: 2 });
+    ctx.data.set('reward:1', 'lvl1');
+    ctx.data.set('user:b', { xp: levelOf(0).needed - 5, messages: 0, rep: 0, lastXp: 0, lastRep: 0 });
+    w.mm.setSetting(G, 'community', 'voiceXpDailyMinutes', 0);
+    vc.sent.length = 0;
+    await voiceTick(ctx);
+    assert.equal(levelOf(ctx.data.get('user:b').xp).level, 1);
+    assert.ok(vc.sent.some((m) => /level \*\*1\*\*|level 1/i.test(m.content ?? '')), 'level-up announced');
+    assert.ok(w.people.get('b').roles.cache.has('lvl1'), 'level role given');
+  });
+
+  await test('more fish: a second fish of every rarity in every place (108), old catches keep their ids, both kinds bite', async () => {
+    const F = await import('../src/fishing.js');
+    assert.equal(Object.keys(F.FISH).length, 108);
+    assert.equal(F.FISH['bay-0'].name, 'Pier Minnow', 'saved catches keep pointing at the same fish');
+    assert.equal(F.FISH['bay-6'].name, 'Dock Sprat');
+    for (const b of F.BIOMES) for (const r of F.RARITIES) assert.equal(F.fishIn(b.id).filter((f) => f.rarity === r.id).length, 2, `${b.id} ${r.id}`);
+    assert.equal(new Set(Object.values(F.FISH).map((f) => f.name)).size, 108, 'every name is different');
+    const got = new Set(Array.from({ length: 400 }, (_, k) => F.rollCatch({ biome: 'bay' }, F.seeded(k)).species));
+    assert.ok(got.has('bay-0') && got.has('bay-6'), 'both commons bite');
+  });
+
+  await test('challenge rules: 3 different dailies and a weekly, always possible for the member, same every time; progress rules; rewards grow with level', async () => {
+    const CH = await import('../src/fishchallenges.js');
+    const F = await import('../src/fishing.js');
+    for (const level of [1, 4, 5, 12, 25, 40, 60, 85, 100]) for (let k = 0; k < 30; k++) {
+      const d = CH.makeDailies(level, `g:u:${k}`);
+      assert.equal(d.length, 3); assert.equal(new Set(d.map((c) => c.kind)).size, 3, 'three different kinds');
+      assert.deepEqual(d, CH.makeDailies(level, `g:u:${k}`), 'same seed, same challenges');
+      for (const c of [...d, CH.makeWeekly(level, `g:u:${k}`)]) {
+        assert.ok(c.goal >= 1 && c.reward.coins > 0, JSON.stringify(c));
+        if (c.biome) assert.ok(F.biomeById(c.biome).level <= level, `place unlocked at level ${level}: ${c.biome}`);
+        if (c.species) assert.ok(F.FISH[c.species].biome === c.biome && ['common', 'uncommon'].includes(F.FISH[c.species].rarity));
+        assert.ok(CH.describe(c).length > 5);
+      }
+    }
+    const step = (ch, events) => events.reduce((st, e) => CH.advance(ch, st.progress, st.seen, e), { progress: 0, seen: [] });
+    const fish = (species, extra = {}) => ({ type: 'catch', fish: { species, rarity: F.FISH[species].rarity, weight: F.FISH[species].min, giant: false, mutation: null, ...extra } });
+    assert.equal(step({ kind: 'catch', goal: 5 }, [fish('bay-0'), fish('marsh-1')]).progress, 2);
+    assert.equal(step({ kind: 'place', biome: 'marsh', goal: 5 }, [fish('bay-0'), fish('marsh-1')]).progress, 1);
+    assert.equal(step({ kind: 'rarity', rarity: 'rare', goal: 5 }, [fish('bay-1'), fish('bay-2'), fish('bay-5')]).progress, 2, 'rare or better');
+    assert.equal(step({ kind: 'species', species: 'bay-6', goal: 2 }, [fish('bay-0'), fish('bay-6')]).progress, 1);
+    assert.equal(step({ kind: 'heavy', biome: 'bay', weight: 2, goal: 1 }, [fish('bay-1', { weight: 1.5 }), fish('marsh-4', { weight: 50 })]).progress, 0);
+    assert.equal(step({ kind: 'heavy', biome: 'bay', weight: 2, goal: 1 }, [fish('bay-2', { weight: 2.5 })]).progress, 1);
+    const v = step({ kind: 'variety', goal: 5 }, [fish('bay-0'), fish('bay-0'), fish('bay-6')]);
+    assert.equal(v.progress, 2); assert.deepEqual(v.seen, ['bay-0', 'bay-6']);
+    assert.equal(step({ kind: 'sell', goal: 100 }, [{ type: 'sell', coins: 60 }, fish('bay-0'), { type: 'sell', coins: 60 }]).progress, 100, 'sales add up, capped at the goal');
+    assert.equal(step({ kind: 'mutation', goal: 1 }, [fish('bay-0'), fish('bay-0', { mutation: 'mutated' })]).progress, 1);
+    assert.equal(step({ kind: 'giant', goal: 1 }, [fish('bay-0', { giant: true })]).progress, 1);
+    assert.equal(CH.advance({ kind: 'catch', goal: 1 }, 1, [], fish('bay-0')).progress, 1, 'a finished challenge stays finished');
+    assert.ok(CH.rewards(60).daily.coins > CH.rewards(10).daily.coins && CH.rewards(10).daily.coins > CH.rewards(1).daily.coins);
+    assert.equal(CH.rewards(100).daily.xp, 0, 'no XP at the max level, coins still');
+    assert.equal(CH.streakBonus(30, 7).coins, CH.streakBonus(30, 50).coins, 'streak bonus stops growing after a week');
+    assert.ok(CH.streakBonus(30, 3).coins > CH.streakBonus(30, 1).coins);
+    assert.equal(CH.weekKey(Date.parse('2026-11-04T12:00:00Z')), '2026-11-02', 'weeks start on Monday');
+    assert.equal(CH.weekKey(Date.parse('2026-11-08T23:00:00Z')), '2026-11-02');
+    assert.equal(CH.nextDayAt(Date.parse('2026-11-04T12:00:00Z')), Date.parse('2026-11-05T00:00:00Z'));
+    assert.equal(CH.yesterdayKey(Date.parse('2026-11-01T05:00:00Z')), '2026-10-31');
+  });
+
+  await test('challenges in the game: Challenges page; a catch and a sale finish challenges and pay; all 3 dailies pay a streak bonus with bait; the streak grows day to day; admins can turn them off', async () => {
+    const { gameWorld, btn, embedText } = await import('./v22.js');
+    const CH = await import('../src/fishchallenges.js');
+    globalThis[Symbol.for('goodboy.games.frameMs')] = 0;
+    const w = await gameWorld();
+    const g = w.mm.ctx('1', 'games');
+    const hub = await w.cmd('fish', w.alice);
+    assert.ok(btn(hub.replies[0], (c) => c.label === 'Challenges'));
+    const page = await w.press('gm:fh:alice:quests', w.alice);
+    assert.match(embedText(page.updated), /Today · 0\/3/); assert.match(embedText(page.updated), /This week/);
+    assert.equal(g.sql.get("SELECT COUNT(*) AS n FROM games_fish_challenges WHERE user_id = 'alice'").n, 4);
+
+    // Swap in known challenges for today.
+    const today = `d:${CH.dayKey(Date.now())}`, week = `w:${CH.weekKey(Date.now())}`;
+    const put = (period, slot, spec) => g.sql.run("INSERT OR REPLACE INTO games_fish_challenges (guild_id, user_id, period, slot, spec, progress, seen, done_at) VALUES ('1', 'alice', ?, ?, ?, 0, '[]', NULL)", period, slot, JSON.stringify({ ...spec, reward: { coins: 100, xp: 10 } }));
+    put(today, 0, { kind: 'catch', goal: 1 }); put(today, 1, { kind: 'place', biome: 'bay', goal: 1 }); put(today, 2, { kind: 'sell', goal: 1 });
+    put(week, 0, { kind: 'catch', goal: 1 });
+    w.setCoins('alice', 0);
+    let msg = null;
+    for (let tries = 0; tries < 5 && !g.sql.get("SELECT COUNT(*) AS n FROM games_fish_bag WHERE user_id = 'alice'").n; tries++) {
+      const castId = btn((await w.cmd('fish', w.alice)).replies[0], (c) => c.label === 'Cast').custom_id;
+      await w.form(castId, w.alice, { biome: ['bay'], rod: ['driftwood'], bait: ['none'], tackle: ['none'] });
+      for (let k = 0; k < 80; k++) {
+        const row = g.sql.get("SELECT * FROM games_sessions WHERE user_id = 'alice' AND kind = 'fish'");
+        if (!row) break;
+        const s = JSON.parse(row.state); s.progress = Math.max(s.progress, 95); s.zone = Math.max(0, Math.min(20 - 5, s.pos - 2));
+        g.sql.run('UPDATE games_sessions SET state = ? WHERE id = ?', JSON.stringify(s), row.id);
+        msg = (await w.press(`gm:fr:${row.id}:left`, w.alice)).updated;
+      }
+    }
+    assert.match(embedText(msg), /Challenge done:\*\* Catch 1 fish/);
+    assert.match(embedText(msg), /Weekly challenge done/);
+    assert.equal(w.coins('alice'), 300, 'three challenges paid');
+    assert.equal(g.sql.get("SELECT streak FROM games_fish_profile WHERE user_id = 'alice'").streak, 0, 'no streak until all three are done');
+    const sold = await w.press('gm:fh:alice:sellall', w.alice);
+    assert.match(embedText(sold.updated), /All of today's challenges done/);
+    const p = g.sql.get("SELECT streak, streak_day FROM games_fish_profile WHERE user_id = 'alice'");
+    assert.deepEqual([p.streak, p.streak_day], [1, CH.dayKey(Date.now())]);
+    assert.equal(g.sql.get("SELECT qty FROM games_fish_bait WHERE user_id = 'alice' AND bait = 'worm'").qty, 3, 'bonus bait');
+    // Kept up yesterday: the streak grows.
+    g.sql.run("UPDATE games_fish_profile SET streak = 4, streak_day = ? WHERE user_id = 'alice'", CH.yesterdayKey(Date.now()));
+    g.sql.run("UPDATE games_fish_challenges SET progress = 0, done_at = NULL WHERE user_id = 'alice' AND period = ? AND slot = 2", today);
+    g.sql.run("INSERT INTO games_fish_bag (guild_id, user_id, species, rarity, weight, value, biome, caught_at) VALUES ('1', 'alice', 'bay-0', 'common', 1, 50, 'bay', 0)");
+    await w.press('gm:fh:alice:sellall', w.alice);
+    assert.equal(g.sql.get("SELECT streak FROM games_fish_profile WHERE user_id = 'alice'").streak, 5);
+
+    // Collection pages: an overview plus a page per place.
+    const dex = await w.press('gm:fh:alice:dex', w.alice);
+    assert.match(embedText(dex.updated), /Collection · 1\/108/);
+    assert.equal(dex.updated.components.length, 3, 'two rows of places and a back row');
+    const reef = await w.press('gm:fh:alice:dex-reef', w.alice);
+    assert.match(embedText(reef.updated), /Unlocks at fishing level 40/);
+    assert.match(embedText((await w.press('gm:fh:alice:dex-bay', w.alice)).updated), /✅ \*\*[A-Z]/);
+
+    w.mm.setSetting('1', 'games', 'fishChallenges', false);
+    assert.ok(!btn((await w.cmd('fish', w.alice)).replies[0], (c) => c.label === 'Challenges'), 'no button when turned off');
+  });
+
+  console.log('\n2.3.3 fixes: XP in tickets, ticket setup, /logs');
+  await test('no XP or level-up messages in tickets or in switched-off channels and categories; /xp ignore manages the list', async () => {
+    const w = await makeWorld(['community', 'support'], { guildId: G }).load();
+    const ctx = w.mm.ctx(G, 'community');
+    const admin = w.person('900000000000000701', { bits: [P.ManageGuild, P.Administrator], pos: 15 });
+    const chat = w.channel('chat'), ticket = w.channel('ticket-0001'), quiet = w.channel('memes');
+    const cat = w.channel('Off-topic'); cat.type = 4; quiet.parentId = cat.id;
+    w.mm.ctx(G, 'support').data.set(`ticket:${ticket.id}`, { number: 1, opener: admin.id, status: 'open' });
+    const { xpAllowed } = await import('../modules/community/index.js');
+    assert.equal(xpAllowed(ctx, chat), true);
+    assert.equal(xpAllowed(ctx, ticket), false, 'tickets never give XP');
+    await w.run(w.ix({ command: 'xp', group: 'ignore', sub: 'add', member: admin, opts: { channel: cat } }));
+    assert.equal(xpAllowed(ctx, quiet), false, 'a channel inside a switched-off category');
+    const list = await w.run(w.ix({ command: 'xp', group: 'ignore', sub: 'list', member: admin }));
+    assert.match(list, /Off-topic/);
+    await w.run(w.ix({ command: 'xp', group: 'ignore', sub: 'remove', member: admin, opts: { channel: cat } }));
+    assert.equal(xpAllowed(ctx, quiet), true);
+    // a real message in a ticket gives nothing
+    const m = w.person('900000000000000702');
+    await w.mm.dispatch('messageCreate', G, { guild: w.g, guildId: G, author: m.user, member: m, channel: ticket, channelId: ticket.id, content: 'hi', system: false });
+    assert.ok(!ctx.data.get(`user:${m.id}`)?.xp, 'no XP from a ticket message');
+    await w.mm.dispatch('messageCreate', G, { guild: w.g, guildId: G, author: m.user, member: m, channel: chat, channelId: chat.id, content: 'hi', system: false });
+    assert.ok(ctx.data.get(`user:${m.id}`).xp > 0, 'XP in normal chat');
+  });
+
+  await test('/ticket setup: picks the category, log channel and staff role, shows the setup when empty, and moves open tickets', async () => {
+    const w = await makeWorld(['support'], { guildId: G }).load();
+    const admin = w.person('900000000000000711', { bits: [P.ManageGuild, P.Administrator], pos: 15 });
+    const land = w.channel('ticket land'); land.type = 4;
+    const log = w.channel('ticket-logs');
+    const open = w.channel('ticket-0007'); open.parentId = null; let movedTo = null;
+    open.setParent = async (id) => { movedTo = id; open.parentId = id; };
+    w.mm.ctx(G, 'support').data.set(`ticket:${open.id}`, { number: 7, opener: admin.id, status: 'open' });
+    const empty = await w.run(w.ix({ command: 'ticket', sub: 'setup', member: admin }));
+    assert.match(empty, /Category: \*not set\*/);
+    const r = await w.run(w.ix({ command: 'ticket', sub: 'setup', member: admin, opts: { category: land, log_channel: log, move_open_tickets: true } }));
+    assert.equal(w.mm.ctx(G, 'support').config.get('ticketCategory'), land.id);
+    assert.equal(w.mm.ctx(G, 'support').config.get('logChannel'), log.id);
+    assert.equal(movedTo, land.id, 'the open ticket moved into ticket land');
+    assert.match(r, /Moved 1 existing ticket/);
+    const notCat = await w.run(w.ix({ command: 'ticket', sub: 'setup', member: admin, opts: { category: log } }));
+    assert.match(notCat, /Pick a \*\*category\*\*/);
+  });
+
+  await test('/logs: set the mod and server log channels and events in one command; empty shows the setup; off turns it off', async () => {
+    const w = await makeWorld(['moderation'], { guildId: G }).load();
+    const ctx = w.mm.ctx(G, 'moderation');
+    const admin = w.person('900000000000000721', { bits: [P.ManageGuild, P.Administrator], pos: 15 });
+    const modlog = w.channel('mod-log'), server = w.channel('server-log');
+    const shown = await w.run(w.ix({ command: 'logs', sub: 'setup', member: admin }));
+    assert.match(shown, /Mod log.*not set/);
+    const warn = await w.run(w.ix({ command: 'logs', sub: 'setup', member: admin, opts: { joins: true } }));
+    assert.match(warn, /Pick a channel/, 'warns when an event has nowhere to go');
+    await w.run(w.ix({ command: 'logs', sub: 'setup', member: admin, opts: { mod_channel: modlog, server_channel: server, roles: true, voice: true } }));
+    assert.equal(ctx.config.get('logChannel'), modlog.id); assert.equal(ctx.config.get('serverLogChannel'), server.id);
+    assert.equal(ctx.config.get('logRoles'), true); assert.equal(ctx.config.get('logJoins'), true);
+    const m = w.person('900000000000000722'); m.user.createdTimestamp = Date.now() - 86400000;
+    await w.mm.dispatch('guildMemberAdd', G, m);
+    assert.match(server.sent.at(-1).embeds[0].data.title, /Member joined/);
+    await w.run(w.ix({ command: 'logs', sub: 'off', member: admin, opts: { which: 'server' } }));
+    assert.equal(ctx.config.get('serverLogChannel'), null); assert.equal(ctx.config.get('logJoins'), false);
+    const member = w.person('900000000000000723');
+    const denied = await w.run(w.ix({ command: 'logs', sub: 'setup', member }));
+    assert.doesNotMatch(denied, /Saved/, 'members cannot change logs');
+  });
+
+  await test('reaction XP: reacting to someone else\'s message gives a little XP once per cooldown; own messages, bots and tickets give nothing; GIF-only messages count as messages', async () => {
+    const { reactionXp, levelOf } = await import('../modules/community/index.js');
+    const w = await makeWorld(['community', 'support'], { guildId: G }).load();
+    const ctx = w.mm.ctx(G, 'community');
+    const a = w.person('900000000000000731'), b = w.person('900000000000000732');
+    const chat = w.channel('chat'), ticket = w.channel('ticket-0003');
+    w.mm.ctx(G, 'support').data.set(`ticket:${ticket.id}`, { number: 3, opener: a.id, status: 'open' });
+    const msg = (author, channel) => ({ guildId: G, channelId: channel.id, channel, author: author.user });
+    const t0 = Date.now();
+    await reactionXp(ctx, { message: msg(b, chat) }, a.user, t0);
+    assert.equal(ctx.data.get(`user:${a.id}`).xp, 2, 'default 2 XP');
+    await reactionXp(ctx, { message: msg(b, chat) }, a.user, t0 + 30000);
+    assert.equal(ctx.data.get(`user:${a.id}`).xp, 2, 'cooldown');
+    await reactionXp(ctx, { message: msg(b, chat) }, a.user, t0 + 61000);
+    assert.equal(ctx.data.get(`user:${a.id}`).xp, 4);
+    await reactionXp(ctx, { message: msg(a, chat) }, a.user, t0 + 130000);
+    assert.equal(ctx.data.get(`user:${a.id}`).xp, 4, 'reacting to your own message gives nothing');
+    await reactionXp(ctx, { message: msg(b, ticket) }, a.user, t0 + 260000);
+    assert.equal(ctx.data.get(`user:${a.id}`).xp, 4, 'no XP in tickets');
+    await reactionXp(ctx, { message: msg(a, chat) }, { id: 'bot9', bot: true }, t0);
+    assert.ok(!ctx.data.get('user:bot9'), 'bots get nothing');
+    w.mm.setSetting(G, 'community', 'reactionXp', false);
+    await reactionXp(ctx, { message: msg(b, chat) }, a.user, t0 + 400000);
+    assert.equal(ctx.data.get(`user:${a.id}`).xp, 4, 'admins can turn it off');
+    // reaction level-ups use the same announcement and level roles
+    w.mm.setSetting(G, 'community', 'reactionXp', true);
+    ctx.data.set(`user:${b.id}`, { xp: levelOf(0).needed - 1, messages: 0, rep: 0, lastXp: 0, lastRep: 0 });
+    chat.sent.length = 0;
+    await reactionXp(ctx, { message: msg(a, chat) }, b.user, t0);
+    assert.equal(levelOf(ctx.data.get(`user:${b.id}`).xp).level, 1);
+    assert.ok(chat.sent.some((m) => /level/i.test(m.content ?? '')), 'level-up announced');
+    // a message that is only a GIF (link or attachment) gives message XP like any other message
+    const c = w.person('900000000000000733');
+    await w.mm.dispatch('messageCreate', G, { guild: w.g, guildId: G, author: c.user, member: c, channel: chat, channelId: chat.id, content: 'https://tenor.com/view/happy-dog-gif-123', system: false });
+    assert.ok(ctx.data.get(`user:${c.id}`).xp > 0, 'GIF messages count');
+  });
+
+  await test('ticket transcripts say why the ticket was opened (type, urgency, form answers) and show what bot boxes say, in txt and html', async () => {
+    const S = await import('../modules/support/index.js');
+    const html = (await import('../modules/support-html-transcripts/index.js')).default;
+    let renderHtml; html.init({ hostApi: { registerTranscriptFormat: (n, fn) => { renderHtml = fn; } } });
+    const ticket = { number: 12, typeLabel: 'Report a member', priority: 'high', openerTag: 'ari_luvzz', createdAt: Date.UTC(2026, 10, 2, 19, 9),
+      report: { name: 'spammer123' }, answers: [{ q: 'What happened?', a: 'They kept posting scam links in general' }, { q: 'Evidence', a: '' }], status: 'closed', closedAt: Date.UTC(2026, 10, 2, 20), closeReason: 'Banned the spammer' };
+    const summary = S.ticketSummary(ticket);
+    const get = (l) => summary.find((r) => r.label === l)?.value;
+    assert.equal(get('Type'), 'Report a member'); assert.equal(get('What happened?'), 'They kept posting scam links in general');
+    assert.equal(get('About'), 'spammer123'); assert.equal(get('Close reason'), 'Banned the spammer'); assert.ok(get('Urgency'));
+    assert.ok(!summary.some((r) => r.label === 'Evidence'), 'empty answers are left out');
+    const msgs = [{ createdTimestamp: ticket.createdAt, author: { tag: 'Good Boy#0000', displayAvatarURL: () => '' }, cleanContent: '', attachments: new Map(),
+      embeds: [{ data: { title: 'Ticket #12 · Report a member', fields: [{ name: 'What happened?', value: 'They kept posting scam links in general' }] } }] }];
+    const txt = S.default.api.formats.get('txt').fn({ ticket, messages: msgs, guild: { name: 'Server' } }).data;
+    assert.match(txt, /WHY THIS TICKET WAS OPENED/); assert.match(txt, /What happened\?: They kept posting scam links/);
+    assert.match(txt, /Ticket #12 · Report a member/, 'the bot box text is in the message list'); assert.doesNotMatch(txt, /\[1 embed\(s\)\]/);
+    const page = renderHtml({ ticket, messages: msgs, guild: { name: 'Server' }, summary, embedText: S.embedText }).data;
+    assert.match(page, /Why this ticket was opened/); assert.match(page, /They kept posting scam links in general/);
+    assert.match(page, /<div class="box">/);
+  });
 }

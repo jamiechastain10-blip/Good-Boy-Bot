@@ -1,5 +1,85 @@
 # Changelog
 
+## 2.3.3
+**A big fishing expansion (level cap 100, four new places, twice as many fish, daily and weekly challenges, new rods and bait) and voice XP for Levels.**
+
+<!-- members -->
+new update just dropped
+
+fishing goes up to level 100 now. there's 4 new places to unlock (stormglass reef, the sunken spire, aurora trench and starfall abyss) and the fish list is more than triple what it was, 108 total. new rods and bait in the shop too
+
+there's daily and weekly fishing challenges now. finish all 3 dailies in a day and you keep a streak going, the bonus gets bigger the longer you keep it up
+
+you get xp for being in vc now (someone else has to be in there with you) and a little bit for reacting to people's messages. tickets don't give xp anymore so no more random level ups in there
+
+all quotes are gifs now, even if your pfp isn't animated
+
+if something's broken let us know
+<!-- /members -->
+
+**Fishing expansion**
+- The top fishing level is now **100** (it was open-ended, but nothing new unlocked after level 32).
+- Levels past 32 take much more XP, and each one more than the last (level 40 is about 28k XP, level 100 about 529k). Levels up to 32 cost exactly what they did, so nobody lost a level.
+- Four new places: ⛈️ **Stormglass Reef** (level 40), 🏛️ **The Sunken Spire** (55), 🌌 **Aurora Trench** (70) and ✨ **Starfall Abyss** (85).
+- Catches in the new places give **1.5×, 2×, 2.5× and 3× XP**, but their fish fight harder: they move further, pull harder on the line and take more catch away when you miss.
+- New rods: **Stormglass Rod** (level 42), **Spirebone Rod** (58) and **Starforged Rod** (75). New baits: **Stormfly** and **Starlure** (draws corruption).
+- **Twice the fish:** every place has a second fish of every rarity, so 12 fish per place and 108 in all (there were 30). Fish you already caught keep their names.
+- **Collection** has a summary of every place (🏆 when a place is complete) and a page per place with your best weight and how many you've caught.
+- Reaching level 100 shows "(max)" in the fishing menu.
+
+**Fishing challenges**
+- New **📜 Challenges** button in `/fish`: **3 daily challenges** (new at midnight UTC) and **1 weekly** (new on Mondays), different for every member and always picked from places they've unlocked.
+- Dailies like: catch 12 fish, catch 7 at a place, catch 2 Rare or rarer, catch a certain fish, land a fish over a weight, sell fish worth some coins, catch 5 different kinds. Weeklies like: catch a Mutated or Corrupted fish, a Legendary, a Giant, or 75 fish.
+- Rewards grow with level: coins plus XP worth about 12% of your next level (60% for the weekly), paid the moment you finish. The catch message shows it.
+- **🔥 Streak:** finish all 3 dailies for a bonus (coins and 3 bait). Each day in a row adds 25% to the bonus, up to 7 days.
+- Admins can turn challenges off in the Games settings ("Fishing challenges"). The Fishing Wiki covers all of it, including the new fish tables and the level table up to 100.
+
+**Fixes from the community**
+- **Levels:** tickets never give XP or post level-up messages any more. `/xp ignore add|remove|list` switches XP off in any other channel or a whole category (the voice XP skips them too).
+- **Tickets:** new `/ticket setup` sets the category tickets open in, the log channel and the staff role in one command. With nothing filled in it shows the current setup, and `move_open_tickets` moves tickets that are already open into the category.
+- **Ticket transcripts say why the ticket was opened.** Both the text and HTML transcripts start with a "Why this ticket was opened" section: the ticket type, urgency, who opened it, who it's about, every answer from the form, and how it was closed. Messages from the bot now show what their boxes say instead of "[1 embed(s)]". Staff-only close notes stay out, because the transcript is also sent to the member.
+- **Logs:** new `/logs setup` chooses the mod log and server log channels and turns each event on or off (message edits, joins and leaves, roles, nicknames, voice). Empty shows what is logged where; `/logs off` stops a log. It warns you when an event is on but has nowhere to go.
+
+**Windows app**
+- **The dashboard is built in.** It is now the first page of the app (Dashboard), already signed in, with no separate window and no "Open dashboard" step. The app's sidebar shrinks to icons while you are on it so the dashboard has the room. If the bot is stopped, the page offers a Start button.
+- Fixed the Modules page: switches sat right against the module names instead of lining up on the right, and the buttons ran into the list.
+
+**Dashboard**
+- The 💬 Feedback button moved to the bottom-right; on the left it covered the sidebar menu (Logs and Appearance). Pages have room at the bottom so nothing stays stuck under it.
+- The Modules page header no longer cuts off the filter buttons in narrow windows.
+
+**Bot news: you check announcements before they go out**
+- News for members (update notes and new features being turned on) now goes to the admin channel first as a draft with three buttons: **Edit & post** (opens the text so you can say it in your own words), **Post as it is**, and **Skip**. Nothing reaches members until someone picks one, and each draft is only posted once. Only people who manage bot news can press them.
+- Announcements now look like a normal message instead of a card with an emoji title. Long ones are split between paragraphs. The old card style is still a setting ("Announcements look like": plain or box).
+- Turn the review step off with "send each one to the admin channel first" in the Bot news settings. Without an admin channel, news is posted straight away as before.
+
+**Quotes**
+- Every image quote is now a GIF. Members with an animated profile picture keep their own animation; everyone else gets a looping slow zoom on their picture with a soft light sweeping across it (black & white or colour, same as before).
+- New setting "Make every quote a GIF" (on by default). If the GIF fails or would be too big for Discord, the normal still image is sent instead, so a quote is never refused.
+
+**XP balance (Levels)**
+Members spend far longer in voice than typing, so voice now counts as much as chatting. Defaults, per minute of someone taking part:
+
+| Source | XP | Limit |
+|---|---|---|
+| Chatting | 15–25 for the first message each minute (about 20) | once a minute |
+| Voice (with at least one other person) | 12 a minute | up to 5 hours a day |
+| Reactions | 2 | once a minute |
+
+All of these are settings in Community. Servers that changed a number keep their own value.
+
+**Reaction XP (Levels)**
+- Reacting to someone else's message gives a little XP (2 by default), at most once a minute. Both numbers are settings, and admins can turn it off.
+- Reacting to your own message gives nothing, nor do bots, tickets or channels where XP is switched off. Removing and re-adding a reaction doesn't help: the cooldown counts from the last XP given.
+- Reaction level-ups are announced and give level roles like chat level-ups.
+- GIFs, stickers and pictures already count as messages for XP (once a minute, like any message).
+
+**Voice XP (Levels)**
+- New setting on Community: members earn XP every minute they spend in voice. **On by default** (admins can turn it off).
+- Only counts when at least one other person is in the channel (bots and deafened people don't count). Never in the AFK channel, never while deafened. Muted members only earn if you turn that on.
+- XP per minute (default 12) and a daily limit (default 5 hours, 0 = no limit).
+- Voice level-ups give level roles like chat level-ups do, and are announced in the level-up channel (or the voice channel's chat if none is set).
+
 ## 2.3.2
 **A new look everywhere (liquid glass, a living aurora background and a Dynamic Island), migrate that replaces old role menus and learns custom commands, and a proper AutoMod page.**
 

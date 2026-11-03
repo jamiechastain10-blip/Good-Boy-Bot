@@ -232,8 +232,8 @@ export default {
   name: 'economy',
   version: '1.0.0',
   description: 'Coins, daily streaks, paying members and live leaderboards',
-  memberIntroTitle: 'Coins are here',
-  memberIntro: 'Everyone now has a wallet. Claim free coins every day with **/daily** (keep a streak going for more), check your wallet with **/balance**, send coins to a friend with **/pay**, and see who is on top with **/top**.',
+  memberIntroTitle: 'coins are here',
+  memberIntro: "everyone has a wallet now. do /daily every day for free coins (keep your streak going and you get more), /balance to see what you've got, /pay to send coins to someone, and /top to see who's richest",
   settings: [
     { key: 'privateReplies', type: 'toggle', label: 'Only the member sees /daily, /balance and /top (keeps the channel quiet)', default: true },
     { key: 'currencyName', type: 'text', label: 'Currency name', default: 'coins', maxLength: 20 },
