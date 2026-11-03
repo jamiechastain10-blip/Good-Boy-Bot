@@ -163,6 +163,55 @@ async function drawAnimation({ text, name, handle, gifBuf, when, color }, maxFra
   return encodeGif({ width: W, height: H, frames }, { onFrame: tick });
 }
 
+// ---------------------------------------------------------------- motion quotes (2.3.3)
+// Members with a normal profile picture get a GIF too: the picture slowly zooms in and out on a loop and a soft light
+// sweeps across it. Only the left tile moves, so frames stay small.
+export const MOTION_FRAMES = 28;
+const MOTION_LOOP_MS = 2800;
+export async function renderMotion(details, { maxBytes = MAX_UPLOAD } = {}) {
+  let out = null;
+  for (const frames of [MOTION_FRAMES, MOTION_FRAMES / 2]) {
+    out = await drawMotion(details, frames);
+    if (out.length <= maxBytes) return out;
+  }
+  return out;
+}
+/** One frame's zoom, sideways drift and shine position for a point in the loop (0..1). Pure, so it is unit-tested. */
+export function motionAt(phase) {
+  const wave = 0.5 - 0.5 * Math.cos(2 * Math.PI * phase); // 0 -> 1 -> 0, so the loop has no jump
+  return { zoom: 1 + 0.075 * wave, drift: Math.sin(2 * Math.PI * phase) * 0.012, shine: phase < 0.5 ? phase / 0.5 : null };
+}
+async function drawMotion({ text, name, handle, avatarBuf, when, color }, count) {
+  const { createCanvas, loadImage } = await load();
+  let img = null;
+  if (avatarBuf) { try { img = await loadImage(avatarBuf); } catch { /* the initial tile still gets the shine */ } }
+  const canvas = createCanvas(W, H);
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  paintCaption(g, { text, name, handle, when });
+  const tmp = createCanvas(H, H);
+  const frames = [];
+  const delay = Math.round(MOTION_LOOP_MS / count);
+  for (let n = 0; n < count; n++) {
+    const { zoom, drift, shine } = motionAt(n / count);
+    paintTile(g, tmp, img ? (t) => { const sz = H * zoom; t.drawImage(img, (H - sz) / 2 + drift * H, (H - sz) / 2, sz, sz); return true; } : null, { name, color });
+    if (shine !== null) {
+      const x = -H * 0.35 + shine * (TILE_W + H * 0.7);
+      g.save();
+      g.beginPath(); g.rect(0, 0, TILE_W, H); g.clip();
+      g.transform(1, 0, -0.35, 1, 0, 0); // a slanted band
+      const band = g.createLinearGradient(x - 90, 0, x + 90, 0);
+      band.addColorStop(0, 'rgba(255,255,255,0)'); band.addColorStop(0.5, 'rgba(255,255,255,0.16)'); band.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = band; g.fillRect(x - 90, 0, 180 + H * 0.4, H);
+      g.restore();
+    }
+    const w = n === 0 ? W : TILE_W;
+    frames.push({ x: 0, y: 0, w, h: H, rgba: g.getImageData(0, 0, w, H).data, delay });
+    await tick();
+  }
+  return encodeGif({ width: W, height: H, frames }, { onFrame: tick });
+}
+
 async function fetchAvatar(user) {
   try {
     const res = await fetch(user.displayAvatarURL({ extension: 'png', size: 512, forceStatic: true }), { signal: AbortSignal.timeout(10000) });
@@ -192,6 +241,7 @@ async function fetchAnimatedAvatar(user) {
  * because the module manager loads its own copy of this file (a hot-reload-safe import), not the one a test imports.
  */
 export const hooks = (globalThis[Symbol.for('goodboy.quotes.hooks')] ??= { render: (...a) => render(...a), renderAnimated: (...a) => renderAnimated(...a), fetchAvatar, fetchAnimatedAvatar });
+hooks.renderMotion ??= (...a) => renderMotion(...a); // added in 2.3.3; kept on hot reloads of older hooks
 
 /**
  * The channel quotes should be posted in, or null when they should stay where they were requested
@@ -234,8 +284,18 @@ async function quoteMessage(ctx, i, msg, color) {
       }
     } catch (e) { ctx.log.warn(`Animated quote failed, using the still image: ${e.message}`); }
   }
+  let avatarBuf = null;
   if (!buf) {
-    const avatarBuf = await hooks.fetchAvatar(msg.author);
+    avatarBuf = await hooks.fetchAvatar(msg.author);
+    // Everyone else gets a moving quote too (a slow zoom and a shine); still image only if that fails or is too big.
+    if (ctx.config.get('motionQuotes') && hooks.renderMotion) {
+      try {
+        const out = await animationLock(() => hooks.renderMotion({ ...details, avatarBuf }));
+        if (out && out.length <= MAX_UPLOAD) { buf = out; animated = true; }
+      } catch (e) { ctx.log.warn(`Motion quote failed, using the still image: ${e.message}`); }
+    }
+  }
+  if (!buf) {
     try {
       buf = await hooks.render({ ...details, avatarBuf });
     } catch (e) {
@@ -279,6 +339,7 @@ export default {
   version: '1.2.0',
   description: 'Turn any message into a shareable image quote (right-click a message > Apps, or /quote).',
   settings: [
+    { key: 'motionQuotes', type: 'toggle', label: 'Make every quote a GIF (normal profile pictures get a slow zoom and a shine)', description: 'Falls back to a still image automatically if it fails or is too big.', default: true },
     { key: 'animatedQuotes', type: 'toggle', label: 'Animated quotes for members with an animated profile picture', description: 'Falls back to a still image automatically when the animation is too big or fails.', default: true },
     { key: 'quoteChannel', type: 'channel', label: 'Channel where image quotes are posted', description: 'Quotes made in any other channel are posted here automatically. Leave empty to post where the command was used.' },
   ],

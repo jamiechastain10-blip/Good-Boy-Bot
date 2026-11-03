@@ -3,9 +3,9 @@
 Everything about `/fish`: how to play, every place and fish, the shop, and tips for landing the big ones.
 Fishing is part of the **games** module and uses **economy** coins. Coins are play money: they can't be bought or cashed out.
 
-**Contents:** [Quick start](#quick-start) · [Reeling](#reeling-the-mini-game) · [Places](#places) · [All 30 fish](#all-30-fish) ·
+**Contents:** [Quick start](#quick-start) · [Reeling](#reeling-the-mini-game) · [Places](#places) · [All 108 fish](#all-108-fish) ·
 [Rarity](#rarity) · [Giants, Mutated and Corrupted](#giants-mutated-and-corrupted) · [Rods](#rods) · [Bait](#bait) ·
-[Tackle](#tackle) · [Levels](#fishing-levels) · [Selling](#selling-your-catch) · [Collection and leaderboards](#collection-and-leaderboards) ·
+[Tackle](#tackle) · [Levels](#fishing-levels) · [Challenges](#challenges) · [Selling](#selling-your-catch) · [Collection and leaderboards](#collection-and-leaderboards) ·
 [Tips](#tips) · [FAQ](#faq)
 
 ---
@@ -16,9 +16,9 @@ Fishing is part of the **games** module and uses **economy** coins. Coins are pl
 2. Press **🎣 Cast**. A form asks where to fish and which rod, bait and tackle to use. It remembers your last setup.
 3. Something bites: play the [reeling mini-game](#reeling-the-mini-game) with the buttons.
 4. Caught it? It goes in your **🎒 Bag**. Sell fish for coins, then buy better gear in the **🛒 Shop**.
-5. Fill your **📖 Collection** with all 30 fish.
+5. Fill your **📖 Collection** with all 108 fish, and do your **📜 Challenges** every day for extra coins and XP.
 
-Your menu has four buttons: **Cast**, **Bag**, **Shop** and **Collection**.
+Your menu has five buttons: **Cast**, **Bag**, **Shop**, **Collection** and **Challenges**.
 
 ---
 
@@ -51,7 +51,7 @@ Tension ▰▰▱▱▱▱▱▱▱▱  20%
 
 ## Places
 
-You unlock new places by raising your [fishing level](#fishing-levels). Each place has 6 fish, one of each rarity, and the deeper you go, the more they're worth.
+You unlock new places by raising your [fishing level](#fishing-levels). Each place has 12 fish, two of each rarity, and the deeper you go, the more they're worth.
 
 | Place | Unlocks at | What it's like |
 |---|---|---|
@@ -60,62 +60,164 @@ You unlock new places by raising your [fishing level](#fishing-levels). Each pla
 | 🧊 **Rimefall Shelf** | Level 12 | Freezing water under the ice shelf. |
 | 🌋 **Cinder Vents** | Level 20 | Boiling vents on the sea floor. Fast, angry fish. |
 | 🕳️ **The Hollow Deep** | Level 30 | Nothing should live down here. **Corruption is common** (+3% Corrupted chance). |
+| ⛈️ **Stormglass Reef** | Level 40 | A reef of glass lit up by endless lightning. **1.5× XP**, fish fight harder. |
+| 🏛️ **The Sunken Spire** | Level 55 | A drowned city. Its old guardians still swim the halls. **2× XP**, fish fight even harder. |
+| 🌌 **Aurora Trench** | Level 70 | Light that should not exist this deep. **2.5× XP**, tough fish, +1% Corrupted chance. |
+| ✨ **Starfall Abyss** | Level 85 | Where fallen stars sink. **3× XP**, the toughest fish in the game, +4% Corrupted chance. |
+
+The four late places (added in 2.3.3) make every catch worth more XP, but their fish move further, pull harder on the line and take more catch away when you miss.
 
 ---
 
-## All 30 fish
+## All 108 fish
 
 **Weight** is the normal range. Most catches are on the lighter side. **Value** is roughly what a fish at the top of its weight range sells for. Lighter fish are worth less, and [Giants, Mutated and Corrupted](#giants-mutated-and-corrupted) fish are worth much more.
+
+Every place has **two fish of each rarity** (12 per place). When a fish of a rarity bites, it is one of the two at random.
 
 ### 🏮 Lantern Bay
 | Fish | Rarity | Weight (kg) | Value up to |
 |---|---|---|---|
 | Pier Minnow | Common | 0.05 – 0.3 | 12 |
+| Dock Sprat | Common | 0.05 – 0.25 | 14 |
 | Lantern Perch | Uncommon | 0.3 – 1.5 | 30 |
+| Rope Eel | Uncommon | 0.4 – 2 | 33 |
 | Harbor Bass | Rare | 1 – 6 | 92 |
+| Buoy Bream | Rare | 1 – 5 | 98 |
 | Copperfin Snapper | Epic | 3 – 12 | 218 |
+| Anchor Flounder | Epic | 4 – 14 | 228 |
 | Lighthouse Pike | Legendary | 8 – 30 | 721 |
+| Harbourmaster Tuna | Legendary | 10 – 40 | 757 |
 | **Old Beacon** | Mythical | 40 – 120 | 3,458 |
+| **The Fogbell** | Mythical | 50 – 150 | 3,596 |
 
 ### 🌿 Mossmere Marsh
 | Fish | Rarity | Weight (kg) | Value up to |
 |---|---|---|---|
 | Mud Loach | Common | 0.1 – 0.5 | 20 |
+| Peat Tadfish | Common | 0.1 – 0.4 | 20 |
 | Reed Carp | Uncommon | 0.5 – 4 | 51 |
+| Lily Pike | Uncommon | 0.5 – 3 | 52 |
 | Bogscale Gar | Rare | 2 – 9 | 141 |
+| Frogmouth Bass | Rare | 2 – 8 | 146 |
 | Willowhisker Catfish | Epic | 5 – 20 | 350 |
+| Mirewing Ray | Epic | 6 – 22 | 359 |
 | Moss Sturgeon | Legendary | 15 – 60 | 1,165 |
+| Bogwitch Eel | Legendary | 20 – 70 | 1,168 |
 | **The Marsh Warden** | Mythical | 80 – 220 | 5,434 |
+| **The Willow Ghost** | Mythical | 90 – 250 | 5,582 |
 
 ### 🧊 Rimefall Shelf
 | Fish | Rarity | Weight (kg) | Value up to |
 |---|---|---|---|
 | Frostling | Common | 0.1 – 0.4 | 29 |
+| Snowdrop Smelt | Common | 0.1 – 0.35 | 30 |
 | Icefin Char | Uncommon | 0.6 – 3 | 75 |
+| Crystal Shrimpfish | Uncommon | 0.5 – 2.5 | 78 |
 | Shelf Cod | Rare | 3 – 14 | 224 |
+| Frostbite Pollock | Rare | 3 – 12 | 226 |
 | Aurora Trout | Epic | 4 – 16 | 546 |
+| Tusked Iceling | Epic | 5 – 18 | 544 |
 | Glacial Halibut | Legendary | 30 – 110 | 1,795 |
+| Polar Sturgeon | Legendary | 35 – 120 | 1,844 |
 | **Rimewyrm Eel** | Mythical | 60 – 300 | 9,405 |
+| **The Frozen Heart** | Mythical | 80 – 320 | 9,321 |
 
 ### 🌋 Cinder Vents
 | Fish | Rarity | Weight (kg) | Value up to |
 |---|---|---|---|
 | Ashfry | Common | 0.05 – 0.3 | 49 |
+| Sootling | Common | 0.05 – 0.25 | 50 |
 | Ember Goby | Uncommon | 0.3 – 2 | 125 |
+| Flare Tetra | Uncommon | 0.3 – 1.8 | 126 |
 | Magma Wrasse | Rare | 2 – 10 | 361 |
+| Basalt Pufferfish | Rare | 2 – 9 | 363 |
 | Obsidian Ray | Epic | 10 – 45 | 890 |
+| Lava Lamprey | Epic | 8 – 40 | 918 |
 | Scorchjaw Grouper | Legendary | 40 – 150 | 2,882 |
+| Pyroclast Shark | Legendary | 50 – 170 | 2,904 |
 | **Heartfire Leviathan** | Mythical | 200 – 600 | 13,832 |
+| **The Molten Crown** | Mythical | 250 – 700 | 13,910 |
 
 ### 🕳️ The Hollow Deep
 | Fish | Rarity | Weight (kg) | Value up to |
 |---|---|---|---|
 | Gloom Shrimpfish | Common | 0.05 – 0.2 | 82 |
+| Hush Fry | Common | 0.05 – 0.2 | 83 |
 | Hollow Eye | Uncommon | 0.5 – 3 | 215 |
+| Pale Drifter | Uncommon | 0.5 – 2.8 | 217 |
 | Lantern Angler | Rare | 3 – 15 | 632 |
+| Needle Viperfish | Rare | 3 – 14 | 634 |
 | Abyssal Gulper | Epic | 15 – 70 | 1,565 |
+| Silent Siphon | Epic | 15 – 65 | 1,563 |
 | Void Cuttle | Legendary | 50 – 200 | 5,098 |
+| Hollow Mantle | Legendary | 60 – 220 | 5,096 |
 | **The Unnamed** | Mythical | 300 – 1,200 | 25,488 |
+| **The Whisper Below** | Mythical | 350 – 1,300 | 25,610 |
+
+### ⛈️ Stormglass Reef
+| Fish | Rarity | Weight (kg) | Value up to |
+|---|---|---|---|
+| Glint Sprat | Common | 0.05 – 0.3 | 139 |
+| Spark Minnow | Common | 0.05 – 0.3 | 142 |
+| Voltfin Tang | Uncommon | 0.4 – 2.5 | 340 |
+| Static Eel | Uncommon | 0.5 – 3 | 342 |
+| Thunderhead Snapper | Rare | 4 – 18 | 964 |
+| Galecrest Wrasse | Rare | 4 – 16 | 954 |
+| Squall Manta | Epic | 20 – 90 | 2,447 |
+| Thunder Ray | Epic | 22 – 95 | 2,461 |
+| Stormcaller Marlin | Legendary | 80 – 300 | 7,926 |
+| Squallbreaker Sailfish | Legendary | 90 – 320 | 7,925 |
+| **The Tempest** | Mythical | 400 – 1,500 | 39,630 |
+| **The Eye of the Storm** | Mythical | 450 – 1,600 | 39,697 |
+
+### 🏛️ The Sunken Spire
+| Fish | Rarity | Weight (kg) | Value up to |
+|---|---|---|---|
+| Moss Pebblefish | Common | 0.1 – 0.5 | 211 |
+| Altar Tetra | Common | 0.1 – 0.5 | 214 |
+| Relic Carp | Uncommon | 1 – 6 | 539 |
+| Mosaic Koi | Uncommon | 1 – 5 | 530 |
+| Gilded Arowana | Rare | 4 – 20 | 1,580 |
+| Pillar Grouper | Rare | 5 – 22 | 1,567 |
+| Sentinel Gar | Epic | 25 – 110 | 3,917 |
+| Gargoyle Ray | Epic | 28 – 120 | 3,931 |
+| Crowned Coelacanth | Legendary | 90 – 350 | 12,758 |
+| Throne Sturgeon | Legendary | 100 – 380 | 12,782 |
+| **The Drowned King** | Mythical | 500 – 1,800 | 62,967 |
+| **The Sunken Oracle** | Mythical | 550 – 1,900 | 62,936 |
+
+### 🌌 Aurora Trench
+| Fish | Rarity | Weight (kg) | Value up to |
+|---|---|---|---|
+| Glowmote | Common | 0.02 – 0.15 | 354 |
+| Shimmer Fry | Common | 0.02 – 0.15 | 356 |
+| Prism Jelly | Uncommon | 0.5 – 4 | 887 |
+| Halo Squidling | Uncommon | 0.5 – 3.5 | 879 |
+| Lumen Ray | Rare | 6 – 30 | 2,558 |
+| Borealis Eel | Rare | 7 – 32 | 2,541 |
+| Aurora Serpent | Epic | 30 – 140 | 6,261 |
+| Spectrum Manta | Epic | 35 – 150 | 6,213 |
+| Veilshark | Legendary | 120 – 450 | 20,175 |
+| Polaris Shark | Legendary | 130 – 480 | 20,266 |
+| **The Northern Light** | Mythical | 600 – 2,200 | 100,493 |
+| **The Dawn Serpent** | Mythical | 650 – 2,300 | 100,586 |
+
+### ✨ Starfall Abyss
+| Fish | Rarity | Weight (kg) | Value up to |
+|---|---|---|---|
+| Stardust Minnow | Common | 0.02 – 0.1 | 542 |
+| Moonspeck | Common | 0.02 – 0.1 | 545 |
+| Comet Tetra | Uncommon | 0.3 – 2 | 1,401 |
+| Meteor Darter | Uncommon | 0.3 – 2 | 1,409 |
+| Nebula Grouper | Rare | 10 – 45 | 4,004 |
+| Gravity Eel | Rare | 12 – 50 | 3,972 |
+| Void Leviathan Pup | Epic | 50 – 200 | 9,758 |
+| Quasar Ray | Epic | 55 – 210 | 9,728 |
+| Eclipse Kraken | Legendary | 200 – 700 | 31,328 |
+| Supernova Leviathan | Legendary | 220 – 750 | 31,322 |
+| **The Last Star** | Mythical | 900 – 3,000 | 158,084 |
+| **The First Light** | Mythical | 950 – 3,100 | 158,162 |
 
 ---
 
@@ -172,6 +274,9 @@ You keep a rod forever once you buy it, and you can switch rods in the Cast form
 | Rimeglass Rod | 25,000 | 14 | +35% | 7 | 17 | 3 | 130 |
 | Cinderspine Rod | 75,000 | 22 | +50% | 7 | 20 | 3 | 140 |
 | Voidreach Rod | 250,000 | 32 | +80% | 8 | 24 | 3 | 160 |
+| Stormglass Rod | 600,000 | 42 | +100% | 8 | 27 | 3 | 175 |
+| Spirebone Rod | 1,500,000 | 58 | +125% | 9 | 30 | 3 | 190 |
+| Starforged Rod | 4,000,000 | 75 | +160% | 9 | 34 | 4 | 210 |
 
 - **Zone width:** how many of the 20 spaces your `■` zone covers. Wider makes it easier to keep the fish inside.
 - **Reel power:** catch gained per good Reel.
@@ -191,6 +296,8 @@ Bait adds luck. **One is used up every cast**, caught or not. Buy as many as you
 | Glass Shrimp | 25 | +15% | |
 | Glowgrub | 120 | +35% | Best for rare fish |
 | Void Lure | 400 | +20% | +3% Corrupted chance |
+| Stormfly | 900 | +50% | Best for late places |
+| Starlure | 2,500 | +60% | +3% Corrupted chance |
 
 ---
 
@@ -209,7 +316,9 @@ You keep tackle forever once you buy it. You fit **one piece** per cast.
 
 ## Fishing levels
 
-You earn XP for every fish you land (see [Rarity](#rarity)). Levels unlock new places and new rods.
+You earn XP for every fish you land (see [Rarity](#rarity)). Fish caught in the late places give extra XP (1.5× to 3×). Levels unlock new places and new rods.
+
+The top level is **100**. Up to level 32 each level costs a little more than the last. **After level 32 it gets much steeper**, so the last levels take real dedication. (Nobody lost a level when the cap was raised: the old levels kept the same XP.)
 
 | Level | Total XP | Unlocks |
 |---|---|---|
@@ -223,6 +332,45 @@ You earn XP for every fish you land (see [Rarity](#rarity)). Levels unlock new p
 | 22 | 9,623 | Cinderspine Rod |
 | 30 | 15,617 | 🕳️ The Hollow Deep |
 | 32 | 17,260 | Voidreach Rod |
+| 40 | 28,236 | ⛈️ Stormglass Reef |
+| 42 | 32,592 | Stormglass Rod |
+| 50 | 57,403 | |
+| 55 | 79,297 | 🏛️ The Sunken Spire |
+| 58 | 94,914 | Spirebone Rod |
+| 70 | 176,875 | 🌌 Aurora Trench |
+| 75 | 220,582 | Starforged Rod |
+| 85 | 325,568 | ✨ Starfall Abyss |
+| 90 | 387,073 | |
+| **100** | **528,614** | Max level |
+
+---
+
+## Challenges
+
+Press **📜 Challenges** in your fishing menu. Everyone gets their own:
+
+- **3 daily challenges**, new every day at midnight UTC.
+- **1 weekly challenge**, new every Monday at midnight UTC. It's bigger and pays 5× as much.
+
+Challenges are picked from the places you have unlocked, so they're always possible. They count every fish you land (and, for "sell" challenges, every fish you sell). The reward is paid **the moment you finish**, and the catch message tells you.
+
+| Daily challenges look like | |
+|---|---|
+| Catch 12 fish | any fish, anywhere |
+| Catch 7 fish at a place | one of your three best places |
+| Catch 2 Rare fish or rarer | the rarity grows with your level |
+| Catch a certain fish | a Common or Uncommon fish from one of your best places |
+| Land a fish of 4.5 kg or more at a place | heavier than any Uncommon fish there, so it takes a Rare or better (or a Giant) |
+| Sell fish worth some coins | |
+| Catch 5 different kinds of fish | |
+
+Weekly challenges are things like **catch a Mutated or Corrupted fish**, **catch a Legendary**, **catch a Giant**, **catch 75 fish** or **catch 30 fish at your best place**.
+
+**Rewards** grow with your fishing level: coins, plus XP worth about 12% of your next level (60% for the weekly). At level 100 you get coins only.
+
+**🔥 Streak:** finish all 3 dailies and you get a **bonus** of extra coins and 3 bait (better bait at higher levels). Do it again the next day and your streak grows. Each day in a row adds 25% to the bonus, up to 7 days. Miss a day and the streak starts again at 1.
+
+Admins can turn challenges off in the Games settings.
 
 ---
 
@@ -239,7 +387,7 @@ Fish you sell **stay in your Collection**. Selling never removes a fish from you
 
 ## Collection and leaderboards
 
-**📖 Collection** shows all 30 fish, place by place. Fish you've caught show their name and your **heaviest** one. Fish you haven't found yet only show their rarity.
+**📖 Collection** opens with a summary of every place (🏆 when you have found all 12 there). Press a place to see its fish: the ones you've caught show their name, your **heaviest** one and how many you've caught. Fish you haven't found yet only show their rarity.
 
 Fishing has three boards in **`/top`**:
 - 🎣 **Most fish caught**
@@ -257,6 +405,8 @@ Fishing has three boards in **`/top`**:
 - **Glowgrub on good rods** is the best way to find Legendary and Mythical fish.
 - **Steel Leader** is the best first tackle if your line keeps snapping. **Lead Sinker** is better for fish that keep escaping your zone.
 - **Corruption hunting:** The Hollow Deep + Void Lure + Four-Leaf Charm gives about a **12.8%** Corrupted chance (32 times the normal 0.4%). They're worth 5× as much.
+- **Late game:** past level 40, the Steel Leader and Lead Sinker matter again, because the new places' fish pull harder and dart further. Stormfly is the best value bait there.
+- **Check your challenges first.** A "catch at a place" or "certain fish" challenge tells you where to fish today, and the streak bonus adds up fast.
 - **Don't walk away mid-fight.** After 45 seconds the fish swims off.
 - **Use "Sell all but rare finds"** to keep your trophies safe.
 

@@ -152,8 +152,8 @@ export default {
   name: 'deadchat',
   version: '1.0.0',
   description: 'Pings a role with a conversation starter when a channel goes quiet',
-  memberIntroTitle: 'Dead chat pings',
-  memberIntro: 'When the chat goes quiet, Good Boy can ping people who want to talk, with a question to get things going. Want those pings? Press the button on the dead chat message to get the role, and press it again any time to stop.',
+  memberIntroTitle: 'dead chat pings',
+  memberIntro: "when chat goes dead the bot can ping people who are down to talk, with a random question to get things going. if you want those pings hit the button on the dead chat message, hit it again whenever to stop",
   settings: [
     { key: 'enabled', type: 'toggle', label: 'Dead chat ping on', default: false },
     { key: 'channel', type: 'channel', label: 'Channel to watch' },

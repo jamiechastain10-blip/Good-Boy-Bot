@@ -9,7 +9,7 @@ export const DEFAULTS = Object.freeze({
   startBotWithApp: true,   // start the bot when the app opens
   startAtLogin: false,     // open the app when you sign in to the computer
   closeAction: 'minimize', // 'minimize' = the X hides to the tray, 'quit' = the X quits (and stops the bot)
-  dashboardOnStart: false, // open the dashboard in your browser once the bot is running
+  dashboardOnStart: false, // switch to the Dashboard page once the bot is running
   setupComplete: false,    // the first-run setup was finished
   license: '',             // a licence key someone was given (checked every start; not a secret)
   brandApplied: null,      // picture IDs Discord returned when the Good Boy look was applied

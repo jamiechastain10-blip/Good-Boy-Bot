@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SlashCommandBuilder, EmbedBuilder, ChannelType, MessageFlags, PermissionFlagsBits as P } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ChannelType, MessageFlags, PermissionFlagsBits as P, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { readChangelog, sectionForDiscord } from '../../src/about.js';
 import { subscribe } from '../../src/live.js';
 import { pingProblem, truncate } from '../../src/util.js';
@@ -61,6 +61,80 @@ function pingFor(ctx) {
   return { content: `<@&${roleId}>`, allowedMentions: { roles: [roleId] } };
 }
 
+// ------------------------------------------------------------------ member news: check it, reword it, then post (2.3.3)
+/**
+ * Splits text into Discord-sized messages (2000 characters), breaking between paragraphs, then lines, then words.
+ * Pure, so it is unit-tested.
+ */
+export function splitMessage(text, max = 2000) {
+  const out = [];
+  let rest = String(text ?? '').trim();
+  while (rest.length > max) {
+    const cut = [rest.lastIndexOf('\n\n', max), rest.lastIndexOf('\n', max), rest.lastIndexOf(' ', max)].find((n) => n > max * 0.5) ?? max;
+    out.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+/** Posts member news. Plain style reads like a normal message from a person; box style is the old card with a title. */
+export async function postAnnouncement(ctx, text, title) {
+  const ping = pingFor(ctx);
+  if (ctx.config.get('announceStyle') === 'box') {
+    return post(ctx, 'announceChannel', { ...ping, embeds: [new EmbedBuilder().setColor(0xf2a93b).setTitle(title).setDescription(truncate(text, 3800))] });
+  }
+  const parts = splitMessage(text, ping.content ? 1950 : 2000);
+  let ok = true;
+  for (let n = 0; n < parts.length; n++) {
+    const first = n === 0 && ping.content;
+    ok = (await post(ctx, 'announceChannel', first ? { content: `${ping.content}\n${parts[n]}`, allowedMentions: ping.allowedMentions } : { content: parts[n] })) && ok;
+  }
+  return ok;
+}
+const draftKey = (id) => `draft:${id}`;
+const draftButtons = (id) => [new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId(`botnews:edit:${id}`).setLabel('Edit & post').setEmoji('✏️').setStyle(ButtonStyle.Primary),
+  new ButtonBuilder().setCustomId(`botnews:post:${id}`).setLabel('Post as it is').setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder().setCustomId(`botnews:skip:${id}`).setLabel('Skip').setStyle(ButtonStyle.Danger))];
+/**
+ * Member news goes to the admin channel first as a draft (when reviewing is on and there is an admin channel), so a
+ * person can put it in their own words. Without an admin channel it is posted straight away.
+ */
+export async function announce(ctx, id, text, title) {
+  if (ctx.config.get('reviewAnnouncements') && channel(ctx, 'adminChannel')) {
+    ctx.data.set(draftKey(id), { text, title, status: 'waiting', at: Date.now() });
+    return post(ctx, 'adminChannel', {
+      embeds: [new EmbedBuilder().setColor(0xf2a93b).setTitle(`Draft for the announcements channel: ${title}`).setDescription(truncate(text, 3800))
+        .setFooter({ text: 'Nothing is posted until someone picks a button. Edit lets you say it in your own words.' })],
+      components: draftButtons(id),
+    });
+  }
+  return postAnnouncement(ctx, text, title);
+}
+async function draftClick(ctx, i) {
+  const [, action, id] = i.customId.split(':');
+  if (!ctx.perms.check(i.member, 'botnews.manage')) return i.reply({ content: 'Only people who manage bot news can do that.', flags: EPH });
+  const d = ctx.data.get(draftKey(id));
+  if (!d) return i.reply({ content: 'That draft is gone.', flags: EPH });
+  if (d.status !== 'waiting') return i.reply({ content: `That draft was already ${d.status}.`, flags: EPH });
+  if (action === 'edit') {
+    return i.showModal(new ModalBuilder().setCustomId(`botnews:submit:${id}`).setTitle('Announcement').addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('text').setLabel('Say it your way').setStyle(TextInputStyle.Paragraph).setMaxLength(4000).setRequired(true).setValue(truncate(d.text, 4000)))));
+  }
+  const done = async (status, note) => {
+    ctx.data.set(draftKey(id), { ...d, status, by: i.user.id, doneAt: Date.now() });
+    const msg = `${note} by <@${i.user.id}>.`;
+    if (i.isModalSubmit?.()) { await i.message?.edit({ components: [] }).catch(() => {}); return i.reply({ content: msg, flags: EPH, allowedMentions: { parse: [] } }); }
+    return i.update({ components: [], content: msg, allowedMentions: { parse: [] } });
+  };
+  if (action === 'skip') return done('skipped', '⏭️ Skipped');
+  const text = action === 'submit' ? String(i.fields.getTextInputValue('text') ?? '').trim() : d.text;
+  if (!text) return i.reply({ content: 'Write something to post.', flags: EPH });
+  const ok = await postAnnouncement(ctx, text, d.title);
+  if (!ok) return i.reply({ content: "I couldn't post in the announcements channel. Check that I can send messages there.", flags: EPH });
+  return done('posted', action === 'submit' ? '✅ Posted your version' : '✅ Posted');
+}
+
 /** Bot updated since the last time this server heard about it: full notes to admins, member notes to everyone. */
 export async function announceUpdates(ctx, { version = currentVersion(), sections = readChangelog(root) } = {}) {
   if (!version) return 0;
@@ -76,7 +150,7 @@ export async function announceUpdates(ctx, { version = currentVersion(), section
     }
     const members = memberNotes(s.body);
     if (members && ctx.config.get('communityUpdates')) {
-      await post(ctx, 'announceChannel', { ...pingFor(ctx), embeds: [new EmbedBuilder().setColor(0xf2a93b).setTitle(`✨ What's new in Good Boy ${s.version}`).setDescription(truncate(members, 3800))] });
+      await announce(ctx, `v${s.version}`, members, `What's new in Good Boy ${s.version}`);
     }
   }
   if (news.length) ctx.live('activity', { icon: '🆙', text: `Good Boy was updated to ${version}` });
@@ -105,7 +179,7 @@ export async function onModuleChange(ctx, { module, enabled }, def) {
   // Members hear about a feature once, the first time it is switched on, and only if it has something for them.
   if (enabled && def?.memberIntro && ctx.config.get('communityModules') && !ctx.data.get(`introduced:${module}`)) {
     ctx.data.set(`introduced:${module}`, Date.now());
-    await post(ctx, 'announceChannel', { ...pingFor(ctx), embeds: [new EmbedBuilder().setColor(0xf2a93b).setTitle(`🎉 New: ${def.memberIntroTitle ?? module}`).setDescription(truncate(def.memberIntro, 3800))] });
+    await announce(ctx, `m${module}`, def.memberIntro, def.memberIntroTitle ?? module);
   }
 }
 
@@ -120,9 +194,12 @@ export default {
     { key: 'adminUpdates', type: 'toggle', label: 'Admin channel: post every update with its full notes', default: true },
     { key: 'adminModules', type: 'toggle', label: 'Admin channel: new modules and modules turned on/off', default: true },
     { key: 'communityUpdates', type: 'toggle', label: 'Announcements: what is new for members in each update', default: true },
+    { key: 'reviewAnnouncements', type: 'toggle', label: 'Announcements: send each one to the admin channel first, to check and reword before it goes out', default: true },
+    { key: 'announceStyle', type: 'select', label: 'Announcements look like', options: ['plain', 'box'], default: 'plain', description: 'plain = a normal message · box = a card with a title' },
     { key: 'communityModules', type: 'toggle', label: 'Announcements: introduce member features when first turned on', default: true },
   ],
   permissions: [{ key: 'botnews.manage', label: 'Set up bot news', default: 'admin' }],
+  components: [{ prefix: 'botnews:', execute: draftClick }],
   commands: [{
     permission: 'botnews.manage',
     data: new SlashCommandBuilder().setName('botnews').setDescription('Bot news: where updates and new modules are posted')

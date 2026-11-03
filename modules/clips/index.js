@@ -195,8 +195,8 @@ export default {
   name: 'clips',
   version: '1.0.0',
   description: 'Game clips channel: Medal clips and clip links get votes, the best are reposted, clip of the week wins coins',
-  memberIntroTitle: 'Clips channel',
-  memberIntro: 'Share your best plays! Upload a video or paste a clip link in the clips channel. Vote for clips you like with the reaction. The most-voted clips go to Best clips, and every Monday the **clip of the week** wins coins. See the top ones with **/clips top**.',
+  memberIntroTitle: 'clips channel',
+  memberIntro: "there's a clips channel now. drop a video or a clip link in there and react on the ones you like. the best ones get reposted, and every monday the clip of the week wins some coins. /clips top shows the best ones so far",
   settings: [
     { key: 'clipsChannel', type: 'channel', label: 'Clips channel (where Medal and members post clips)' },
     { key: 'bestChannel', type: 'channel', label: 'Best clips channel (top clips and clip of the week are reposted here)' },

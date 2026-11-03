@@ -424,7 +424,7 @@ export default async function ({ test }) {
     assert.ok(handler.indexOf('verifySecret') < handler.indexOf('vault.merge'), 'checked before it is saved');
   });
 
-  await test('2.3: the dashboard opens inside the app, signed in by a one-time link from the running bot, in a locked-down window', async () => {
+  await test('2.3.3: the dashboard is built into the main window, signed in by a one-time link from the running bot, in a locked-down view', async () => {
     const C = await import('../desktop/lib/checks.js');
     assert.ok(C.isDashboardWindowUrl('http://127.0.0.1:3000/login/local?t=x'));
     assert.ok(C.isDashboardWindowUrl('https://my-pc.tail1234.ts.net/login/local?t=x'), 'the owner\'s own Tailscale link');
@@ -441,6 +441,12 @@ export default async function ({ test }) {
     assert.match(bot, /action === 'dashboard-login'/); assert.match(bot, /action === 'levels'/);
     const r = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'app.js'), 'utf8');
     assert.match(r, /gb\.levels\(\)/, 'the Levels page asks the bot for names');
+    // 2.3.3: built into the main window as the Dashboard page, not a separate window
+    assert.match(open, /new WebContentsView\(/); assert.ok(!/new BrowserWindow\(/.test(open), 'no separate dashboard window');
+    assert.match(open, /win\.contentView\.addChildView\(dashView\)/);
+    assert.match(r, /dashboard\(\) \{/); assert.match(r, /\['dashboard', 'Dashboard'/); assert.match(r, /page = 'dashboard'/, 'the Dashboard is the first page');
+    assert.match(r, /gb\.dashShow\(/); assert.match(r, /gb\.dashHide\(\)/);
+    assert.ok(!/gb\.openDashboard\(\)/.test(r), 'no "Open dashboard" button opening another window');
   });
 
   await test('after an update downloads, the installed app warns for a minute and restarts by itself (unless turned off or put off)', async () => {
@@ -764,7 +770,7 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
     const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
     const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'levels', 'openDashboardBrowser', 'updateCheck', 'updateInstall', 'updateLater', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'levels', 'openDashboardBrowser', 'dashShow', 'dashBounds', 'dashHide', 'dashReload', 'onGoto', 'onDash', 'updateCheck', 'updateInstall', 'updateLater', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
     assert.match(main, /const ownerOnly = \(\) =>/); for (const h of ['gb:lic-keygen', 'gb:lic-create', 'gb:lic-revoke']) assert.match(main.slice(main.indexOf(`'${h}'`), main.indexOf(`'${h}'`) + 200), /ownerOnly\(\)/, `${h} only works in the Owner version`);
     assert.ok(!/privateKey/.test(main.slice(main.indexOf("'gb:lic-state'"), main.indexOf("'gb:lic-keygen'"))), 'the signing key is never sent to the window');
     assert.match(main, /url && url\.startsWith\('https:\/\/discord\.com\/'\)/, 'setup only ever opens discord.com pages');

@@ -3,7 +3,7 @@
 'use strict';
 const gb = window.goodBoy;
 const app = document.getElementById('app');
-let S = null, sum = null, logLines = [], page = 'overview', lastPage = null, setupFound = null, finding = false, busy = false;
+let S = null, sum = null, logLines = [], page = 'dashboard', lastPage = null, setupFound = null, finding = false, busy = false;
 
 // ---------------------------------------------------------------- tiny DOM helpers
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -21,6 +21,7 @@ const ICONS = {
   chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
   check: 'M5 12l5 5 9-10',
   key: 'M14 7a4 4 0 1 1-3.5 6H8v2H6v2H3v-3l6.5-6.5A4 4 0 0 1 14 7z',
+  grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 };
 const COLORS = { blue: '#1A6BFF', mint: '#22C38E', violet: '#7B5CFF', amber: '#F2A93B', teal: '#14B3C7', gray: '#8B97AB', pink: '#EE5DA6', indigo: '#4657E8', red: '#F0525C' };
 const AVATAR = ['#1A6BFF', '#7B5CFF', '#14B3C7', '#EE5DA6', '#F2A93B', '#22C38E', '#4657E8', '#F0525C'];
@@ -99,7 +100,7 @@ function statusCard() {
             ? el('button', { class: 'btn', disabled: moving, onclick: async () => { await gb.restart(); toast('Restarting the bot...'); } }, icon('restart'), 'Restart')
             : el('button', { class: 'btn', disabled: !ready || moving, onclick: () => gb.start() }, 'Start'),
           el('button', { class: 'btn quiet', disabled: !isOn || moving, onclick: () => gb.stop() }, 'Stop'),
-          el('button', { class: 'btn quiet', disabled: st !== 'running', onclick: () => gb.openDashboard() }, 'Open dashboard')))),
+          el('button', { class: 'btn quiet', onclick: () => go('dashboard') }, icon('grid'), 'Dashboard')))),
     S.bot.blocked ? takeoverBox() : null,
     el('div', { class: 'figures' }, figs.map(([k, v, label]) => { const b = el('b'); countUp(b, k, v); return el('div', {}, b, el('small', {}, label)); })));
 }
@@ -156,7 +157,45 @@ const opt = (key, label, invert = false) => el('div', { class: 'row' }, el('span
     onchange: (e) => gb.saveSettings(key === 'closeAction' ? { closeAction: e.target.checked ? 'minimize' : 'quit' } : { [key]: e.target.checked }) }));
 
 // ---------------------------------------------------------------- pages
+// ---------------------------------------------------------------- the dashboard, built into the window (2.3.3)
+// The app places the real dashboard over .dash-host. Everything about the server is managed there.
+const DASH = { shown: false, error: '', loading: false };
+function dashRect() {
+  const host = document.querySelector('.dash-host');
+  if (!host) return null;
+  const r = host.getBoundingClientRect();
+  return { x: r.left, y: r.top, width: r.width, height: r.height };
+}
+async function syncDash() {
+  const want = page === 'dashboard' && S?.bot?.state === 'running' && !S.setupNeeded && !forceSetup && !DASH.error;
+  const r = want ? dashRect() : null;
+  if (want && r && r.width > 0) {
+    if (DASH.shown) return gb.dashBounds(r);
+    DASH.loading = true;
+    const res = await gb.dashShow(r);
+    DASH.loading = false;
+    if (res?.ok) { DASH.shown = true; gb.dashBounds(dashRect() ?? r); }
+    else if (res?.reason !== 'stopped') { DASH.error = res?.message || 'The dashboard could not open.'; render(); }
+  } else if (DASH.shown) { DASH.shown = false; gb.dashHide(); }
+}
+const dashObserver = new ResizeObserver(() => { if (DASH.shown) { const r = dashRect(); if (r) gb.dashBounds(r); } });
+addEventListener('resize', () => { if (DASH.shown) { const r = dashRect(); if (r) gb.dashBounds(r); } });
+
 const PAGES = {
+  dashboard() {
+    const running = S.bot.state === 'running';
+    const bar = el('div', { class: 'dash-bar' }, el('b', {}, 'Dashboard'), el('span', { class: 'dash-server' }, sum?.guild?.name ?? ''),
+      running ? el('button', { class: 'btn quiet small', onclick: async () => { DASH.error = ''; DASH.shown = false; render(); const res = await gb.dashReload(dashRect()); if (res?.ok) DASH.shown = true; else { DASH.error = res?.message || 'The dashboard could not open.'; render(); } } }, 'Reload') : null);
+    if (!running) {
+      const st = S.bot.state;
+      return [bar, el('div', { class: 'dash-empty' }, orb(st),
+        el('h2', {}, st === 'starting' ? 'Starting the bot...' : 'Start the bot to manage your server'),
+        el('p', {}, 'Modules, settings, AutoMod, tickets, levels, permissions and live activity all live here once the bot is running.'),
+        st === 'starting' ? null : el('button', { class: 'btn big go', disabled: !(S.folder.ok && S.node.ok), onclick: () => gb.start() }, 'Start the bot'))];
+    }
+    if (DASH.error) return [bar, el('div', { class: 'dash-empty' }, el('h2', {}, 'The dashboard didn\'t open'), el('p', {}, DASH.error), el('button', { class: 'btn', onclick: () => { DASH.error = ''; render(); } }, 'Try again'))];
+    return [bar, el('div', { class: 'dash-host' }, el('div', { class: 'dash-loading' }, el('span', { class: 'spinner' }), 'Signing you in to the dashboard...'))];
+  },
   overview() {
     const probs = problemsList();
     return [el('h1', {}, 'Overview'), el('p', { class: 'sub' }, sum?.guild?.name ?? 'Your Discord bot, running on this computer.'),
@@ -212,7 +251,7 @@ const PAGES = {
     return [el('h1', {}, 'Settings'), el('p', { class: 'sub' }, 'How Good Boy looks and runs on this computer.'),
       el('div', { class: 'cols' },
         el('div', {}, el('div', { class: 'section-title' }, 'Appearance'), el('div', { class: 'group' }, el('div', { class: 'row' }, el('span', { class: 'lab' }, 'Look'), el('span', { class: 'val' }, themeSeg))),
-          el('div', { class: 'section-title' }, 'This computer'), el('div', { class: 'group' }, opt('startBotWithApp', 'Start the bot when Good Boy opens'), opt('startAtLogin', 'Open Good Boy when I sign in'), opt('closeAction', 'Keep running when I close the window', true), opt('dashboardOnStart', 'Open the dashboard when the bot is running'), opt('autoRestartForUpdates', 'Restart by itself to install updates (after a 1-minute warning)')),
+          el('div', { class: 'section-title' }, 'This computer'), el('div', { class: 'group' }, opt('startBotWithApp', 'Start the bot when Good Boy opens'), opt('startAtLogin', 'Open Good Boy when I sign in'), opt('closeAction', 'Keep running when I close the window', true), opt('dashboardOnStart', 'Switch to the Dashboard page when the bot starts'), opt('autoRestartForUpdates', 'Restart by itself to install updates (after a 1-minute warning)')),
           S.bundled ? brandGroup() : null, S.bundled && S.edition.id !== 'owner' ? licenceGroup() : null),
         el('div', {}, S.bundled ? [el('div', { class: 'section-title' }, 'Bot'), el('div', { class: 'group' },
           el('div', { class: 'row inset' }, tile('key', 'amber'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Bot token'), el('span', { class: 'meta' }, S.secure ? 'Saved, encrypted by this computer' : 'This computer cannot encrypt it')), el('span', { class: 'val' }, el('span', { class: v?.hasToken ? 'tag ok' : 'tag wait' }, v?.hasToken ? 'Saved' : 'Missing'))),
@@ -535,13 +574,14 @@ async function useExisting(dir) {
   wgo('invite'); refreshInvite(true); refreshSummary();
 }
 async function finishSetup(start) {
-  S = await gb.setupFinish(start); forceSetup = false; page = 'overview'; W.step = 'welcome';
+  S = await gb.setupFinish(start); forceSetup = false; page = 'dashboard'; W.step = 'welcome';
   toast(start ? 'Starting your bot...' : 'Setup finished.');
   refreshSummary();
 }
 
 // ---------------------------------------------------------------- layout
 const NAV = () => [
+  ['Server', [['dashboard', 'Dashboard', 'grid', 'indigo']]],
   ['Bot', [['overview', 'Overview', 'home', 'blue'], ['levels', 'Levels', 'star', 'amber', sum?.memberCount], ['modules', 'Modules', 'puzzle', 'violet', (sum?.modules ?? []).length || null], ['log', 'Log', 'log', 'gray']]],
   [S.edition.id === 'owner' ? 'Owner' : 'App', [['updates', 'Updates', 'down', 'mint'], ...(has('licenses') ? [['licenses', 'Licences', 'key', 'amber']] : []), ['settings', 'Settings', 'gear', 'teal']]],
 ];
@@ -560,13 +600,17 @@ function render() {
   if (current === 'settings' && lastPage === 'settings' && document.activeElement?.id === 'new-secret') return;
   const side = el('aside', { class: 'side', 'aria-label': 'Good Boy' },
     el('div', { class: 'brand' }, el('img', { src: 'good-boy-logo.png', alt: '' }), 'Good Boy', S.edition.name ? el('span', { class: 'edition' }, S.edition.name) : null),
-    inSetup ? null : NAV().map(([label, rows]) => [el('div', { class: 'group-label' }, label), rows.map(([id, text, ic, color, count]) => el('button', { class: 'nav', 'data-nav': id, 'aria-current': current === id ? 'page' : null, onclick: () => go(id) }, tile(ic, color), text, count ? el('span', { class: 'count' }, count) : null))]),
+    inSetup ? null : NAV().map(([label, rows]) => [el('div', { class: 'group-label' }, label), rows.map(([id, text, ic, color, count]) => el('button', { class: 'nav', 'data-nav': id, title: text, 'aria-current': current === id ? 'page' : null, onclick: () => go(id) }, tile(ic, color), text, count ? el('span', { class: 'count' }, count) : null))]),
     el('div', { class: 'server' }, el('span', { class: 'av' }, (sum?.guild?.name ?? 'Good Boy').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()), el('div', {}, el('b', {}, sum?.guild?.name ?? 'No server yet'), el('small', {}, S.edition.id === 'owner' ? 'Owner' : S.edition.id === 'developer' ? 'Developer' : 'Your server'))));
   const key = current === 'setup' ? `setup-${W.step}` : current;
   const main = el('main', { 'data-page': current, 'data-step': current === 'setup' ? W.step : null, class: key !== lastPage ? 'enter' : '' }, el('div', { class: 'wrap' }, PAGES[current]()));
   lastPage = key;
   app.classList.toggle('in-setup', inSetup);
+  app.classList.toggle('on-dash', current === 'dashboard');
   app.replaceChildren(...(inSetup ? [main] : [side, main]));
+  const host = document.querySelector('.dash-host');
+  dashObserver.disconnect(); if (host) dashObserver.observe(host);
+  requestAnimationFrame(() => { syncDash(); });
 }
 
 async function refreshSummary() {
@@ -584,14 +628,14 @@ async function refreshSummary() {
   render();
 }
 
-/** The way into everything the desktop screens do not cover. Opens inside Good Boy, already signed in. */
+/** Everything the desktop screens do not cover is on the Dashboard page. */
 function dashboardCallout(text = 'Settings for every module, the Levels, AutoMod and ticket panels, permissions and live activity.') {
-  const on = S?.bot?.state === 'running';
-  return el('div', { class: 'callout' }, el('b', {}, 'Manage everything in the dashboard'), el('p', {}, on ? text : 'Start the bot to open the dashboard.'),
-    el('div', { class: 'row-btns' }, el('button', { class: 'btn', disabled: !on, onclick: () => gb.openDashboard() }, 'Open dashboard'),
-      el('button', { class: 'btn quiet', disabled: !on, onclick: () => gb.openDashboardBrowser() }, 'In my browser')));
+  return el('div', { class: 'callout' }, el('b', {}, 'Manage everything on the Dashboard page'), el('p', {}, text),
+    el('div', { class: 'row-btns' }, el('button', { class: 'btn', onclick: () => go('dashboard') }, 'Go to the Dashboard')));
 }
 
+gb.onGoto((p) => { if (PAGES[p]) go(p); });
+gb.onDash((d) => { if (d?.state === 'error') { DASH.shown = false; DASH.error = d.message || 'The dashboard stopped.'; render(); } });
 gb.onState((s) => { const was = S?.bot?.state; S = s; if (s.bot.state !== 'running') MOD.live = null; if (s.bot.state !== was && s.bot.state === 'running') toast('The bot is online.'); if (was === 'running' && s.bot.state === 'failed') toast(s.bot.error || 'The bot stopped.', true); refreshSummary(); });
 gb.onLog((line) => {
   logLines.push(line); if (logLines.length > 1000) logLines.shift();

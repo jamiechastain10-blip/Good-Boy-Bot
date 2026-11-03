@@ -1488,7 +1488,10 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     quotesMod.hooks.renderAnimated = async () => { renders++; return w.animOut ?? Buffer.from('gif-bytes'); };
     let stills = 0;
     quotesMod.hooks.render = async () => { stills++; return Buffer.from('png'); };
-    w.renders = () => renders; w.stills = () => stills;
+    let motions = 0;
+    quotesMod.hooks.renderMotion = async () => { motions++; if (w.motionFail) throw new Error('canvas exploded'); return w.motionOut ?? Buffer.from('motion-gif'); };
+    w.mm.setSetting('1', 'quotes', 'motionQuotes', 'false'); // the older tests below are about animated pictures only
+    w.renders = () => renders; w.stills = () => stills; w.motions = () => motions;
     w.animQuote = async (member, { animated = true } = {}) => {
       const msg = w.post();
       msg.author.animatedAvatar = animated;
@@ -1527,6 +1530,27 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     const big = await w.animQuote(w.person('aq5'));
     assert.equal(big.edits[0].files.length, 1);
     assert.equal(w.stills(), 3, 'off, failed and oversized each drew the still image');
+  });
+
+  await test('motion quotes (2.3.3): every quote is a GIF - normal pictures get a zoom and a shine; failures or oversized files fall back to the still image', async () => {
+    const w = await aqWorld();
+    const def = w.mm.describeForGuild('1').find((d) => d.name === 'quotes');
+    assert.ok(def.settings.some((x) => x.key === 'motionQuotes' && x.default === true), 'on by default');
+    w.mm.setSetting('1', 'quotes', 'motionQuotes', 'true');
+    const q = await w.animQuote(w.person('mq1'), { animated: false });
+    assert.equal(w.motions(), 1); assert.equal(w.stills(), 0);
+    assert.equal(fileName(q), 'quote.gif');
+    await w.animQuote(w.person('mq2'));
+    assert.equal(w.renders(), 1); assert.equal(w.motions(), 1, 'an animated picture uses its own animation, not the zoom');
+    w.motionFail = true;
+    const broke = await w.animQuote(w.person('mq3'), { animated: false });
+    assert.equal(fileName(broke), 'quote.png', 'a failure still sends the quote'); assert.equal(w.stills(), 1);
+    w.motionFail = false; w.motionOut = Buffer.alloc(9 * 1024 * 1024);
+    const big = await w.animQuote(w.person('mq4'), { animated: false });
+    assert.equal(fileName(big), 'quote.png'); assert.equal(w.stills(), 2);
+    const { motionAt } = quotesMod;
+    assert.equal(motionAt(0).zoom, 1); assert.ok(Math.abs(motionAt(0.999).zoom - 1) < 0.001, 'the loop ends where it starts');
+    assert.ok(motionAt(0.5).zoom > 1.07); assert.equal(motionAt(0.75).shine, null, 'the shine only runs in the first half');
   });
 
   // ================================================================ TTS: read the no-mic channel

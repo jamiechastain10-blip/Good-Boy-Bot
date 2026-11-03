@@ -48,7 +48,7 @@ main{max-width:1400px;margin:0 auto;padding:18px 16px 32px}
 .nav-item:hover{background:var(--field);filter:none}
 .nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
 .nav-icon{width:20px;text-align:center;font-size:16px}
-.workspace{min-width:0}
+.workspace{min-width:0;padding-bottom:84px} /* room to scroll the last card above the Feedback button */
 
 /* ---- overview */
 .hero{display:flex;align-items:center;gap:18px;padding:22px}
@@ -138,7 +138,7 @@ th .q{color:var(--faint);cursor:help}
 .feedback .feed-text{white-space:pre-wrap}
 .banner{background:var(--accent-soft);color:var(--text);border-radius:14px;padding:10px 14px;margin-bottom:14px}
 .banner button{margin-left:6px}
-.fab{position:fixed;left:20px;bottom:20px;z-index:15;box-shadow:0 10px 30px rgba(0,0,0,.28)}
+.fab{position:fixed;right:20px;bottom:20px;z-index:15;box-shadow:0 10px 30px rgba(0,0,0,.28)} /* bottom-right: on the left it covered the sidebar menu */
 code.link{background:var(--field);border-radius:8px;padding:6px 10px;font-size:12px;word-break:break-all}
 .hint.warn{color:var(--warn)}
 

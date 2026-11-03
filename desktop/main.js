@@ -6,7 +6,7 @@
  * set up once, done. The token and other bot settings are kept encrypted by the operating system (safeStorage),
  * never in a plain .env file. Running from the source folder (no bundle) still works with a chosen Good Boy folder.
  */
-import { app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell, nativeImage, safeStorage, clipboard, powerSaveBlocker, Notification, nativeTheme } from 'electron';
+import { app, BrowserWindow, WebContentsView, Tray, Menu, ipcMain, dialog, shell, nativeImage, safeStorage, clipboard, powerSaveBlocker, Notification, nativeTheme } from 'electron';
 import QRCode from 'qrcode';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -106,7 +106,7 @@ function recheck() {
   // in the background with no way to stop it from the app). New settings apply the next time it starts.
   if (runner) { Object.assign(runner, { botDir: botDir(), script: path.join(botDir(), 'scripts', 'supervise.js'), nodePath: nodePath(), env: childEnv() }); return; }
   runner = new BotRunner({ botDir: botDir(), nodePath: nodePath(), env: childEnv() });
-  runner.on('state', (s) => { send('state', snapshot()); refreshTray(); keepAwake(s.state); if (s.state === 'running' && settings.dashboardOnStart && !runner.openedDashboard) { runner.openedDashboard = true; openDashboard(); } });
+  runner.on('state', (s) => { if (s.state !== 'running') resetDash(); send('state', snapshot()); refreshTray(); keepAwake(s.state); if (s.state === 'running' && settings.dashboardOnStart && !runner.openedDashboard) { runner.openedDashboard = true; openDashboard(); } });
   runner.on('log', (line) => send('log', line));
 }
 
@@ -122,36 +122,61 @@ const ready = () => folder.ok && nodeInfo.ok;
 
 function startBot() { if (!ready()) return false; runner.openedDashboard = false; return runner.start(); }
 /**
- * 2.3: the full dashboard opens inside Good Boy, already signed in as the bot's owner. The running bot hands the app a
- * one-time link over its private channel, so no Discord login (and no Client Secret) is needed on this computer.
- * The window is sandboxed, has no access to the app's own functions, and only shows the dashboard: anything else
- * opens in the browser. If the bot cannot give a link (an older bot, or it is not running) the browser is used.
+ * 2.3.3: the full dashboard is built into the main window. It is the "Dashboard" page: a separate web view placed over
+ * the page's content area, signed in as the bot's owner by a one-time link the running bot hands the app over its
+ * private channel (no Discord login, no Client Secret needed on this computer). There is no separate dashboard window.
+ * The view is sandboxed, has no access to the app's own functions, and only shows the dashboard: anything else opens
+ * in the browser.
  */
-let dashWin = null;
+let dashView = null, dashOrigin = null, dashLoaded = false, dashAttached = false, dashBounds = null;
+/** Show Good Boy on its Dashboard page (tray menu, "open the dashboard when the bot starts"). */
 async function openDashboard() {
-  if (runner?.status().state === 'running') {
-    const r = await runner.control('dashboard-login', {}).catch(() => null);
-    if (r?.ok && isDashboardWindowUrl(r.url)) return openDashboardWindow(r.url);
-  }
-  return openDashboardInBrowser();
+  showWindow();
+  send('goto', 'dashboard');
 }
-function openDashboardWindow(url) {
-  const allowed = new URL(url).origin;
-  if (dashWin && !dashWin.isDestroyed()) { dashWin.loadURL(url); dashWin.show(); dashWin.focus(); return; }
-  dashWin = new BrowserWindow({
-    width: 1320, height: 880, minWidth: 420, minHeight: 560, title: 'Good Boy · Dashboard', show: false, autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#060C18' : '#EEF2F7', icon: path.join(here, 'renderer', 'brand', 'app-icon.png'),
-    webPreferences: { partition: 'persist:dashboard', contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
-  });
-  const ses = dashWin.webContents.session;
-  ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(false)); // the dashboard never needs camera, mic, location...
+function makeDashView() {
+  if (dashView) return dashView;
+  dashView = new WebContentsView({ webPreferences: { partition: 'persist:dashboard', contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
+  dashView.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#060C18' : '#EEF2F7');
+  const wc = dashView.webContents;
+  wc.session.setPermissionRequestHandler((_wc, _perm, cb) => cb(false)); // the dashboard never needs camera, mic, location...
   const external = (u) => { if (/^https:\/\//.test(u)) shell.openExternal(u); };
-  dashWin.webContents.setWindowOpenHandler(({ url: u }) => { external(u); return { action: 'deny' }; });
-  dashWin.webContents.on('will-navigate', (e, u) => { if (new URL(u).origin !== allowed) { e.preventDefault(); external(u); } });
-  dashWin.once('ready-to-show', () => dashWin.show());
-  dashWin.on('closed', () => { dashWin = null; });
-  dashWin.loadURL(url);
+  wc.setWindowOpenHandler(({ url: u }) => { external(u); return { action: 'deny' }; });
+  wc.on('will-navigate', (e, u) => { if (!dashOrigin || new URL(u).origin !== dashOrigin) { e.preventDefault(); external(u); } });
+  wc.on('render-process-gone', () => { dashLoaded = false; send('dash', { state: 'error', message: 'The dashboard stopped. Click Reload.' }); });
+  wc.on('did-fail-load', (_e, code, desc, _u, main) => { if (main && code !== -3) { dashLoaded = false; send('dash', { state: 'error', message: `The dashboard didn't load (${desc}).` }); } });
+  return dashView;
 }
+/** Sign in and load the dashboard. Needs the bot running; the bot gives a one-time link only to the app. */
+async function loadDash() {
+  if (runner?.status().state !== 'running') return { ok: false, reason: 'stopped' };
+  const r = await runner.control('dashboard-login', {}).catch(() => null);
+  if (!(r?.ok && isDashboardWindowUrl(r.url))) return { ok: false, reason: 'nolink', message: 'The bot did not give a sign-in link. Restart the bot and try again.' };
+  const v = makeDashView();
+  dashOrigin = new URL(r.url).origin;
+  await v.webContents.loadURL(r.url).catch(() => {});
+  dashLoaded = true;
+  return { ok: true };
+}
+const okBounds = (b) => b && ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(b[k]) && b[k] >= 0 && b[k] < 20000);
+function placeDash(b) {
+  if (!dashView || !win || win.isDestroyed() || !okBounds(b)) return;
+  dashBounds = { x: Math.round(b.x), y: Math.round(b.y), width: Math.max(1, Math.round(b.width)), height: Math.max(1, Math.round(b.height)) };
+  dashView.setBounds(dashBounds);
+}
+async function showDash(b) {
+  if (!win || win.isDestroyed()) return { ok: false };
+  if (!dashLoaded) { const r = await loadDash(); if (!r.ok) return r; }
+  if (!dashAttached) { win.contentView.addChildView(dashView); dashAttached = true; }
+  placeDash(b ?? dashBounds);
+  return { ok: true };
+}
+function hideDash() {
+  if (dashView && dashAttached && win && !win.isDestroyed()) win.contentView.removeChildView(dashView);
+  dashAttached = false;
+}
+/** The bot stopped or restarted: the old sign-in no longer works, so the next visit signs in again. */
+function resetDash() { hideDash(); dashLoaded = false; }
 async function openDashboardInBrowser() {
   const u = dashboardUrl(folder.port);
   if (!isSafeDashboardUrl(u)) return;
@@ -291,7 +316,7 @@ function refreshTray() {
   tray.setToolTip(`Good Boy - bot ${st}`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Good Boy', click: showWindow },
-    { label: 'Open dashboard', enabled: st === 'running', click: openDashboard },
+    { label: 'Dashboard', enabled: st === 'running', click: openDashboard },
     { type: 'separator' },
     { label: st === 'running' || st === 'starting' ? 'Stop bot' : 'Start bot', enabled: ready() && st !== 'stopping', click: () => (st === 'running' || st === 'starting' ? runner.stop() : startBot()) },
     { type: 'separator' },
@@ -337,6 +362,10 @@ ipcMain.handle('gb:start', () => startBot());
 ipcMain.handle('gb:stop', () => runner.stop());
 ipcMain.handle('gb:restart', async () => { if (!ready()) return false; await runner.stop(); return startBot(); });
 ipcMain.handle('gb:open-dashboard', () => openDashboard());
+ipcMain.handle('gb:dash-show', (_e, b) => showDash(okBounds(b) ? b : null));
+ipcMain.handle('gb:dash-bounds', (_e, b) => { if (dashAttached) placeDash(b); });
+ipcMain.handle('gb:dash-hide', () => hideDash());
+ipcMain.handle('gb:dash-reload', async (_e, b) => { resetDash(); return showDash(okBounds(b) ? b : null); });
 ipcMain.handle('gb:open-dashboard-browser', () => openDashboardInBrowser());
 // The Levels page: names and pictures come from the running bot (the database only has member numbers).
 ipcMain.handle('gb:levels', () => (runner?.status().state === 'running' ? runner.control('levels', {}) : { ok: false, error: 'The bot is not running.' }));

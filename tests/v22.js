@@ -418,6 +418,7 @@ export default async function runV22Tests({ test }) {
     const w = await gameWorld();
     const g = w.mm.ctx('1', 'games');
     w.mm.moduleApi('1', 'economy').wallet('1', 'alice');
+    w.mm.setSetting('1', 'games', 'fishChallenges', false); // exact coin totals below; challenges have their own test
     const add = (rarity, value, mutation = null) => g.sql.run("INSERT INTO games_fish_bag (guild_id, user_id, species, rarity, mutation, weight, value, biome, caught_at) VALUES ('1', 'alice', 'bay-0', ?, ?, 1, ?, 'bay', 0)", rarity, mutation, value);
     add('common', 10); add('rare', 40); add('legendary', 900); add('common', 50, 'mutated');
     w.setCoins('alice', 0);
@@ -728,7 +729,7 @@ export default async function runV22Tests({ test }) {
 
     const res = await w.mm.reload('games');
     await w.mm.reload('economy');
-    assert.equal(res.to, '1.0.0');
+    assert.equal(res.to, '1.1.0');
 
     const stand = await w.press(btn(hand, (c) => c.custom_id?.endsWith(':stand')).custom_id, w.alice);
     assert.match(embedText(stand.updated), /Dealer · \d+/, 'blackjack finished after the reload');
@@ -738,3 +739,4 @@ export default async function runV22Tests({ test }) {
     assert.ok(pay.modal, 'a launcher button made before the reload still opens its popup');
   });
 }
+export { gameWorld, btn, embedText, allText };

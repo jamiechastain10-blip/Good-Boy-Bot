@@ -5,9 +5,14 @@
  * XP & leveling with role rewards, reputation (positive AND negative, with admin tools and an audit trail),
  * leaderboards, server statistics.
  * XP only needs message events (not message content). A member's XP record is deleted when they leave.
+ * Voice XP (2.3.3): once a minute, members talking with at least one other person earn XP.
+ * XP balance (2.3.3 defaults), per minute of someone actively taking part:
+ *   chatting  15-25 XP for the first message each minute (about 20)
+ *   voice     12 XP a minute with others, up to 5 hours a day (members spend far longer in voice than typing)
+ *   reactions 2 XP, at most once a minute (a small bonus, not a way to level)
  */
 import crypto from 'node:crypto';
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits as P, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits as P, MessageFlags, ChannelType } from 'discord.js';
 import { UserError, fillTemplate, progressBar, truncate, ts, SNOWFLAKE } from '../../src/util.js';
 
 const EPH = MessageFlags.Ephemeral;
@@ -25,9 +30,26 @@ export function levelOf(totalXp) {
 const userKey = (id) => `user:${id}`;
 const rec = (ctx, id) => ({ ...fresh(), ...(ctx.data.get(userKey(id)) ?? {}) });
 
+// ------------------------------------------------------------------ where XP counts
+/**
+ * No XP (and no level-up messages) in channels the server switched off, in channels inside a switched-off category,
+ * and never in support tickets (2.3.3: level-ups were being posted into tickets).
+ */
+export function xpAllowed(ctx, channel) {
+  if (!channel) return true;
+  const off = new Set(ctx.config.get('noXpChannels') ?? []);
+  const parentOf = (c) => c?.parentId ?? c?.parent?.id ?? null;
+  // threads count as their parent channel
+  const base = channel.isThread?.() ? (ctx.guild?.channels?.cache?.get(channel.parentId) ?? channel) : channel;
+  if (off.has(channel.id) || off.has(base.id) || off.has(parentOf(base))) return false;
+  if (ctx.api?.('support')?.isTicket?.(ctx.guildId, base.id)) return false;
+  return true;
+}
+
 // ------------------------------------------------------------------ XP from messages
 async function onMessage(ctx, message) {
   if (!message.guild || message.author.bot || message.system || !message.member) return;
+  if (!xpAllowed(ctx, message.channel)) return;
   const cooldown = ctx.config.get('xpCooldownSeconds') * 1000;
   const lo = ctx.config.get('xpMin'), hi = Math.max(lo, ctx.config.get('xpMax'));
   const gained = lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -47,19 +69,111 @@ async function onMessage(ctx, message) {
   if (counted) ctx.live?.('data', { panel: 'levels' });
   if (counted && after > before) {
     ctx.live?.('activity', { icon: '⭐', text: `${message.member?.displayName ?? message.author.username} reached level ${after}` });
-    await levelUp(ctx, message, before, after);
+    await levelUp(ctx, message.member, message.channel, before, after);
   }
 }
 
-async function levelUp(ctx, message, from, to) {
+// ------------------------------------------------------------------ XP from reactions (2.3.3)
+/**
+ * Reacting to someone else's message gives a little XP, at most once per cooldown. Reacting to your own message, bots
+ * and switched-off channels (and tickets) give nothing. Removing and re-adding a reaction doesn't help: the cooldown
+ * counts from the last XP given.
+ */
+async function onReaction(ctx, reaction, user, now = Date.now()) {
+  if (!ctx.config.get('reactionXp') || !user || user.bot) return;
+  const msg = reaction?.message;
+  if (!msg?.guildId) return;
+  if (msg.author?.id && msg.author.id === user.id) return; // your own message
+  if (!xpAllowed(ctx, msg.channel ?? ctx.guild?.channels?.cache?.get(msg.channelId))) return;
+  const amount = Number(ctx.config.get('reactionXpAmount')) || 0;
+  const cooldown = (Number(ctx.config.get('reactionXpCooldownSeconds')) || 60) * 1000;
+  if (amount <= 0) return;
+  let before = null, after = null;
+  ctx.data.update(userKey(user.id), (r) => {
+    const cur = { ...fresh(), ...r };
+    if (now - (cur.lastReactXp ?? 0) < cooldown) return cur;
+    before = levelOf(cur.xp).level;
+    cur.xp += amount; cur.lastReactXp = now; cur.reactions = (cur.reactions ?? 0) + 1;
+    after = levelOf(cur.xp).level;
+    return cur;
+  }, fresh());
+  if (before === null) return;
+  ctx.live?.('data', { panel: 'levels' });
+  if (after > before) {
+    const member = ctx.guild?.members?.cache?.get(user.id) ?? await ctx.guild?.members?.fetch(user.id).catch(() => null);
+    if (!member) return;
+    ctx.live?.('activity', { icon: '⭐', text: `${member.displayName ?? user.username} reached level ${after}` });
+    await levelUp(ctx, member, msg.channel, before, after);
+  }
+}
+
+/** Announces a level-up (in the level-up channel, else `here`) and hands out level roles. */
+async function levelUp(ctx, member, here, from, to) {
   if (ctx.config.get('levelUpEnabled')) {
-    const target = ctx.guild.channels.cache.get(ctx.config.get('levelUpChannel')) ?? message.channel;
-    if (target?.isTextBased()) {
-      const text = fillTemplate(ctx.config.get('levelUpMessage'), { user: `<@${message.author.id}>`, username: message.author.username, level: to });
-      await ctx.queue(() => target.send({ content: truncate(text, 1900), allowedMentions: { users: [message.author.id] } })).catch(() => {});
+    const target = ctx.guild.channels.cache.get(ctx.config.get('levelUpChannel')) ?? here;
+    if (target?.isTextBased?.()) {
+      const text = fillTemplate(ctx.config.get('levelUpMessage'), { user: `<@${member.id}>`, username: member.user?.username ?? member.displayName, level: to });
+      await ctx.queue(() => target.send({ content: truncate(text, 1900), allowedMentions: { users: [member.id] } })).catch(() => {});
     }
   }
-  await applyRewards(ctx, message.member, to);
+  await applyRewards(ctx, member, to);
+}
+
+// ------------------------------------------------------------------ XP from voice
+const today = (now) => new Date(now).toISOString().slice(0, 10);
+const deafened = (vs) => !!(vs.selfDeaf || vs.serverDeaf);
+const muted = (vs) => !!(vs.selfMute || vs.serverMute);
+
+/**
+ * Who earns voice XP right now: members in a voice channel (not the AFK one) with at least one other person who is
+ * not a bot and not deafened. Deafened members never earn; muted members only if the server allows it.
+ */
+export function voiceEarners(guild, { countMuted = false, skip = null } = {}) {
+  const rooms = new Map();
+  for (const vs of guild?.voiceStates?.cache?.values?.() ?? []) {
+    if (!vs.channelId || vs.channelId === guild.afkChannelId || !vs.member || vs.member.user?.bot) continue;
+    if (skip?.has(vs.channelId) || skip?.has(vs.channel?.parentId)) continue;
+    if (deafened(vs)) continue;
+    if (!rooms.has(vs.channelId)) rooms.set(vs.channelId, []);
+    rooms.get(vs.channelId).push(vs);
+  }
+  const out = [];
+  for (const list of rooms.values()) {
+    if (list.length < 2) continue; // alone (or only with bots / deafened people)
+    for (const vs of list) if (countMuted || !muted(vs)) out.push(vs);
+  }
+  return out;
+}
+
+/** One minute of voice XP. Returns how many members earned. */
+export { onReaction as reactionXp };
+export async function voiceTick(ctx, now = Date.now()) {
+  if (!ctx.config.get('voiceXp') || !ctx.guild) return 0;
+  const per = Number(ctx.config.get('voiceXpPerMinute')) || 0;
+  const cap = Number(ctx.config.get('voiceXpDailyMinutes')) || 0;
+  if (per <= 0) return 0;
+  let earned = 0;
+  for (const vs of voiceEarners(ctx.guild, { countMuted: !!ctx.config.get('voiceXpCountMuted'), skip: new Set(ctx.config.get('noXpChannels') ?? []) })) {
+    let before = null, after = null;
+    ctx.data.update(userKey(vs.id), (r) => {
+      const cur = { ...fresh(), ...r };
+      const day = today(now);
+      if (cur.voiceDay !== day) { cur.voiceDay = day; cur.voiceToday = 0; }
+      if (cap > 0 && cur.voiceToday >= cap) return cur; // reached today's limit
+      before = levelOf(cur.xp).level;
+      cur.xp += per; cur.voiceToday += 1; cur.voiceMinutes = (cur.voiceMinutes ?? 0) + 1;
+      after = levelOf(cur.xp).level;
+      return cur;
+    }, fresh());
+    if (before === null) continue;
+    earned++;
+    if (after > before) {
+      ctx.live?.('activity', { icon: '⭐', text: `${vs.member.displayName ?? vs.member.user?.username} reached level ${after}` });
+      await levelUp(ctx, vs.member, vs.channel, before, after);
+    }
+  }
+  if (earned) ctx.live?.('data', { panel: 'levels' });
+  return earned;
 }
 
 async function applyRewards(ctx, member, level) {
@@ -345,17 +459,40 @@ async function statsCmd(ctx, i) {
   await i.reply({ embeds: [e], allowedMentions: NOPING });
 }
 
+async function xpIgnoreCmd(ctx, i) {
+  const sub = i.options.getSubcommand();
+  const list = [...(ctx.config.get('noXpChannels') ?? [])];
+  if (sub === 'list') {
+    const lines = list.map((id) => { const c = ctx.guild.channels.cache.get(id); return c ? (c.type === ChannelType.GuildCategory ? `📁 ${c.name} (whole category)` : `<#${id}>`) : `\`${id}\` (deleted)`; });
+    return i.reply({ content: `**No XP in:**\n${lines.join('\n') || 'Nowhere yet.'}\n\nSupport tickets never give XP.`, flags: EPH, allowedMentions: NOPING });
+  }
+  const picked = i.options.getChannel('channel', true);
+  const ch = ctx.guild.channels.cache.get(picked.id) ?? picked;
+  const next = sub === 'add' ? [...new Set([...list, ch.id])] : list.filter((x) => x !== ch.id);
+  ctx.settings.set('noXpChannels', next);
+  const what = ch.type === ChannelType.GuildCategory ? `every channel in **${ch.name}**` : `<#${ch.id}>`;
+  return i.reply({ content: sub === 'add' ? `🔕 No more XP or level-up messages in ${what}.` : `🔔 ${what} gives XP again.`, flags: EPH, allowedMentions: NOPING });
+}
+
 // ------------------------------------------------------------------ definition
 export default {
   name: 'community',
-  version: '1.2.0',
+  version: '1.3.0',
   description: 'XP & levels with role rewards, reputation (can go negative), leaderboards and server stats.',
   settings: [
     { key: 'xpMin', type: 'number', label: 'XP per message (min)', default: 15, min: 1, max: 500 },
     { key: 'xpMax', type: 'number', label: 'XP per message (max)', default: 25, min: 1, max: 500 },
     { key: 'xpCooldownSeconds', type: 'number', label: 'Seconds between XP gains', default: 60, min: 5, max: 3600 },
+    { key: 'reactionXp', type: 'toggle', label: 'Reaction XP: members earn a little XP for reacting to other people\'s messages', default: true },
+    { key: 'reactionXpAmount', type: 'number', label: 'Reaction XP per reaction', default: 2, min: 1, max: 50 },
+    { key: 'reactionXpCooldownSeconds', type: 'number', label: 'Reaction XP: seconds between XP gains', default: 60, min: 5, max: 3600 },
+    { key: 'voiceXp', type: 'toggle', label: 'Voice XP: members earn XP while talking in voice', description: 'Only when someone else is in the channel too. Never in the AFK channel or while deafened.', default: true },
+    { key: 'voiceXpPerMinute', type: 'number', label: 'Voice XP per minute', default: 12, min: 1, max: 100 },
+    { key: 'voiceXpDailyMinutes', type: 'number', label: 'Voice XP: most minutes that count per member per day (0 = no limit)', default: 300, min: 0, max: 1440 },
+    { key: 'voiceXpCountMuted', type: 'toggle', label: 'Voice XP: muted members earn too', default: false },
+    { key: 'noXpChannels', type: 'list', label: 'No XP in these channels or categories', description: 'Use /xp ignore to add or remove them. Tickets never give XP.' },
     { key: 'levelUpEnabled', type: 'toggle', label: 'Announce level-ups', default: true },
-    { key: 'levelUpChannel', type: 'channel', label: 'Level-up channel (empty = where they chatted)' },
+    { key: 'levelUpChannel', type: 'channel', label: 'Level-up channel (empty = where they chatted, or the voice channel chat)' },
     { key: 'levelUpMessage', type: 'text', label: 'Level-up message', description: '{user} {username} {level}', default: '🎉 {user} reached **level {level}**!' },
     { key: 'stackRewards', type: 'toggle', label: 'Keep earlier level rewards (off = only the newest)', default: true },
     { key: 'repEnabled', type: 'toggle', label: 'Reputation on', default: true },
@@ -425,8 +562,15 @@ export default {
       permission: 'community.manage',
       data: new SlashCommandBuilder().setName('xp').setDescription('Edit someone\'s XP')
         .addSubcommand((s) => s.setName('set').setDescription('Set total XP').addUserOption((o) => o.setName('user').setDescription('Who').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('XP').setRequired(true).setMinValue(0).setMaxValue(100000000)))
-        .addSubcommand((s) => s.setName('reset').setDescription('Reset a member').addUserOption((o) => o.setName('user').setDescription('Who').setRequired(true))),
+        .addSubcommand((s) => s.setName('reset').setDescription('Reset a member').addUserOption((o) => o.setName('user').setDescription('Who').setRequired(true)))
+        .addSubcommandGroup((g) => g.setName('ignore').setDescription('Channels or categories where nobody earns XP')
+          .addSubcommand((s) => s.setName('add').setDescription('No XP in a channel or a whole category')
+            .addChannelOption((o) => o.setName('channel').setDescription('A channel or a category').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice, ChannelType.GuildCategory, ChannelType.GuildForum)))
+          .addSubcommand((s) => s.setName('remove').setDescription('Give XP there again')
+            .addChannelOption((o) => o.setName('channel').setDescription('A channel or a category').setRequired(true)))
+          .addSubcommand((s) => s.setName('list').setDescription('Where XP is switched off'))),
       async execute(ctx, i) {
+        if (i.options.getSubcommandGroup(false) === 'ignore') return xpIgnoreCmd(ctx, i);
         const user = i.options.getUser('user', true);
         if (user.bot) throw new UserError('Bots have no XP.');
         const amount = i.options.getSubcommand() === 'set' ? i.options.getInteger('amount', true) : 0;
@@ -534,9 +678,12 @@ export default {
   }],
   events: {
     messageCreate: onMessage,
+    messageReactionAdd: (ctx, reaction, user) => onReaction(ctx, reaction, user),
     guildMemberRemove: async (ctx, member) => { ctx.data.delete(userKey(member.id)); },
   },
   tasks: [{
+    name: 'voice-xp', everyMs: 60000, run: (ctx) => voiceTick(ctx),
+  }, {
     name: 'live-leaderboard', everyMs: 60000, runOnEnable: true,
     async run(ctx) {
       const saved = ctx.data.get('liveboard');
