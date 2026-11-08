@@ -14,6 +14,8 @@ _to_delete/
 *.db-shm
 *.log
 *.pem
+# The licence public key is meant to ship (it can only check licences, not make them).
+!desktop/license-public-key.pem
 *.key
 .DS_Store
 Thumbs.db
