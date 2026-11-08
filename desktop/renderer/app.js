@@ -222,7 +222,9 @@ const PAGES = {
   },
   dashboard() {
     const running = S.bot.state === 'running';
-    const bar = el('div', { class: 'dash-bar' }, el('b', {}, 'Dashboard'), el('span', { class: 'dash-server' }, sum?.guild?.name ?? ''),
+    const appNav = el('nav', { class: 'dash-app', 'aria-label': 'Good Boy app' },
+      [['overview', 'Overview'], ['updates', 'Updates'], ['settings', 'Settings · look · licence']].map(([id, label]) => el('button', { class: 'dash-link', onclick: () => go(id) }, label)));
+    const bar = el('div', { class: 'dash-bar' }, el('b', {}, 'Dashboard'), el('span', { class: 'dash-server' }, sum?.guild?.name ?? ''), appNav,
       running ? el('button', { class: 'btn quiet small', onclick: async () => { DASH.error = ''; DASH.shown = false; render(); const res = await gb.dashReload(dashRect()); if (res?.ok) DASH.shown = true; else { DASH.error = res?.message || 'The dashboard could not open.'; render(); } } }, 'Reload') : null);
     if (!running) {
       const st = S.bot.state;
@@ -290,7 +292,7 @@ const PAGES = {
       el('div', { class: 'cols' },
         el('div', {}, el('div', { class: 'section-title' }, 'Appearance'), el('div', { class: 'group' }, el('div', { class: 'row' }, el('span', { class: 'lab' }, 'Look'), el('span', { class: 'val' }, themeSeg))),
           el('div', { class: 'section-title' }, 'This computer'), el('div', { class: 'group' }, opt('startBotWithApp', 'Start the bot when Good Boy opens'), opt('startAtLogin', 'Open Good Boy when I sign in'), opt('closeAction', 'Keep running when I close the window', true), opt('dashboardOnStart', 'Switch to the Dashboard page when the bot starts'), opt('autoRestartForUpdates', 'Restart by itself to install updates (after a 1-minute warning)')),
-          S.bundled ? brandGroup() : null, S.bundled && S.edition.id !== 'owner' ? licenceGroup() : null),
+          S.bundled ? brandGroup() : null, S.bundled ? licenceGroup() : null),
         el('div', {}, S.bundled ? [el('div', { class: 'section-title' }, 'Bot'), el('div', { class: 'group' },
           el('div', { class: 'row inset' }, tile('key', 'amber'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Bot token'), el('span', { class: 'meta' }, S.secure ? 'Saved, encrypted by this computer' : 'This computer cannot encrypt it')), el('span', { class: 'val' }, el('span', { class: v?.hasToken ? 'tag ok' : 'tag wait' }, v?.hasToken ? 'Saved' : 'Missing'))),
           el('div', { class: 'row inset' }, tile('lock', 'indigo'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Dashboard login'), el('span', { class: 'meta' }, 'Discord client secret')), el('span', { class: 'val' }, el('span', { class: v?.hasClientSecret ? 'tag ok' : 'tag off' }, v?.hasClientSecret ? 'Saved' : 'Not set'))),
@@ -396,6 +398,7 @@ function licenceGroup() {
   const l = S.licence;
   const input = el('input', { placeholder: 'Paste a licence key', 'aria-label': 'Licence key', spellcheck: 'false' });
   return [el('div', { class: 'section-title' }, 'Licence'), el('div', { class: 'group' },
+    S.edition.id === 'owner' ? el('div', { class: 'row' }, el('span', { class: 'meta' }, 'The Owner edition already has everything unlocked. You can still add a licence here to test one.')) : null,
     l?.ok ? el('div', { class: 'row' }, el('div', { class: 'two' }, el('span', { class: 'lab' }, 'White-label'), el('span', { class: 'meta' }, l.exp ? `Until ${new Date(l.exp).toLocaleDateString()}` : 'Lifetime')), el('span', { class: 'val' }, el('span', { class: 'tag ok' }, 'Active'), el('button', { class: 'link', onclick: async () => { await gb.licApply(''); toast('Licence removed.'); } }, 'Remove')))
       : [l ? el('div', { class: 'row' }, el('span', { class: 'err' }, l.error)) : null, el('div', { class: 'field' }, el('label', {}, 'Licence key'), input),
         el('div', { class: 'row' }, el('button', { class: 'btn quiet', disabled: !S.licencesOn, onclick: async () => { const r = await gb.licApply(input.value); if (!r.ok) return toast(r.error, true); toast('Licence added.'); } }, 'Add licence'), S.licencesOn ? null : el('span', { class: 'meta' }, 'Licences come in a later version.'))])];

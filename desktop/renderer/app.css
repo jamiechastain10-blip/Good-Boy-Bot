@@ -272,3 +272,10 @@ main[data-page="dashboard"] .wrap{max-width:none;margin:0;flex:1;display:flex;fl
 .crash{position:fixed;inset:0;z-index:100;overflow:auto;padding:56px 40px;background:var(--canvas,#EEF2F7);color:var(--text,#0d1b2e)}
 .crash h1{font-size:22px;margin:0 0 8px}.crash p{margin:0 0 14px;max-width:640px}
 .crash pre{white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:40vh;overflow:auto;padding:12px;border-radius:10px;background:rgba(127,127,127,.12)}
+
+/* 3.0.5: the app's own pages are always one click away from the full-window dashboard */
+.dash-app{margin-left:auto;display:flex;gap:4px;-webkit-app-region:no-drag}
+#app .dash-bar .dash-link{background:transparent;box-shadow:none;border:0;color:var(--muted,#8b97ab);font:500 12.5px inherit;padding:4px 10px;border-radius:6px;cursor:pointer}
+#app .dash-bar .dash-link:hover,#app .dash-bar .dash-link:focus-visible{color:#fff;background:rgba(255,255,255,.08);outline:none}
+#app.dash-full .dash-bar .dash-link{color:#aab6cc}
+.dash-app+.btn{margin-left:8px}

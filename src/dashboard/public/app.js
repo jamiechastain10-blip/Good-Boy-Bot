@@ -327,20 +327,35 @@ function renderOverview(ws) {
 }
 
 // ---------------------------------------------------------------- updates (bot owner only)
+const RELEASES = 'https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest';
 function renderUpdates(ws) {
+  // Inside the Windows app the app itself updates Good Boy (bot and dashboard together), so send people there.
+  if (state.me?.local) {
+    ws.append(h('div', { class: 'card' }, h('h3', {}, 'Updates'),
+      h('p', {}, `You're on Good Boy ${state.me.version}. The Windows app updates the bot and this dashboard together: it checks GitHub by itself and asks before restarting.`),
+      h('div', { class: 'row' }, h('a', { class: 'btn-app', href: 'goodboy-app://page/updates' }, 'Open the app\'s Updates page'), h('a', { class: 'btn-app ghost', href: RELEASES, target: '_blank', rel: 'noopener' }, 'See the latest release')),
+      h('p', { class: 'hint' }, 'If the app can\'t update itself, download the installer from the latest release and run it. Your bot, settings and data are kept.')));
+    return;
+  }
   const box = h('div', { class: 'card' }, h('h3', {}, 'Updates'), h('p', { class: 'muted' }, 'Loading...'));
   ws.append(box);
+  const notSetUp = () => put(box, h('h3', {}, 'Updates'),
+    h('p', {}, `You're on Good Boy ${state.me?.version ?? ''}. Automatic updates aren't switched on for this copy of the bot.`),
+    h('p', { class: 'muted' }, 'To update: download the new version from GitHub, replace the bot\'s files (keep .env and the data folder), run npm install, then restart. The Windows app does all of this by itself.'),
+    h('p', {}, h('a', { class: 'btn-app', href: RELEASES, target: '_blank', rel: 'noopener' }, 'See the latest release')));
   let armed = false, polling = null;
   const when = (t) => (t ? new Date(t).toLocaleString() : 'never');
   async function load(path = '/api/updates', body) {
     let r;
-    try { r = await api(path, body); } catch (e) { put(box, h('h3', {}, 'Updates'), h('p', { class: e.status === 403 ? 'muted' : 'err' }, e.message)); return null; }
+    try { r = await api(path, body); } catch (e) { if (/not set up/i.test(e.message)) { notSetUp(); return null; } put(box, h('h3', {}, 'Updates'), h('p', { class: e.status === 403 ? 'muted' : 'err' }, e.message)); return null; }
+    if (r && r.supervised && !r.ok && /not set up/i.test(r.error ?? '')) { notSetUp(); return null; }
     paint(r); return r;
   }
   function paint(r) {
-    if (!r.supervised) { put(box, h('h3', {}, 'Updates'), h('p', { class: 'muted' }, r.message)); return; }
+    if (!r.supervised) { notSetUp(); return; }
     if (!r.ok) { put(box, h('h3', {}, 'Updates'), h('p', { class: 'err' }, r.error || 'The supervisor did not answer.')); return; }
     const st = r.status, u = st.update, found = u.lastCheck?.release;
+    if (!u.channel && !found) { notSetUp(); return; }
     const rows = [['Running', `${st.version}${st.trial ? ' (on trial, not yet confirmed)' : ''}`], ['State', st.state], ['Channel', u.channel ?? 'updates not set up'], ['Last checked', when(u.lastCheck?.at)]];
     if (u.lastError) rows.push(['Problem', u.lastError]);
     if (u.lastResult) rows.push(['Last update', u.lastResult.ok ? `installed ${u.lastResult.version}` : `failed (${u.lastResult.reason || 'unknown'}); went back to the previous version`]);
@@ -356,7 +371,7 @@ function renderUpdates(ws) {
         : h('p', { class: 'muted' }, u.lastCheck ? 'You are up to date.' : 'No check has been made yet.'),
       h('p', {}, h('button', { class: 'ghost', onclick: check }, 'Check now')));
   }
-  async function check() { toast('Checking...'); const r = await load('/api/updates/check', {}); if (r && !r.ok) toast(r.error, true); }
+  async function check() { toast('Checking...'); const r = await load('/api/updates/check', {}); if (r && !r.ok && !/not set up/i.test(r.error ?? '')) toast(r.error, true); }
   async function apply() {
     if (!armed) { armed = true; const r = await load(); setTimeout(() => { armed = false; }, 6000); return r; }
     armed = false;
