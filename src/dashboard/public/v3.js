@@ -393,9 +393,12 @@ function renderSettingsHub(ws) {
     admin ? tile('permissions', '♙', 'Permissions', 'Who can do what') : null,
     admin ? tile('feedback', '💬', 'Tester feedback', 'What testers sent') : null,
     tile('whatsnew', '★', "What's new", 'What changed in each update'),
-    tile('appearance', '✦', 'Appearance', 'Theme and motion'),
+    tile('appearance', '✦', 'Dashboard look', 'Theme and motion for this dashboard'),
     state.me?.botOwner ? tile('updates', '⬆', 'Updates', 'Check for a new version') : null,
-    state.me?.local ? h('a', { class: 'quick plain', href: 'goodboy-app://page/settings' }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '🖥'), h('span', {}, h('strong', {}, 'Windows app settings'), h('small', {}, 'Bot token, licence, backups, start with Windows'))) : null,
+    ...(state.me?.local ? [
+      h('a', { class: 'quick plain', href: 'goodboy-app://page/settings' }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '🔑'), h('span', {}, h('strong', {}, 'Licence'), h('small', {}, 'Add or remove a licence key'))),
+      h('a', { class: 'quick plain', href: 'goodboy-app://page/settings' }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '🐶'), h('span', {}, h('strong', {}, 'Bot name, picture and banner'), h('small', {}, 'How your bot looks in Discord'))),
+      h('a', { class: 'quick plain', href: 'goodboy-app://page/settings' }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '🖥'), h('span', {}, h('strong', {}, 'Windows app settings'), h('small', {}, 'Light or dark look, bot token, backups, start with Windows')))] : []),
     h('a', { class: 'quick plain', href: '/logout' }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '↩'), h('span', {}, h('strong', {}, 'Log out'), h('small', {}, `Signed in as ${state.me?.user?.username ?? ''}`))))));
   if (admin) ws.append(testersCard());
   if (state.me?.botOwner) ws.append(signedInCard());

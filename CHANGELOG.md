@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.5
+**Easier to find the Windows app's settings, licences and updates.**
+
+<!-- members -->
+small fixes for the windows app: settings, licences and updates are easier to find
+<!-- /members -->
+
+**Windows app**
+- The dashboard's top bar now has **Overview**, **Updates** and **Settings · look · licence** buttons, so the app's own pages are always one click away.
+- The dashboard's Settings page has **Licence**, **Bot name, picture and banner** and **Windows app settings** tiles that open the app's settings.
+- The licence box now shows in every edition (the Owner edition says it already has everything unlocked).
+- The dashboard's **Updates** page no longer says "Updates are not set up". In the Windows app it points to the app's own updater; elsewhere it explains how to update.
+
 ## 3.0.4
 **Animated games (being tested).**
 
