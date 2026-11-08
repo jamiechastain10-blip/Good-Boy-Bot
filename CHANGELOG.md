@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.3
+**A fix for the Windows app opening to a blank window.**
+
+<!-- members -->
+fixed the windows app sometimes opening to an empty window
+<!-- /members -->
+
+**Windows app**
+- If the graphics driver crashes, the app now restarts itself without hardware acceleration instead of showing an empty window, and remembers that for next time.
+- The built-in dashboard only appears once it has actually loaded. If it takes more than 25 seconds or fails, you get a message with **Try again** instead of a blank area.
+- If the window can't draw, it shows what went wrong with **Reload window** and **Go to Overview** buttons. **Ctrl+R** reloads the window at any time.
+- The app now keeps a small log (app.log, under 1 MB) in its data folder, so problems can be looked into.
+
 ## 3.0.2
 **Licences are switched on in the Windows app.**
 

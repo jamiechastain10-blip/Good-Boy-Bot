@@ -648,5 +648,21 @@ gb.onLog((line) => {
   const pre = document.querySelector('pre.log');
   if (pre) { const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40; pre.textContent = logLines.join('\n'); if (atEnd) pre.scrollTop = pre.scrollHeight; }
 });
-gb.state().then((s) => { S = s; logLines = s.logs ?? []; refreshSummary(); if (!s.setupNeeded) whatsNewOnce(); });
+// If anything goes wrong while drawing, show what happened and a way out, never a blank window.
+function showCrash(err) {
+  if (document.getElementById('gb-crash')) return;
+  const msg = String(err?.stack ?? err?.message ?? err ?? 'Unknown error').slice(0, 1200);
+  try { gb.logError?.(msg); } catch { /* ignore */ }
+  const box = el('div', { id: 'gb-crash', class: 'crash' },
+    el('h1', {}, 'Good Boy hit a problem drawing this window'), el('p', {}, 'The bot itself is not affected. Reload the window, and if this keeps happening, send Basic Ghost Labs the text below.'),
+    el('pre', {}, msg), el('div', { class: 'row-btns' }, el('button', { class: 'btn', onclick: () => location.reload() }, 'Reload window'), el('button', { class: 'btn quiet', onclick: () => { page = 'overview'; document.getElementById('gb-crash')?.remove(); safeRender(); } }, 'Go to Overview')));
+  document.body.append(box);
+}
+addEventListener('error', (e) => showCrash(e.error ?? e.message));
+addEventListener('unhandledrejection', (e) => showCrash(e.reason));
+function safeRender() { try { render(); } catch (e) { showCrash(e); } }
+gb.state().then((s) => { S = s; logLines = s.logs ?? []; refreshSummary().catch(showCrash); if (!s.setupNeeded) whatsNewOnce(); }, showCrash);
+// Nothing drawn after a few seconds (no answer from the app): say so instead of leaving the window empty.
+setTimeout(() => { if (!document.getElementById('app')?.children.length) showCrash(new Error('The window got no answer from Good Boy. Reload, or quit from the tray icon and open Good Boy again.')); }, 8000);
+document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') { e.preventDefault(); location.reload(); } });
 setInterval(() => { if (S && !S.setupNeeded && document.visibilityState === 'visible') refreshSummary(); }, 30000);

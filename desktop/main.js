@@ -40,6 +40,17 @@ log('single-instance lock taken');
 const smokeDir = process.env.GOODBOY_SMOKE_DIR || ''; // set only by the automated build check
 if (smokeDir) { fs.mkdirSync(smokeDir, { recursive: true }); app.setPath('userData', path.join(smokeDir, 'user-data')); }
 
+// If the graphics driver crashed last time, draw without it (a blank window is the usual sign). See 'child-process-gone'.
+const gpuOffFile = () => path.join(app.getPath('userData'), 'gpu-off');
+if (fs.existsSync(gpuOffFile()) || process.argv.includes('--no-gpu')) { app.disableHardwareAcceleration(); log('drawing without the graphics card (gpu-off)'); }
+app.on('child-process-gone', (_e, d) => {
+  log(`${d.type} process gone: ${d.reason} (${d.exitCode})`);
+  if (d.type === 'GPU' && !smokeDir && !fs.existsSync(gpuOffFile())) {
+    try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(gpuOffFile(), new Date().toISOString()); } catch { /* best effort */ }
+    log('graphics crashed: restarting without hardware acceleration'); app.relaunch(); app.exit(0);
+  }
+});
+
 let edition = readEdition(null);
 try { edition = readEdition(JSON.parse(fs.readFileSync(path.join(here, 'edition.json'), 'utf8'))); } catch { /* consumer */ }
 
@@ -164,8 +175,9 @@ function makeDashView() {
   wc.setWindowOpenHandler(({ url: u }) => { if (!appLink(u)) external(u); return { action: 'deny' }; });
   wc.on('will-navigate', (e, u) => { if (appLink(u)) { e.preventDefault(); return; } if (!dashOrigin || new URL(u).origin !== dashOrigin) { e.preventDefault(); external(u); } });
   addContextMenu(wc);
-  wc.on('render-process-gone', () => { dashLoaded = false; send('dash', { state: 'error', message: 'The dashboard stopped. Click Reload.' }); });
-  wc.on('did-fail-load', (_e, code, desc, _u, main) => { if (main && code !== -3) { dashLoaded = false; send('dash', { state: 'error', message: `The dashboard didn't load (${desc}).` }); } });
+  wc.on('render-process-gone', (_e, d) => { log(`dashboard crashed: ${d?.reason}`); dashLoaded = false; hideDash(); send('dash', { state: 'error', message: 'The dashboard stopped. Click Try again.' }); });
+  wc.on('console-message', (e) => { const lvl = e.level ?? e.params?.level; if (lvl === 'error' || lvl === 3) log(`dashboard: ${e.message ?? e.params?.message}`); });
+  wc.on('did-fail-load', (_e, code, desc, _u, main) => { if (main && code !== -3) { log(`dashboard failed to load: ${code} ${desc}`); dashLoaded = false; hideDash(); send('dash', { state: 'error', message: `The dashboard didn't load (${desc}).` }); } });
   return dashView;
 }
 /** Sign in and load the dashboard. Needs the bot running; the bot gives a one-time link only to the app. */
@@ -175,7 +187,15 @@ async function loadDash() {
   if (!(r?.ok && isDashboardWindowUrl(r.url))) return { ok: false, reason: 'nolink', message: 'The bot did not give a sign-in link. Restart the bot and try again.' };
   const v = makeDashView();
   dashOrigin = new URL(r.url).origin;
-  await v.webContents.loadURL(r.url).catch(() => {});
+  let failed = null;
+  const load = v.webContents.loadURL(r.url).catch((e) => { if (!/ERR_ABORTED/.test(String(e?.message))) failed = e; });
+  const timedOut = await Promise.race([load.then(() => false), new Promise((res) => setTimeout(() => res(true), 25000))]);
+  if (timedOut || failed) {
+    log(`dashboard did not load: ${timedOut ? 'timed out' : failed.message}`);
+    try { v.webContents.stop(); } catch { /* ignore */ }
+    return { ok: false, reason: 'load', message: timedOut ? 'The dashboard took too long to load. Click Try again, or restart the bot.' : `The dashboard didn't load (${failed.message}).` };
+  }
+  log('dashboard loaded');
   dashLoaded = true;
   return { ok: true };
 }
@@ -272,11 +292,16 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   addContextMenu(win.webContents);
-  if (smokeDir) {
-    win.webContents.once('did-finish-load', () => { log('page loaded'); setTimeout(() => smokeCheck().catch((e) => { log(`smoke error ${e.stack}`); app.exit(1); }), 1500); });
-    win.webContents.on('did-fail-load', (_e, code, desc) => log(`page failed to load: ${code} ${desc}`));
-    win.webContents.on('render-process-gone', (_e, d) => log(`page crashed: ${d.reason}`));
-  }
+  win.webContents.on('did-fail-load', (_e, code, desc) => log(`page failed to load: ${code} ${desc}`));
+  win.webContents.on('console-message', (e) => { const lvl = e.level ?? e.params?.level; if (lvl === 'error' || lvl === 3) log(`page: ${e.message ?? e.params?.message}`); });
+  let crashes = 0;
+  win.webContents.on('render-process-gone', (_e, d) => {
+    log(`page crashed: ${d.reason}`);
+    if (!smokeDir && d.reason !== 'clean-exit' && ++crashes <= 2 && win && !win.isDestroyed()) win.webContents.reload();
+  });
+  win.webContents.on('unresponsive', () => log('page not responding'));
+  if (smokeDir) win.webContents.once('did-finish-load', () => { log('page loaded'); setTimeout(() => smokeCheck().catch((e) => { log(`smoke error ${e.stack}`); app.exit(1); }), 1500); });
+  else win.webContents.once('did-finish-load', () => log('page loaded'));
   win.on('close', (e) => {
     if (quitting || settings.closeAction === 'quit') return;
     e.preventDefault(); win.hide();
@@ -380,6 +405,7 @@ async function importFolder(dir) {
 }
 
 // ---- messages from the window (the preload exposes exactly these, nothing else)
+ipcMain.handle('gb:log-error', (_e, text) => { log(`window error: ${String(text ?? '').slice(0, 2000)}`); });
 ipcMain.handle('gb:state', () => ({ ...snapshot(), logs: runner.logs.all() }));
 ipcMain.handle('gb:start', () => startBot());
 ipcMain.handle('gb:stop', () => runner.stop());

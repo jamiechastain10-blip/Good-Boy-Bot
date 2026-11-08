@@ -18,7 +18,27 @@ The **installer** is the one to pick on Windows: it sets everything up and updat
 The portable `.exe` runs without installing (and tells you about updates instead). The Mac app is not signed yet:
 right-click it and choose **Open** the first time.
 
+**Can't update, or the app opens to a blank window?** Download the installer again from the button above and run it.
+Your bot, settings and data are kept. See [Troubleshooting](#troubleshooting) below.
+
 </div>
+
+---
+
+### What's new in 3.0
+
+- **A new dashboard and Windows app**: one clean dark design, a Home page with what needs attention and charts for the
+  last 14 days, a server switcher, channel and role pickers, and right-click menus.
+- **Moderation from the dashboard**: warn, time out, kick or ban from a ticket, a member's name or the Moderation page,
+  with the full case history and search. The bot checks the same permissions as the commands.
+- **Tickets rebuilt**: pick a type, pick the member, drop screenshots straight into the form, and a searchable archive
+  that reads like the original chat.
+- **Fishing expansion**: 24 places, 2,000 fish, levels up to 4,000, strike timing and quick-time events.
+- **Animated games and Pong**, **music**, **pictures in welcome and leave messages**, and **What's new** in every app.
+- **Licences**: a licensed bot can use its own name, picture, banner and description in the Windows app (the Good Boy
+  credit always stays).
+
+Every change, version by version: [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -26,7 +46,8 @@ right-click it and choose **Open** the first time.
 
 | Version | Where to find it |
 |---|---|
-| **2.3.x** (latest) | `main` and the [releases page](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest) |
+| **3.0.x** (latest) | `main` and the [releases page](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest) |
+| 2.3.x | the [`v2.3.3` release](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/tag/v2.3.3) and earlier 2.3 releases |
 | 2.2.0 | the [`v2.2.0` tag and release](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/tag/v2.2.0) (no branch, see below) |
 | 2.1.3, 2.1.2, 2.1.1 | the `v2.1.3`, `v2.1.2` and `v2.1.1` branches |
 | 1.0 | the `v1.0` branch (the original version) |
@@ -81,7 +102,11 @@ A browser control panel at <http://localhost:3000>, reachable only from your own
 
 **Testers:** the dashboard's overview has a **Testers** card. Pick your testers' role, click **Let them open the dashboard** (or **…and see every read-only box**; boxes with buttons or private information are given out on the Permissions page), and send them the link. They sign in with their own Discord account and report anything with the **💬 Feedback** button; reports show up live under **Tester feedback**. For people outside your house, turn on the app's **Settings > Dashboard link** first.
 
-**Desktop app:** **Open dashboard** shows the whole dashboard inside the app, already signed in, with no Client Secret needed. The dashboard updates live everywhere: changes, numbers and the activity feed appear as they happen.
+**Desktop app:** the **Dashboard** page shows the whole dashboard inside the app, already signed in, with no Client Secret needed. The dashboard updates live everywhere: changes, numbers and the activity feed appear as they happen.
+
+**Home** shows what needs attention, your tools, live activity, and charts for members, people in voice and messages over the last 14 days (the bot keeps hourly counts only, no names or message text, and deletes them after 14 days).
+
+**Moderation:** Warn, Time out, Kick and Ban are on the ticket side panel and in the right-click menu on any member. The **Moderation** page lists every warning, timeout, kick and ban (from Discord, the dashboard and AutoMod) with search and an **Act** button, and AutoMod's settings underneath. Each action needs the same permission as its command (`moderation.warn`, `moderation.timeout`, `moderation.kick`, `moderation.ban`), and role order is respected.
 
 Everything the dashboard does is also available through slash commands.
 
@@ -134,7 +159,7 @@ Nothing needs typing anywhere: every command opens a popup (on/off and choices a
 | **achievements** | `/achievements show\|list\|privacy\|optout\|optin` · 17 built-in achievements plus your own (`/achievements custom create\|delete\|grant\|revoke`) · announcements to a channel and/or DM |
 | **eclipseid** | `/id show\|edit\|privacy\|link\|unlink\|roblox\|delete` · a member card with an ID, about text, linked game accounts (shown as *not verified*), per-field public / staff / private visibility |
 | **economy** | `/balance` `/daily` `/pay` `/top` `/economy-admin` · right-click → **View wallet** / **Pay member** · daily streaks with Streak Shields and milestone bonuses · a live, paginated leaderboard (coins, streaks, fishing, casino) for the server or across servers that opt in. Every amount is typed in a popup |
-| **games** | `/slots` (progressive server jackpot) `/blackjack` `/coinflip` `/fish` `/arcade` · each game opens a bet popup from a button · **fishing**: 9 places unlocked by level (up to level 100), 108 fish from Common to Mythical, daily and weekly challenges with a streak bonus, Mutated and Corrupted variants, rods, bait and tackle, a reeling mini-game played with buttons, a bag and a collection log. Needs **economy**. Play money only · player guide: [Fishing Wiki](docs/FISHING-WIKI.md) |
+| **games** | `/slots` (progressive server jackpot) `/blackjack` `/coinflip` `/fish` `/arcade` · each game opens a bet popup from a button · **fishing**: places unlocked by level, fish from Common to Mythical, daily and weekly challenges with a streak bonus, Mutated and Corrupted variants, rods, bait and tackle, a reeling mini-game played with buttons, a bag and a collection log. Since 3.0: 24 places, 2,000 fish, levels up to 4,000, strike timing, quick-time events and choosing exactly which fish to sell. Needs **economy**. Play money only · player guide: [Fishing Wiki](docs/FISHING-WIKI.md) |
 | **tags** | custom commands and auto-replies: `?rules` / `!ip` style commands, or replies when a message is, starts with or contains a phrase · `/tags add\|list\|use\|remove` · variables, cooldowns, never pings · import with `/migrate tags` |
 | **messages** | `/say send\|edit` (post or change a message as the bot, plain or in a box) · `/sticky set\|remove\|list` (a message that stays at the bottom of a channel) |
 | **clips** | `/clips setup` (clips channel, Best clips channel, votes needed) · `/clips top` · uploaded videos from any clipping app, pasted clip links, and Medal's **Send to Discord** button (MedalBot's post is credited to the member it mentions) · 🔥 votes (not the owner's or bots'), enough votes reposts to Best clips with the video, **clip of the week** every Monday wins coins, coins for sharing, "Clips shared" and "Clip votes" boards in `/top` |
@@ -158,6 +183,8 @@ The bot is online only while `npm start` is running. Close the window → it goe
 
 **Supervisor and self-updates (optional):** `npm run supervised` runs the bot under a watcher that restarts it after a crash and can install signed updates with automatic rollback. Updates are **off** until you publish signed releases and set `UPDATE_MANIFEST_URL`; see [`docs/UPDATES.md`](docs/UPDATES.md). **Desktop app** (Windows/macOS control panel): built by GitHub Actions, and the built Windows app is started and checked on each build. See [`docs/DESKTOP.md`](docs/DESKTOP.md). The legal pages are served at `/terms` and `/privacy` on the dashboard address (set `LEGAL_OPERATOR` and `LEGAL_CONTACT` in `.env`).
 
+**Licences (Windows app):** a licence key unlocks a bot's own name, picture, banner and description in the Windows app; the Good Boy credit always stays. Keys are made by Basic Ghost Labs for one bot each. Paste yours in the app under **Settings → Licence**.
+
 **Updating by hand:** replace the project files (keep `.env` and `data/`), run `npm install`, restart. The database upgrades itself and a backup is saved to `data/backups/` first. To update one module without restarting: replace its folder, then `/module` → pick it → **Reload from disk** (bot owner only). If the new code is broken, it **rolls back automatically** and keeps running the old version.
 
 ---
@@ -169,7 +196,7 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 
 ## 5. Honest status & limits
 
-**What was verified, and how.** Good Boy was built and tested against *simulated* Discord: 375 automated tests (module lifecycle, permissions, AutoMod rules, tickets and the watch log, popups, polls and suggestions, the live leaderboard, no-mic reading rules, the GIF codec, dashboard access control and design assets, and for the newer parts: temporary voice, party finder, statistics, achievements, member IDs, the update system with real child processes and a local update server, and the desktop app's logic). The same suite also passes on a PC with the real `discord.js`. Key rules were checked by *breaking the code on purpose* to make sure a test fails. The GIF reader and writer were compared against an independent library (Pillow); real animated quotes were rendered with the real canvas library. The dashboard was opened in a real browser to check the layout, themes and animations.
+**What was verified, and how.** Good Boy was built and tested against *simulated* Discord: 410 automated tests (module lifecycle, permissions, AutoMod rules, tickets and the watch log, popups, polls and suggestions, the live leaderboard, no-mic reading rules, the GIF codec, dashboard access control and design assets, and for the newer parts: temporary voice, party finder, statistics, achievements, member IDs, the update system with real child processes and a local update server, and the desktop app's logic). The same suite also passes on a PC with the real `discord.js`. Key rules were checked by *breaking the code on purpose* to make sure a test fails. The GIF reader and writer were compared against an independent library (Pillow); real animated quotes were rendered with the real canvas library. The dashboard was opened in a real browser to check the layout, themes and animations.
 
 **Not verified on real Discord yet** (please try these first, see "First-run checklist" below): everything new in 2.2 (the button-then-popup flow, popups with pickers and dropdowns, the leaderboard buttons, the games and the fishing mini-game; see [`docs/V2.2-TEST-PLAN.md`](docs/V2.2-TEST-PLAN.md)), temporary voice rooms (moving members, permissions), the party finder buttons and DMs, the member ID popup, achievement announcements, the statistics weekly recap and history backfill, the popups (modals), a full ticket from open to close, the watch-log flags, the live leaderboard message editing itself, animated quotes as uploaded to Discord, and the dashboard login with your own Client Secret. **Text-to-speech audio** (including the no-mic channel) can only be proven on a machine with a voice channel and speakers: the rules for *what* gets read are tested, the sound is not.
 
@@ -187,7 +214,7 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 - **Roblox lookup** (`/id roblox`, off by default) was written from memory of Roblox's public API and has never been run against it. Linked game accounts are only format-checked and always shown as *not verified*.
 - **The bot's own signed updates** (`npm run supervised`) are tested against a local update server only, and the supervisor has not been run on Windows. The **desktop app** is built, started and checked by GitHub for every release and published under Releases; installed Windows apps update themselves from there.
 - **Statistics** start counting when the module is turned on; `/stats backfill` can count older messages (all time, in the background) and those counts are labelled as such.
-- **Not built:** Twitch/Steam/Spotify integrations, a module marketplace, updates that install without a click, achievement role rewards, the Minecraft launcher and server manager. **Deliberately excluded:** giveaways, AI, anything that sells coins for real money.
+- **Not built:** Twitch/Steam/Spotify integrations, a module marketplace, achievement role rewards, the Minecraft launcher and server manager. **Deliberately excluded:** giveaways, AI, anything that sells coins for real money.
 - One SQLite file (`data/eclipse.db`, the name is kept so existing data carries over) is plenty for personal and mid-sized communities.
 
 ### First-run checklist (about 15 minutes)
@@ -202,6 +229,16 @@ Each feature is a folder in `modules/` with an `index.js`. The core loads them, 
 9. `/party create`, join from a second account, fill it, close it.
 10. `/stats coverage`, post a few messages, then `/stats me`; try `/achievements show` and `/id edit`.
 11. Optional: `npm run supervised` and open Dashboard → Updates (as the bot owner); it should say updates are off.
+
+## Troubleshooting
+
+**The Windows app opens to a blank window, or won't update.** Download the installer again from the [latest release](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Setup.exe) and run it over the top; your bot, settings and data stay. Since 3.0.3 the app recovers by itself: if the graphics driver crashes it restarts without hardware acceleration, the built-in dashboard only appears once it has loaded, and if the window can't draw it shows the reason with **Reload window**. **Ctrl+R** reloads the window at any time.
+- Still blank? Quit from the tray icon, then start Good Boy from a shortcut with ` --disable-gpu` added after the closing quote in **Target** (right-click the shortcut → Properties).
+- The app keeps a log at `%APPDATA%\Good Boy\app.log` (under 1 MB). Send it along with any bug report.
+
+**Starting the bot without the app.** In the bot's folder: `npm install` once, then `npm start` (or `npm run supervised` to restart it after crashes). Close the window and the bot goes offline.
+
+**The dashboard won't log in.** Open `/auth/diagnose` on the dashboard address; it checks your Client Secret and redirect address.
 
 ## Security notes
 Secrets live only in `.env` (never commit it; it's in `.gitignore`). Permissions are enforced centrally by the core (the bot also checks role hierarchy, so a moderator can't act on someone above them). The bot refuses to hand out roles that carry dangerous permissions through menus/rewards/auto-roles. `@everyone`/role pings are off unless a feature explicitly needs them. Outbound feed fetches block private/internal addresses. The dashboard re-checks the person's rights with Discord on every request, and panels are enforced on the server, not just hidden in the page. Settings changes and permission edits are written to the security log.

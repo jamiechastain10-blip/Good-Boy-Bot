@@ -12,6 +12,7 @@ const rect = (b) => ({ x: Number(b?.x) || 0, y: Number(b?.y) || 0, width: Number
 
 contextBridge.exposeInMainWorld('goodBoy', {
   state: () => ipcRenderer.invoke('gb:state'),
+  logError: (text) => ipcRenderer.invoke('gb:log-error', String(text ?? '').slice(0, 2000)),
   start: () => ipcRenderer.invoke('gb:start'),
   stop: () => ipcRenderer.invoke('gb:stop'),
   restart: () => ipcRenderer.invoke('gb:restart'),
