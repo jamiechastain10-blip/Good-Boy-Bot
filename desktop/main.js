@@ -9,6 +9,7 @@
 import { app, BrowserWindow, WebContentsView, Tray, Menu, ipcMain, dialog, shell, nativeImage, safeStorage, clipboard, powerSaveBlocker, Notification, nativeTheme } from 'electron';
 import QRCode from 'qrcode';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -188,11 +189,12 @@ async function loadDash() {
   const v = makeDashView();
   dashOrigin = new URL(r.url).origin;
   let failed = null;
-  const load = v.webContents.loadURL(r.url).catch((e) => { if (!/ERR_ABORTED/.test(String(e?.message))) failed = e; });
+  // A load that was replaced by a newer one reports ERR_ABORTED (-3): that is not a failure.
+  const load = v.webContents.loadURL(r.url).catch((e) => { if (!/ERR_ABORTED|\(-3\)/.test(String(e?.message)) && e?.errno !== -3 && e?.code !== 'ERR_ABORTED') failed = e; });
   const timedOut = await Promise.race([load.then(() => false), new Promise((res) => setTimeout(() => res(true), 25000))]);
   if (timedOut || failed) {
     log(`dashboard did not load: ${timedOut ? 'timed out' : failed.message}`);
-    try { v.webContents.stop(); } catch { /* ignore */ }
+    if (timedOut) { try { v.webContents.stop(); } catch { /* ignore */ } }
     return { ok: false, reason: 'load', message: timedOut ? 'The dashboard took too long to load. Click Try again, or restart the bot.' : `The dashboard didn't load (${failed.message}).` };
   }
   log('dashboard loaded');
@@ -205,9 +207,15 @@ function placeDash(b) {
   dashBounds = { x: Math.round(b.x), y: Math.round(b.y), width: Math.max(1, Math.round(b.width)), height: Math.max(1, Math.round(b.height)) };
   dashView.setBounds(dashBounds);
 }
+// Only one sign-in and load at a time: two at once used to cancel each other and leave a blank (white) dashboard.
+let dashLoading = null;
 async function showDash(b) {
   if (!win || win.isDestroyed()) return { ok: false };
-  if (!dashLoaded) { const r = await loadDash(); if (!r.ok) return r; }
+  if (!dashLoaded) {
+    dashLoading ??= loadDash().finally(() => { dashLoading = null; });
+    const r = await dashLoading;
+    if (!r.ok) return r;
+  }
   if (!dashAttached) { win.contentView.addChildView(dashView); dashAttached = true; }
   placeDash(b ?? dashBounds);
   return { ok: true };
@@ -324,6 +332,12 @@ async function smokeCheck() {
   out.splashOpen = !!splash && !splash.isDestroyed();
   if (out.splashOpen) fs.writeFileSync(path.join(smokeDir, 'splash.png'), (await splash.webContents.capturePage()).toPNG());
   closeSplash();
+  if (process.env.GOODBOY_SMOKE_DASH_ONLY) { // developers: only the dashboard part (works outside the packaged app)
+    await applySettings({ setupComplete: true }); recheck(); send('state', snapshot()); await wait(900);
+    out.dash = await smokeDashboard(js, wait).catch((e) => ({ ok: false, error: e.message }));
+    fs.writeFileSync(path.join(smokeDir, 'smoke.json'), JSON.stringify(out, null, 2));
+    app.exit(out.dash.ok ? 0 : 1); return;
+  }
   for (let i = 0; i < 40 && !prep.done && !prep.error; i++) await wait(500);
   out.prep = prep;
   out.selftest = await runTool({ nodePath: nodePath(), botDir: botDir(), args: ['selftest'] });
@@ -350,11 +364,41 @@ async function smokeCheck() {
   }
   await applySettings({ theme: 'dark' }); await js(`document.querySelector('[data-nav="overview"]')?.click()`); await wait(900); await shot('page-overview-dark');
   out.look = await js(`(() => { const g = document.querySelector('.group'); const s = g && getComputedStyle(g); const f = getComputedStyle(document.body).fontFamily; return { blur: s ? (s.backdropFilter || s.webkitBackdropFilter) : '', font: f, fontsReady: document.fonts.check('600 16px "Inter Display"') }; })()`);
+  // 3.0.7: the built-in dashboard with the bot "running". It is opened several times at once, the way a real start
+  // does, and must load exactly once and actually draw (two loads at once used to leave a white window).
+  out.dash = await smokeDashboard(js, wait).catch((e) => ({ ok: false, error: e.message }));
   out.node = nodeInfo; out.platform = process.platform; out.version = app.getVersion(); out.electron = process.versions.electron; out.edition = edition.id; out.bundled = bundled;
   const pagesOk = Object.entries(out.pages).every(([k, v]) => v.shown === k);
-  out.ok = out.setupScreen && pagesOk && out.splashOpen && out.nextBlocked && /not valid|reach Discord/.test(out.tokenCheck) && (!bundled || (out.selftest.ok && prep.done && !prep.error));
+  out.ok = out.dash?.ok && out.setupScreen && pagesOk && out.splashOpen && out.nextBlocked && /not valid|reach Discord/.test(out.tokenCheck) && (!bundled || (out.selftest.ok && prep.done && !prep.error));
   fs.writeFileSync(path.join(smokeDir, 'smoke.json'), JSON.stringify(out, null, 2));
   app.exit(out.ok ? 0 : 1);
+}
+
+async function smokeDashboard(js, wait) {
+  let hits = 0, logins = 0;
+  // Answers after a moment, like a real bot's dashboard, so overlapping loads really overlap.
+  const server = http.createServer((req, res) => { hits++; setTimeout(() => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><html><body style="margin:0;background:#0f131c;color:#fff;font:20px sans-serif"><h1>dashboard ok</h1></body></html>'); }, 1200); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  const realStatus = runner.status.bind(runner), realControl = runner.control.bind(runner);
+  runner.status = () => ({ ...realStatus(), state: 'running' });
+  runner.control = async (action) => (action === 'dashboard-login' ? (logins++, { ok: true, url: `http://127.0.0.1:${port}/login/local?t=smoke` }) : { ok: false });
+  try {
+    send('state', snapshot()); await wait(400);
+    await js(`document.querySelector('[data-nav="dashboard"]')?.click()`);
+    await wait(150);
+    // Provoke the old double load: two requests to open the dashboard at the same instant, plus the page's own.
+    await js(`(() => { const r = dashRect() ?? { x: 0, y: 40, width: 800, height: 500 }; return Promise.all([goodBoy.dashShow(r), goodBoy.dashShow(r), syncDash()]).then(() => true); })()`).catch(() => {});
+    for (let i = 0; i < 40 && !(dashLoaded && dashAttached); i++) await wait(250);
+    await wait(800);
+    const text = dashView && dashLoaded ? await dashView.webContents.executeJavaScript('document.body.innerText').catch(() => '') : '';
+    fs.writeFileSync(path.join(smokeDir, 'dashboard.png'), (await win.webContents.capturePage()).toPNG());
+    if (dashView) fs.writeFileSync(path.join(smokeDir, 'dashboard-view.png'), (await dashView.webContents.capturePage()).toPNG());
+    const result = { logins, hits, attached: dashAttached, text: String(text).slice(0, 60) };
+    return { ...result, ok: logins === 1 && hits === 1 && dashAttached && /dashboard ok/.test(text) };
+  } finally {
+    runner.status = realStatus; runner.control = realControl; resetDash(); server.close();
+  }
 }
 
 // ---- tray
@@ -755,7 +799,13 @@ ipcMain.handle('gb:levels-merge', async () => {
 });
 
 // ---- app updates from GitHub (see lib/updater.js)
-const setU = (patch) => { Object.assign(U, { error: null }, patch); send('state', snapshot()); };
+const setU = (patch) => {
+  const before = `${U.phase}|${U.version}`;
+  Object.assign(U, { error: null }, patch);
+  // 3.0.7: every update step goes in app.log, so a stuck or failed update can be looked into.
+  if (`${U.phase}|${U.version}` !== before || U.error) log(`update: ${U.phase}${U.version ? ` ${U.version}` : ''}${U.percent != null && U.phase === 'downloading' ? ` ${Math.round(U.percent)}%` : ''}${U.error ? ` (${U.error})` : ''}`);
+  send('state', snapshot());
+};
 const friendlyUpdateError = (e) => {
   const m = String(e?.message ?? e).split('\n')[0];
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|net::|getaddrinfo|network/i.test(m)) return 'No internet connection right now.';
@@ -778,8 +828,10 @@ async function initUpdates() {
       autoUpdater.on('update-not-available', () => setU({ phase: 'current', checkedAt: Date.now() }));
       autoUpdater.on('download-progress', (p) => setU({ phase: 'downloading', percent: p?.percent ?? null }));
       autoUpdater.on('update-downloaded', (i) => { setU({ phase: 'ready', version: i?.version ?? U.version }); refreshTray(); scheduleRestart(); });
+      autoUpdater.on('error', (e) => log(`updater error: ${String(e?.stack ?? e).split('\n').slice(0, 3).join(' | ')}`));
       autoUpdater.on('error', (e) => setU(noReleaseYet(e) ? { phase: 'none', checkedAt: Date.now() } : { phase: 'error', error: friendlyUpdateError(e) }));
     } catch (e) { log(`updater unavailable: ${e.message}`); autoUpdater = null; U.mode = 'notify'; }
+    log(`updates: ${U.mode} (edition ${edition.id}, version ${app.getVersion()})`);
   }
   setTimeout(() => checkUpdates().catch(() => {}), 15000).unref?.();
   setInterval(() => checkUpdates().catch(() => {}), 6 * 3600000).unref?.();
