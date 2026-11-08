@@ -11,6 +11,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PermissionFlagsBits as P } from 'discord.js';
+// The older game tests read the text look; the 3.0.4 picture tests switch pictures on themselves.
+globalThis[Symbol.for('goodboy.games.art')] = false;
 import { Database } from '../src/db.js';
 import { Permissions } from '../src/permissions.js';
 import { ApiQueue } from '../src/queue.js';

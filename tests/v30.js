@@ -596,6 +596,43 @@ export default async function runV30Tests({ test }) {
     } finally { dash.close(); }
   });
 
+
+  console.log('\n3.0.4 animated game pictures');
+  await test('game pictures: slots, coin flip and blackjack send an animated GIF in the embed; fishing draws every phase; no canvas means the text look', async () => {
+    const ART = await import('../src/gameart.js');
+    if (!(await ART.canvasLib())) { console.log('       (canvas package not installed here: picture checks skipped, text look covered by the older tests)'); return; }
+    const { gameWorld, btn } = await import('./v22.js');
+    globalThis[Symbol.for('goodboy.games.art')] = true;
+    try {
+      const isGif = (f) => Buffer.from(f.attachment).subarray(0, 6).toString() === 'GIF89a';
+      const w = await gameWorld();
+      w.setCoins('alice', 5000);
+      const sl = (await w.form(await w.cmd('slots', w.alice), w.alice, { bet: '100' })).submit.replies[0];
+      assert.equal(sl.files?.length, 1); assert.ok(isGif(sl.files[0])); assert.equal(sl.files[0].name, 'slots.gif');
+      assert.equal(sl.embeds[0].toJSON().image.url, 'attachment://slots.gif', 'the picture sits inside the embed');
+      assert.ok(btn(sl, (c) => c.custom_id?.startsWith('gmx:')), 'spin again is there straight away');
+      const cf = (await w.form(await w.cmd('coinflip', w.alice), w.alice, { bet: '100', side: ['heads'] })).submit.replies[0];
+      assert.ok(isGif(cf.files[0]) && cf.files[0].name === 'coinflip.gif');
+      let hand;
+      for (let k = 0; k < 30; k++) { hand = (await w.form(await w.cmd('blackjack', w.alice), w.alice, { bet: '50' })).submit.replies[0]; if (btn(hand, (c) => c.custom_id?.endsWith(':stand'))) break; }
+      assert.ok(isGif(hand.files[0]) && hand.files[0].name === 'blackjack.gif');
+      const stand = await w.press(btn(hand, (c) => c.custom_id?.endsWith(':stand')).custom_id, w.alice);
+      assert.ok(isGif(stand.updated.files[0]), 'the reveal is a new picture');
+      assert.deepEqual(stand.updated.attachments, [], 'the old picture is replaced, not stacked');
+      // Fishing: each phase draws, and the play-once games do not loop.
+      const F = await import('../src/fishing.js');
+      for (const b of F.BIOMES) assert.ok(await ART.fishingImage({ biome: b.id, title: b.label, phase: 'waiting', hint: 'x' }), b.id);
+      const reel = await ART.fishingImage({ biome: 'bay', phase: 'reeling', s: { step: 1, pos: 5, zone: 4, progress: 40, tension: 30 }, control: 5, line: 100, track: F.TRACK });
+      const caught = await ART.fishingImage({ biome: 'bay', phase: 'caught', catchInfo: { rarity: 'mythical', title: 'Mythical · Test Fish', sub: '1 kg' } });
+      assert.ok(reel.file.includes('NETSCAPE2.0') && caught.file.includes('NETSCAPE2.0'), 'fishing scenes loop');
+      assert.ok(!(await ART.slotsImage({ symbols: ['🍒', '🍇', '7️⃣'] })).file.includes('NETSCAPE2.0'), 'slots play once and stop on the result');
+      // Turned off in the server: back to the text look.
+      w.mm.setSetting('1', 'games', 'gamePictures', 'false');
+      const txt = (await w.form(await w.cmd('slots', w.alice), w.alice, { bet: '100' })).submit;
+      assert.ok(!txt.replies[0].files?.length, 'no picture when the server turned them off');
+    } finally { globalThis[Symbol.for('goodboy.games.art')] = false; }
+  });
+
 }
 
 const btn0 = (i) => { for (const row of i.replies[0].components ?? []) for (const c of (row.toJSON?.() ?? row).components ?? []) if (c.custom_id) return c.custom_id; return null; };

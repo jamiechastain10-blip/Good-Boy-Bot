@@ -264,7 +264,8 @@ export async function encodeGif({ width, height, loop = 0, frames, transparent =
   const push = (...bytes) => parts.push(Uint8Array.from(bytes));
   const le = (n) => [n & 255, (n >> 8) & 255];
   parts.push(Uint8Array.from([...Buffer.from('GIF89a'), ...le(width), ...le(height), 0x70, 0, 0]));
-  parts.push(Uint8Array.from([0x21, 0xff, 11, ...Buffer.from('NETSCAPE2.0'), 3, 1, ...le(loop), 0]));
+  // loop: 0 = forever, n = repeat n more times, -1 = play once and stop on the last frame (no loop block at all).
+  if (loop >= 0) parts.push(Uint8Array.from([0x21, 0xff, 11, ...Buffer.from('NETSCAPE2.0'), 3, 1, ...le(loop), 0]));
   for (const f of frames) {
     const x = f.x ?? 0, y = f.y ?? 0, w = f.w ?? width, h = f.h ?? height;
     if (w < 1 || h < 1 || x + w > width || y + h > height || f.rgba.length !== w * h * 4) throw new GifError('A frame does not fit the picture.');
@@ -281,7 +282,7 @@ export async function encodeGif({ width, height, loop = 0, frames, transparent =
     }
     let tb = 1; while ((1 << tb) < colors) tb++; // the palette holds 2^tb colours (GIF's smallest table is 2)
     const minSize = Math.max(2, tb);
-    const delay = Math.max(2, Math.round(f.delay / 10));
+    const delay = Math.min(65535, Math.max(2, Math.round(f.delay / 10)));
     if (tIndex >= 0) push(0x21, 0xf9, 4, 0x09, ...le(delay), tIndex, 0); // disposal 2 + see-through colour
     else push(0x21, 0xf9, 4, 0x04, ...le(delay), 0, 0); // disposal 1: leave the picture, the next frame paints over it
     push(0x2c, ...le(x), ...le(y), ...le(w), ...le(h), 0x80 | (tb - 1));
