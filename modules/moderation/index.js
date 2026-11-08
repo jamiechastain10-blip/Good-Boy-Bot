@@ -609,6 +609,66 @@ async function runUnban(ctx, i, id, reason) {
   await i.editReply({ content: `Unbanned \`${id}\`.`, allowedMentions: NOPING });
 }
 
+// ------------------------------------------------------------------ from the dashboard and the apps (3.0.1)
+const DASH_ACTIONS = { warn: 'moderation.warn', timeout: 'moderation.timeout', untimeout: 'moderation.timeout', kick: 'moderation.kick', ban: 'moderation.ban' };
+/**
+ * Warn, time out, lift a timeout, kick or ban someone from the dashboard. The same checks as the commands: the person
+ * acting needs that permission, must rank above the member, and Good Boy's role must be above them too.
+ * body: { userId, action, reason, minutes?, deleteDays? }. actor: { userId } from the dashboard session.
+ */
+export async function dashboardModAction(ctx, body, actor) {
+  const action = String(body.action ?? '');
+  const key = DASH_ACTIONS[action];
+  if (!key) throw new UserError('Choose warn, time out, remove timeout, kick or ban.');
+  const guild = ctx.guild;
+  const by = await guild?.members.fetch(String(actor?.userId ?? '')).catch(() => null);
+  if (!by) throw new UserError('You need to be in this server to do that.');
+  if (!ctx.perms.check(by, key)) throw new UserError(`You don't have permission for that (\`${key}\`).`);
+  const userId = String(body.userId ?? '');
+  if (!SNOWFLAKE.test(userId)) throw new UserError('Pick a member.');
+  if (userId === by.id) throw new UserError('You can\'t do that to yourself.');
+  if (userId === guild.ownerId) throw new UserError('Nobody can do that to the server owner.');
+  const reason = String(body.reason ?? '').trim().slice(0, 500);
+  if (!reason && action !== 'untimeout') throw new UserError('Give a reason. It goes in the mod log and to the member.');
+  const member = await guild.members.fetch(userId).catch(() => null);
+  const user = member?.user ?? await ctx.client.users.fetch(userId).catch(() => null);
+  if (!user) throw new UserError('That user doesn\'t exist.');
+  if (user.bot && action !== 'ban') throw new UserError('Bots can\'t be warned or timed out.');
+  if (member) { const err = hierarchyError(guild, by, member, guild.members.me); if (err) throw new UserError(err); }
+  else if (action !== 'ban') throw new UserError('That user is not in this server.');
+  const tag = `${by.user?.username ?? by.id} (dashboard)`;
+  let c;
+  if (action === 'warn') {
+    c = addCase(ctx, { type: 'warn', user, modId: by.id, reason, extra: { severity: 'medium', via: 'dashboard' } });
+    await tellUser(ctx, user, guild, `you were warned: ${reason}`);
+    await modLog(ctx, caseEmbed('warn', c, user, by.id));
+  } else if (action === 'timeout') {
+    const minutes = Math.max(1, Math.min(40320, Math.round(Number(body.minutes) || 60)));
+    c = await doTimeout(ctx, member, minutes * 60000, reason, by.id);
+    await tellUser(ctx, user, guild, `you were timed out for ${formatDuration(minutes * 60000)}: ${reason}`);
+  } else if (action === 'untimeout') {
+    if (!member.moderatable) throw new UserError("I can't change that member's timeout (their role is above mine).");
+    await member.timeout(null, truncate(`${tag}: ${reason || 'timeout lifted'}`, 400));
+    c = addCase(ctx, { type: 'untimeout', user, modId: by.id, reason: reason || 'Timeout lifted' });
+    await modLog(ctx, caseEmbed('timeout', c, user, by.id));
+  } else if (action === 'kick') {
+    if (!member.kickable) throw new UserError("I can't kick that member - move my role above theirs.");
+    await tellUser(ctx, user, guild, `you were kicked: ${reason}`);
+    await member.kick(truncate(`${tag}: ${reason}`, 500));
+    c = addCase(ctx, { type: 'kick', user, modId: by.id, reason });
+    await modLog(ctx, caseEmbed('kick', c, user, by.id));
+  } else if (action === 'ban') {
+    if (member && !member.bannable) throw new UserError("I can't ban that member - move my role above theirs.");
+    const days = Math.max(0, Math.min(7, Math.round(Number(body.deleteDays) || 0)));
+    await tellUser(ctx, user, guild, `you were banned: ${reason}`);
+    await guild.members.ban(user.id, { reason: truncate(`${tag}: ${reason}`, 500), deleteMessageSeconds: days * 86400 });
+    c = addCase(ctx, { type: 'ban', user, modId: by.id, reason });
+    await modLog(ctx, caseEmbed('ban', c, user, by.id));
+  }
+  ctx.security?.(`${tag} ${action} ${user.id}: ${reason}`);
+  return { case: c.id, action, user: { id: user.id, name: user.username } };
+}
+
 // ------------------------------------------------------------------ commands
 const userOpt = (o, d = 'The user') => o.setName('user').setDescription(d).setRequired(true);
 const reasonOpt = (o) => o.setName('reason').setDescription('Reason - leave empty to type it in a popup').setMaxLength(500);
@@ -1005,6 +1065,12 @@ export default {
     { key: 'moderation.antinuke-immune', label: 'Trusted: not watched by anti-nuke (owner always is)', default: 'owner' },
   ],
   views: {
+    async cases(ctx) {
+      const all = ctx.data.list('hist:').flatMap(({ value }) => value ?? []).sort((a, b) => b.at - a.at).slice(0, 100);
+      const name = (id) => ctx.guild?.members?.cache?.get(id)?.displayName ?? null;
+      return { rows: all.map((e) => ({ id: `${e.targetId}:${e.id}`, userId: e.targetId, when: new Date(e.at).toISOString().replace('T', ' ').slice(0, 16), member: name(e.targetId) ?? e.targetTag ?? e.targetId,
+        type: { warn: 'Warned', timeout: 'Timed out', untimeout: 'Timeout lifted', kick: 'Kicked', ban: 'Banned', unban: 'Unbanned' }[e.type] ?? e.type, reason: e.reason ?? '', by: e.modId ? name(e.modId) ?? e.modId : 'AutoMod' })) };
+    },
     async automodpage(ctx) {
       const recent = ctx.data.get('automod:recent') ?? [];
       const counts = activityCounts(recent, Date.now());
@@ -1032,6 +1098,7 @@ export default {
     },
   },
   actions: {
+    'member-action': (ctx, body, actor) => dashboardModAction(ctx, body, actor),
     async 'automod-preset'(ctx, body) {
       const p = PRESETS[String(body.preset ?? body.value)];
       if (!p) throw new UserError('Choose Off, Relaxed, Balanced or Strict.');
@@ -1073,6 +1140,11 @@ export default {
     },
   },
   panels: [{
+    id: 'cases', title: 'Moderation history', view: 'cases', permission: 'moderation.history', pageActions: ['member-action'],
+    description: 'Warnings, timeouts, kicks and bans, newest first. Right-click a member anywhere in the dashboard to act on them.',
+    empty: 'Nothing has happened yet.',
+    columns: [{ key: 'when', label: 'When' }, { key: 'member', label: 'Member' }, { key: 'type', label: 'What' }, { key: 'reason', label: 'Reason' }, { key: 'by', label: 'By' }],
+  }, {
     id: 'automod', title: 'AutoMod', view: 'automod', permission: 'moderation.automod', page: 'automod',
     pageViews: ['automodpage'], pageActions: ['automod-preset', 'automod-rule', 'automod-set', 'automod-list', 'automod-test'],
     description: 'Rules that check every message. Turn a rule on, then choose what happens when someone breaks it.',

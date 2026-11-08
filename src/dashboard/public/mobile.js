@@ -96,6 +96,7 @@ async function boot() {
   }
   const saved = store.get('gb-guild');
   await pick(usable.find((g) => g.id === saved)?.id ?? usable[0].id);
+  whatsNewOnce();
 }
 async function pick(id) {
   S.gid = id; store.set('gb-guild', id); S.cache = {};
@@ -124,7 +125,7 @@ function tabsFor() {
 function renderTabs() {
   tabsEl.hidden = false;
   const tabs = tabsFor();
-  if (!tabs.some(([id]) => id === S.tab) && !['events'].includes(S.tab)) S.tab = 'home';
+  if (!tabs.some(([id]) => id === S.tab) && !['events', 'whatsnew'].includes(S.tab)) S.tab = 'home';
   tabsEl.replaceChildren(...tabs.map(([id, label]) => h('button', { 'aria-current': S.tab === id ? 'page' : null, onclick: () => show(id) }, icon(id), label)));
 }
 async function show(tab) {
@@ -132,6 +133,41 @@ async function show(tab) {
   view.replaceChildren(h('p', { class: 'center muted' }, 'Loading…'));
   try { view.replaceChildren(...[].concat(await PAGES[tab]())); }
   catch (e) { if (e.status === 401) return signIn(); view.replaceChildren(h('p', { class: 'center muted' }, e.message)); }
+}
+
+// ---------------------------------------------------------------- what's new (3.0.1)
+/** Release notes as text: paragraphs, bullet lists and **bold**. No HTML. */
+function md(text) {
+  const inline = (line) => line.split(/(\*\*[^*]+\*\*)/).filter(Boolean).map((x) => (/^\*\*.+\*\*$/.test(x) ? h('b', {}, x.slice(2, -2)) : x));
+  const out = []; let list = null;
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('- ')) { if (!list) { list = h('ul', { class: 'wn-list' }); out.push(list); } list.append(h('li', {}, inline(line.slice(2)))); continue; }
+    list = null;
+    if (line) out.push(h('p', { class: 'wn-p' }, inline(line)));
+  }
+  return out;
+}
+async function whatsNewPage() {
+  const d = await api('/api/whatsnew');
+  const s = d.sections[0];
+  if (!s) return [h('h1', {}, "What's new"), h('p', { class: 'sub' }, 'No release notes in this copy.')];
+  return [h('button', { class: 'btn quiet', onclick: () => show('home') }, '‹ Home'), h('h1', {}, "What's new"), h('p', { class: 'sub' }, `Good Boy ${s.version}${s.headline ? ` · ${s.headline}` : ''}`),
+    s.members ? h('div', { class: 'group wn' }, md(s.members)) : null,
+    h('div', { class: 'section' }, 'Everything that changed'), h('div', { class: 'group wn' }, md(s.notes))];
+}
+async function whatsNewOnce() {
+  let seen = null; try { seen = localStorage.getItem('gb-seen-version'); } catch { return; }
+  const d = await api('/api/whatsnew').catch(() => null);
+  const s = d?.sections?.[0];
+  if (!s || seen === d.version) return;
+  try { localStorage.setItem('gb-seen-version', d.version); } catch { /* storage blocked */ }
+  if (!seen) return;
+  const close = () => sheet.remove();
+  const sheet = h('div', { class: 'sheet', onclick: (e) => { if (e.target === sheet) close(); } }, h('div', { class: 'panel' },
+    h('div', { class: 'section' }, `Updated to ${s.version}`), h('h2', { style: { margin: '4px 0 8px' } }, "What's new"), ...(s.members ? md(s.members) : []),
+    h('button', { class: 'btn', onclick: () => { close(); show('whatsnew'); } }, 'See everything')));
+  document.body.append(sheet);
 }
 
 // ---------------------------------------------------------------- one ticket, read like the chat
@@ -160,6 +196,7 @@ const needs = (mod, what) => [h('div', { class: 'group' }, h('div', { class: 'ro
   h('button', { class: 'tag', style: { border: 0 }, onclick: async () => { await toggle(mod, true); show(S.tab); } }, 'Turn on')))];
 
 const PAGES = {
+  whatsnew: () => whatsNewPage(),
   async home() {
     if (S.guild.access !== 'admin') {
       const panels = S.guild.modules.flatMap((m) => (m.panels ?? []).map((p) => ({ m, p })));
@@ -177,6 +214,7 @@ const PAGES = {
       h('div', { class: 'group' },
         [['announce', 'Send an announcement', 'Post to any channel, with or without a ping'], ['events', 'Start an event hub', 'Teams get their own voice rooms'], ['levels', 'See the leaderboard', 'Who has the most XP']]
           .map(([tab, title, small]) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show(tab) }, h('div', { class: 'two' }, h('b', {}, title), h('small', {}, small)), h('span', { class: 'end muted' }, '›')))),
+      h('div', { class: 'group' }, h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show('whatsnew') }, h('div', { class: 'two' }, h('b', {}, `What's new in ${st.version ?? S.me.version}`), h('small', {}, 'See everything in this update')), h('span', { class: 'end muted' }, '›'))),
       h('div', { class: 'lock' }, 'Restart, updates, the bot token, backups and licences are only in the Windows app.'),
       h('p', { class: 'note' }, `Signed in as ${S.me.user.username}. `, h('a', { href: '/logout' }, 'Log out'), changeLink() ? ' · ' : null, changeLink())];
   },

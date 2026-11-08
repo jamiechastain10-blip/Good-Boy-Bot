@@ -79,3 +79,6 @@ h1{font:700 30px/1.15 'Inter Display',Inter,sans-serif;margin:6px 0 4px;letter-s
 .tk-files{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
 .tk-files img{max-width:140px;max-height:120px;border-radius:10px;object-fit:cover}
 .tk-msg{align-items:flex-start}.tk-msg .two span{white-space:pre-wrap;word-break:break-word}
+
+/* 3.0.1: what's new */
+.wn{padding:12px 16px}.wn-p{margin:0 0 10px;line-height:1.55}.wn-list{margin:0 0 10px;padding-left:18px}.wn-list li{margin:4px 0;line-height:1.5}

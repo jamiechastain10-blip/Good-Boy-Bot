@@ -181,7 +181,45 @@ async function syncDash() {
 const dashObserver = new ResizeObserver(() => { if (DASH.shown) { const r = dashRect(); if (r) gb.dashBounds(r); } });
 addEventListener('resize', () => { if (DASH.shown) { const r = dashRect(); if (r) gb.dashBounds(r); } });
 
+// ---------------------------------------------------------------- what's new (3.0.1)
+const WN = { data: null, pick: null };
+/** Release notes as text: paragraphs, bullet lists and **bold**. No HTML strings. */
+function notesMd(text) {
+  const inline = (line) => line.split(/(\*\*[^*]+\*\*)/).filter(Boolean).map((x) => (/^\*\*.+\*\*$/.test(x) ? el('b', {}, x.slice(2, -2)) : x));
+  const out = []; let list = null;
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('- ')) { if (!list) { list = el('ul', { class: 'wn-list' }); out.push(list); } list.append(el('li', {}, ...inline(line.slice(2)))); continue; }
+    list = null;
+    if (/^\*\*[^*]+\*\*(\s*\(.+\))?$/.test(line)) out.push(el('div', { class: 'section-title' }, line.replace(/\*\*/g, '')));
+    else if (line) out.push(el('p', { class: 'wn-p' }, ...inline(line)));
+  }
+  return out;
+}
+async function loadWhatsNew() { WN.data = await gb.whatsNew(); WN.pick ??= WN.data.sections[0]?.version; return WN.data; }
+/** Once, the first time a new version opens: a short card with the members' note. */
+async function whatsNewOnce() {
+  const d = await loadWhatsNew().catch(() => null);
+  const s = d?.sections?.find((x) => x.version === d.version) ?? d?.sections?.[0];
+  if (!d?.fresh || !s) return;
+  const scrim = el('div', { class: 'wn-scrim', onclick: (e) => { if (e.target === scrim) scrim.remove(); } },
+    el('div', { class: 'wn-card' }, el('div', { class: 'meta' }, `Good Boy updated to ${s.version}`), el('h1', {}, "What's new"), s.headline ? el('p', {}, el('b', {}, s.headline)) : null,
+      ...(s.members ? notesMd(s.members) : []),
+      el('div', { class: 'row' }, el('button', { class: 'btn quiet', onclick: () => scrim.remove() }, 'Close'), el('button', { class: 'btn', onclick: () => { scrim.remove(); go('whatsnew'); } }, 'See everything'))));
+  document.body.append(scrim);
+}
+
 const PAGES = {
+  whatsnew() {
+    if (!WN.data) { loadWhatsNew().then(render).catch(() => {}); return [el('h1', {}, "What's new"), el('p', { class: 'sub' }, 'Loading...')]; }
+    const list = WN.data.sections;
+    if (!list.length) return [el('h1', {}, "What's new"), el('p', { class: 'sub' }, 'There are no release notes in this copy.')];
+    const s = list.find((x) => x.version === WN.pick) ?? list[0];
+    return [el('h1', {}, "What's new"), el('p', { class: 'sub' }, `Good Boy ${s.version}${s.headline ? ` · ${s.headline}` : ''}`),
+      el('span', { class: 'seg wrap', role: 'group', 'aria-label': 'Version' }, list.map((x) => el('button', { 'aria-pressed': String(x.version === s.version), onclick: () => { WN.pick = x.version; render(); } }, x.version))),
+      s.members ? el('div', { class: 'group wn' }, ...notesMd(s.members)) : null,
+      el('div', { class: 'group wn' }, ...notesMd(s.notes))];
+  },
   dashboard() {
     const running = S.bot.state === 'running';
     const bar = el('div', { class: 'dash-bar' }, el('b', {}, 'Dashboard'), el('span', { class: 'dash-server' }, sum?.guild?.name ?? ''),
@@ -550,7 +588,7 @@ async function finishSetup(start) {
 const NAV = () => [
   ['Server', [['dashboard', 'Dashboard', 'grid', 'indigo']]],
   ['Bot', [['overview', 'Overview', 'home', 'blue'], ['levels', 'Levels', 'star', 'amber', sum?.memberCount], ['modules', 'Modules', 'puzzle', 'violet', (sum?.modules ?? []).length || null], ['log', 'Log', 'log', 'gray']]],
-  [S.edition.id === 'owner' ? 'Owner' : 'App', [['updates', 'Updates', 'down', 'mint'], ['settings', 'Settings', 'gear', 'teal']]],
+  [S.edition.id === 'owner' ? 'Owner' : 'App', [['updates', 'Updates', 'down', 'mint'], ['whatsnew', "What's new", 'star', 'amber'], ['settings', 'Settings', 'gear', 'teal']]],
 ];
 function go(p) { page = p; render(); }
 
@@ -574,6 +612,7 @@ function render() {
   lastPage = key;
   app.classList.toggle('in-setup', inSetup);
   app.classList.toggle('on-dash', current === 'dashboard');
+  app.classList.toggle('dash-full', current === 'dashboard' && S.bot.state === 'running');
   app.replaceChildren(...(inSetup ? [main] : [side, main]));
   const host = document.querySelector('.dash-host');
   dashObserver.disconnect(); if (host) dashObserver.observe(host);
@@ -609,5 +648,5 @@ gb.onLog((line) => {
   const pre = document.querySelector('pre.log');
   if (pre) { const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40; pre.textContent = logLines.join('\n'); if (atEnd) pre.scrollTop = pre.scrollHeight; }
 });
-gb.state().then((s) => { S = s; logLines = s.logs ?? []; refreshSummary(); });
+gb.state().then((s) => { S = s; logLines = s.logs ?? []; refreshSummary(); if (!s.setupNeeded) whatsNewOnce(); });
 setInterval(() => { if (S && !S.setupNeeded && document.visibilityState === 'visible') refreshSummary(); }, 30000);

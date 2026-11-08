@@ -51,3 +51,17 @@ export function sectionForDiscord(section, max = 3800) {
 export function readChangelog(root) {
   try { return parseChangelog(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8')); } catch { return []; }
 }
+
+/**
+ * What's new (3.0.1): a changelog section split into the short note for members (between the members markers) and
+ * the full list, both as plain Markdown. Used by the dashboard, the phone app and the Windows app.
+ */
+export function whatsNew(sections, limit = 6) {
+  return sections.slice(0, limit).map((s) => {
+    const m = /<!--\s*members\s*-->([\s\S]*?)<!--\s*\/members\s*-->/i.exec(s.body);
+    const notes = s.body.replace(/<!--\s*members\s*-->[\s\S]*?<!--\s*\/members\s*-->\n?/i, '').trim();
+    const headline = (/^\*\*(.+?)\*\*$/m.exec(notes) ?? [])[1] ?? null;
+    return { version: s.version, headline, members: m ? m[1].trim() : null, notes: headline ? notes.replace(/^\*\*.+?\*\*$\n?/m, '').trim() : notes };
+  });
+}
+

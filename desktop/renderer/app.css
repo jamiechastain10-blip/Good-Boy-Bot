@@ -255,3 +255,15 @@ main[data-page="dashboard"] .wrap{max-width:none;margin:0;flex:1;display:flex;fl
 .two .lab,.two .meta{overflow:hidden;text-overflow:ellipsis}
 .titlerow{margin-bottom:16px}
 .titlerow .sub{margin-bottom:0}
+
+/* 3.0.1: what's new */
+.wn{padding:14px 18px}.wn-p{margin:0 0 10px;line-height:1.55}.wn-list{margin:0 0 12px;padding-left:20px}.wn-list li{margin:4px 0;line-height:1.5}
+.wn-scrim{position:fixed;inset:0;z-index:50;background:rgba(5,8,14,.55);display:grid;place-items:center;padding:20px}
+.wn-card{width:min(540px,100%);max-height:80vh;overflow:auto;background:var(--card,#1b2130);color:inherit;border-radius:18px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.wn-card .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+
+/* 3.0 design: with the bot running, the Dashboard fills the window (the app's own pages are a click away in it) */
+#app.dash-full{grid-template-columns:1fr}
+#app.dash-full>.side{display:none}
+#app.dash-full .dash-bar{height:32px;padding:0 150px 0 12px;background:#0b0e15;border-bottom:1px solid rgba(160,180,230,.12)}
+#app.dash-full .dash-bar .btn{display:none}

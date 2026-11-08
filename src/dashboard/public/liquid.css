@@ -232,3 +232,63 @@ input.switch:checked:active::after,.sw:checked:active::after{transform:translate
 .steps{display:flex;gap:6px;margin-bottom:12px}.steps i{height:4px;flex:1;border-radius:4px;background:var(--gb-track);transition:background .4s}.steps i.done{background:var(--gb-accent)}
 @keyframes gb-fade{from{opacity:0}}@keyframes gb-fadeout{to{opacity:0}}
 @keyframes gb-pop{from{opacity:0;transform:scale(.92) translateY(18px)}}
+
+
+/* ==========================================================================================
+   GOOD BOY 3.0 - THE FLAT LOOK (from the 3.0 design render). Last in the file, so it wins.
+   Solid dark panels with hairline borders, one blue accent, orange for coins, Figtree for text and Bricolage Grotesque
+   for headings. No aurora, no glass refraction, no wobble. Motion is short and tied to what you did.
+   ========================================================================================== */
+@font-face{font-family:"Figtree";font-weight:300 900;font-display:swap;src:url(fonts/Figtree.woff2) format("woff2")}
+@font-face{font-family:"Bricolage Grotesque";font-weight:200 800;font-display:swap;src:url(fonts/BricolageGrotesque.woff2) format("woff2")}
+:root{
+  --gb-bg:#0f131c; --gb-ink:#e9edf7; --gb-ink-2:#8d97ae; --gb-ink-3:#5f6982;
+  --gb-glass:#151a26; --gb-glass-2:#151a26; --gb-solid:#151a26; --gb-raised:#1b2130;
+  --gb-rim:rgba(160,180,230,.12); --gb-rim-2:rgba(160,180,230,.12); --gb-shade:rgba(0,0,0,.45); --gb-gloss:0;
+  --gb-accent:#6b93ff; --gb-accent-2:#6b93ff; --gb-accent-ink:#0b1020; --gb-track:#2a3142; --gb-field:#10141e;
+  --gb-ok:#3fd08f; --gb-warn:#f3b94a; --gb-bad:#ff6475; --gb-coin:#ffb12e;
+  --gb-r:12px; --gb-r-sm:8px;
+  --accent-soft:rgba(107,147,255,.16); --blue-soft:rgba(107,147,255,.16); --sidebar:rgba(21,26,38,.6);
+  --gb-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif; --gb-text:"Figtree","Segoe UI",system-ui,sans-serif;
+}
+.theme-light,:root[data-theme="light"]{
+  --gb-bg:#f3f5fa; --gb-ink:#141a28; --gb-ink-2:#5a6478; --gb-ink-3:#8a93a6;
+  --gb-glass:#ffffff; --gb-glass-2:#ffffff; --gb-solid:#ffffff; --gb-raised:#f0f3f9;
+  --gb-rim:rgba(20,30,60,.10); --gb-rim-2:rgba(20,30,60,.10); --gb-shade:rgba(20,30,60,.12);
+  --gb-accent:#3f6ef5; --gb-accent-2:#3f6ef5; --gb-accent-ink:#ffffff; --gb-track:#d7dce7; --gb-field:#f5f7fb;
+  --gb-ok:#14a06a; --gb-warn:#b7791f; --gb-bad:#d63a4c; --accent-soft:rgba(63,110,245,.12); --blue-soft:rgba(63,110,245,.12); --sidebar:#ffffff;
+}
+html{background:var(--gb-bg)!important}
+body{font-family:var(--gb-text)!important;background:radial-gradient(1200px 600px at 85% -10%,rgba(107,147,255,.10),transparent 60%),radial-gradient(900px 500px at -10% 110%,rgba(255,177,46,.06),transparent 60%),var(--gb-bg)!important;background-attachment:fixed!important}
+.theme-light body,body.theme-light{background:var(--gb-bg)!important}
+body::after,#gb-aurora{display:none!important}
+h1,h2,h3,.h1,.h2,.gb-display{font-family:var(--gb-display)!important;letter-spacing:-.01em}
+h4{font-family:var(--gb-text)!important}
+/* surfaces: solid, hairline border, no gloss or refraction */
+.glass,.card,.side,.topbar,.panel,.group,.sidebar,.surface,.dialog,.modal,.sheet-gb{
+  background:var(--gb-solid)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+  border:1px solid var(--gb-rim-2)!important;border-radius:var(--gb-r)!important;box-shadow:none!important}
+.glass::before,.card::before,.side::before,.topbar::before,.group::before,.sidebar::before,
+.glass::after,.card::after,.side::after,.topbar::after,.group::after,.sidebar::after{display:none!important}
+.side,.sidebar{background:var(--sidebar)!important}
+.card .card{background:var(--gb-raised)!important;border:1px solid var(--gb-rim-2)!important}
+.gbpop,.gbmenu{background:var(--gb-raised)!important;border:1px solid rgba(160,180,230,.2)!important;border-radius:12px!important;box-shadow:0 24px 60px rgba(0,0,0,.5)!important}
+/* buttons: flat; primary is the one blue, the rest are quiet */
+button:not(.ghost):not(.nav-item):not(.nav):not(.tab):not([role="tab"]):not(.opt):not(.link):not(.chip-x):not(.switch):not([class*="tog"]):not(.card):not(.quick):not(.guild):not(.gb-tile):not(.tile):not(.plain):not(.row):not(.server):not(.tabs>button){
+  background:var(--gb-accent)!important;color:var(--gb-accent-ink)!important;border:0;border-radius:var(--gb-r-sm)!important;font-weight:600;box-shadow:none!important}
+button.ghost,.btn.ghost,button.quiet,.btn.quiet{background:var(--gb-raised)!important;color:var(--gb-ink)!important;border:1px solid var(--gb-rim-2)!important;border-radius:var(--gb-r-sm)!important;box-shadow:none!important}
+button.danger,button.danger-text{background:var(--gb-raised)!important;color:var(--gb-bad)!important;border:1px solid var(--gb-rim-2)!important}
+button,.btn{transition:background .12s,filter .12s,transform .08s}
+button:hover{filter:brightness(1.06)}
+button:active{transform:scale(.98)}
+/* fields */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),textarea,select{background:var(--gb-field)!important;border-radius:8px!important;box-shadow:inset 0 0 0 1px var(--gb-rim-2)!important}
+input:focus,textarea:focus,select:focus{box-shadow:inset 0 0 0 1px var(--gb-accent),0 0 0 3px var(--accent-soft)!important}
+/* navigation: a soft tint for the current page */
+.nav-item.active,.nav-item[aria-current="page"]{background:var(--accent-soft)!important;color:var(--gb-ink)!important}
+.gb-navpill{background:var(--accent-soft)!important;box-shadow:none!important}
+/* phone app: list rows, the server button and the bottom tabs are plain */
+button.row,.server,.tabs>button{background:transparent!important;color:inherit!important;box-shadow:none!important}
+.server{border:1px solid var(--gb-rim-2)!important;border-radius:10px!important;background:var(--gb-solid)!important}
+.tabs{background:rgba(15,19,28,.92)!important;border-top:1px solid var(--gb-rim-2)!important}
+.tabs>button{color:var(--gb-ink-2)!important}.tabs>button[aria-current="page"]{color:var(--gb-accent)!important}

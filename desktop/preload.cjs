@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('goodBoy', {
   brandApply: () => ipcRenderer.invoke('gb:brand-apply'),
   brandCustom: (form) => ipcRenderer.invoke('gb:brand-custom', { name: form?.name == null ? null : String(form.name), description: form?.description == null ? null : String(form.description).slice(0, 400), pickImage: !!form?.pickImage, pickBanner: !!form?.pickBanner }),
   licApply: (key) => ipcRenderer.invoke('gb:lic-apply', String(key ?? '')),
+  whatsNew: () => ipcRenderer.invoke('gb:whatsnew'),
   modules: (guildId) => ipcRenderer.invoke('gb:modules', guildId == null ? null : String(guildId)),
   moduleSet: (form) => ipcRenderer.invoke('gb:module-set', { guildId: form?.guildId == null ? null : String(form.guildId), name: String(form?.name ?? ''), enabled: !!form?.enabled }),
   moduleAdd: () => ipcRenderer.invoke('gb:module-add'),

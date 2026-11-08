@@ -17,6 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SNOWFLAKE, UserError } from '../util.js';
 import { renderLegal } from '../legal.js';
+import { readChangelog, whatsNew } from '../about.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(here, 'public');
@@ -39,6 +40,9 @@ const STATIC = {
   '/icon-512.png': ['icon-512.png', 'image/png'],
   '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
   '/fonts/Inter-Regular.woff': ['fonts/Inter-Regular.woff', 'font/woff'],
+  '/fonts/Figtree.woff2': ['fonts/Figtree.woff2', 'font/woff2'],
+  '/fonts/BricolageGrotesque.woff2': ['fonts/BricolageGrotesque.woff2', 'font/woff2'],
+  '/fonts/LICENSE-Figtree-Bricolage.txt': ['fonts/LICENSE-Figtree-Bricolage.txt', 'text/plain; charset=utf-8'],
   '/fonts/Inter-SemiBold.woff': ['fonts/Inter-SemiBold.woff', 'font/woff'],
   '/fonts/InterDisplay-Bold.woff': ['fonts/InterDisplay-Bold.woff', 'font/woff'],
 };
@@ -73,7 +77,7 @@ export function explainTokenError(status, code, redirectUri) {
   return { title: 'Discord could not complete the login', hint: `Discord answered with status ${status}${code ? ` (${code})` : ''}. Try again; if it keeps happening, open /auth/diagnose.` };
 }
 
-export async function startDashboard({ manager, client, db, logger, perms, dataDir = null, updates = null, hub = null, port: portOverride, host: hostOverride, fetchImpl = fetch, version = '0.0.0' }) {
+export async function startDashboard({ manager, client, db, logger, perms, dataDir = null, updates = null, hub = null, statHistory = null, port: portOverride, host: hostOverride, fetchImpl = fetch, version = '0.0.0' }) {
   const port = portOverride ?? Number(process.env.DASHBOARD_PORT || 3000);
   const host = hostOverride ?? process.env.DASHBOARD_HOST ?? '127.0.0.1';
   // Only when the dashboard sits behind a tunnel or proxy you run yourself: believe the host it reports for the browser.
@@ -383,6 +387,12 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       return json(res, 200, { user: s.user, guilds: checked.filter(Boolean), others, version, botOwner: manager.isBotOwner(s.user.id), dashboardUrl: base, local: !!s.local });
     }
 
+    // What's new: the release notes of this version and the few before it. Anyone signed in.
+    if (p === '/api/whatsnew' && req.method === 'GET') {
+      if (!session(req)) return json(res, 401, { error: 'Not logged in.' });
+      return json(res, 200, { version, sections: whatsNew(readChangelog(manager.rootDir ?? path.resolve(here, '..', '..'))) });
+    }
+
     // Who is signed in (phones and browsers), and signing someone out. Bot owner only.
     if (p === '/api/sessions' || p === '/api/sessions/signout') {
       const s = session(req);
@@ -417,6 +427,13 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         logger.info(`Update requested from the dashboard by ${s.user.username} (${s.user.id})`);
       }
       return json(res, 200, { supervised: true, ...(await updates.request(p.endsWith('/apply') ? 'apply' : 'check')) });
+    }
+
+    // ---- 14 days of hourly counts for the Home sparklines (3.0.1)
+    m = p.match(/^\/api\/guilds\/(\d+)\/history$/);
+    if (m && req.method === 'GET') {
+      const a = await authorize(req, res, m[1]); if (!a) return;
+      return json(res, 200, statHistory ? statHistory.series(a.guild.id) : { from: Date.now(), hourMs: 3600000, members: [], messages: [], voice: [] });
     }
 
     // ---- live updates (2.3): a stream of "something changed" events for one server, plus a pulse every 15 seconds

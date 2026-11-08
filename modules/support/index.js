@@ -260,8 +260,13 @@ function staffFacts(ctx, id) {
   const reports = ctx.sql.all('SELECT status, ticket_number, created_at FROM support_watch WHERE guild_id = ? AND target_id = ? ORDER BY id DESC', ctx.guildId, id);
   const tickets = ctx.sql.get('SELECT COUNT(*) AS n FROM support_history WHERE guild_id = ? AND opener_id = ?', ctx.guildId, id).n;
   const last = hist.slice(0, 3).map((e) => `· ${e.type} <t:${Math.floor(e.at / 1000)}:d>${e.reason ? `: ${truncate(e.reason, 60)}` : ''}`);
+  const nameOf2 = (uid) => ctx.guild?.members?.cache?.get(uid)?.displayName ?? null;
+  const items = [
+    ...hist.slice(0, 8).map((e) => ({ kind: e.type, title: `${{ warn: 'Warned', timeout: 'Timed out', kick: 'Kicked', ban: 'Banned', unban: 'Unbanned', untimeout: 'Timeout lifted' }[e.type] ?? e.type}${e.reason ? ` · ${truncate(e.reason, 60)}` : ''}`, by: e.modId ? nameOf2(e.modId) ?? null : null, at: e.at })),
+    ...reports.slice(0, 8).map((r) => ({ kind: 'report', title: `Report${r.ticket_number ? ` #${String(r.ticket_number).padStart(4, '0')}` : ''} · ${outcomeLabel(r.status)}`, by: null, at: r.created_at })),
+  ].sort((a2, b2) => (b2.at ?? 0) - (a2.at ?? 0)).slice(0, 10);
   return {
-    warnings: count('warn'), timeouts: count('timeout'), kicks: count('kick'), bans: count('ban'), reports: reports.length,
+    items, warnings: count('warn'), timeouts: count('timeout'), kicks: count('kick'), bans: count('ban'), reports: reports.length,
     confirmed: reports.filter((r) => r.status === 'confirmed').length, tickets,
     text: [`Warnings **${count('warn')}** · timeouts **${count('timeout')}** · kicks **${count('kick')}** · bans **${count('ban')}**`,
       `Reported **${reports.length}** time${reports.length === 1 ? '' : 's'} before${reports.length ? ` (${reports.filter((r) => r.status === 'confirmed').length} confirmed)` : ''} · opened **${tickets}** ticket${tickets === 1 ? '' : 's'}`,
@@ -1006,7 +1011,8 @@ export default {
         page, more: rows.length > size,
         rows: rows.slice(0, size).map((h) => ({ number: h.number, type: h.category_label ?? h.category, category: h.category, urgency: h.urgency, opener: { id: h.opener_id, name: h.opener_tag },
           about: h.reported_id || h.reported_name ? { id: h.reported_id, name: h.reported_name } : null, openedAt: h.opened_at, closedAt: h.closed_at, closedBy: h.closed_by, claimedBy: h.claimed_by,
-          status: h.closed_at ? 'closed' : 'open', resolution: h.resolution, messages: h.messages, match: hits?.get(h.number) ?? null })),
+          status: h.closed_at ? 'closed' : 'open', resolution: h.resolution, messages: h.messages, match: hits?.get(h.number) ?? null,
+          files: (() => { try { return (JSON.parse(h.details ?? '{}').files ?? []).length; } catch { return 0; } })(), last: ctx.sql.get('SELECT author_name, content FROM support_archive WHERE guild_id = ? AND number = ? AND bot = 0 ORDER BY created_at DESC LIMIT 1', ctx.guildId, h.number) ?? null })),
         types: [...CATEGORIES, ...customTypes(ctx)].map((c) => ({ id: c.id, label: c.label })),
       };
     },
@@ -1022,7 +1028,7 @@ export default {
         attachments: JSON.parse(m.attachments).map((a) => ({ ...a, url: a.stored ? file(a.stored) : null })),
       }));
       return {
-        number, type: h.category_label ?? h.category, urgency: h.urgency, openedAt: h.opened_at, closedAt: h.closed_at, closedBy: h.closed_by, claimedBy: h.claimed_by,
+        number, channelId: h.channel_id ?? null, category: h.category, type: h.category_label ?? h.category, urgency: h.urgency, openedAt: h.opened_at, closedAt: h.closed_at, closedBy: h.closed_by, claimedBy: h.claimed_by,
         resolution: h.resolution, reason: h.reason, action: h.action_taken, notes: h.notes, outcome: h.outcome,
         opener: { id: h.opener_id, name: h.opener_tag, ...(details.people?.opener ?? {}) }, about: details.people?.about ?? (h.reported_id || h.reported_name ? { id: h.reported_id, name: h.reported_name } : null),
         answers: details.answers ?? [], files: (details.files ?? []).map((f) => ({ ...f, url: f.stored ? file(f.stored) : null })),

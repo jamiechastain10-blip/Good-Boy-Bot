@@ -16,6 +16,7 @@ import { ModuleManager, EVENT_GUILD } from './moduleManager.js';
 import { builtins } from './builtins.js';
 import { withVersionLine } from './about.js';
 import { startDashboard } from './dashboard/server.js';
+import { StatHistory } from './stats.js';
 import { sleep } from './util.js';
 import { connectSupervisor } from './ipc.js';
 
@@ -38,6 +39,7 @@ if (!token) {
 
 // ---- core services ---------------------------------------------------------
 const db = new Database(path.join(dataDir, 'eclipse.db'));
+const statHistory = new StatHistory(db);
 const perms = new Permissions(db);
 let liveClient = null;
 let stopping = false;
@@ -150,6 +152,7 @@ function wire(client) {
           if (user.partial) await user.fetch();
         }
         const guildId = resolve(...args);
+        if (eventName === 'messageCreate' && guildId && !args[0]?.author?.bot && !args[0]?.webhookId) statHistory.count(guildId);
         if (guildId) await manager.dispatch(eventName, guildId, ...args);
       } catch (e) { logger.warn(`Event ${eventName} dropped: ${e.message}`); }
     });
@@ -191,6 +194,10 @@ async function onReady(client) {
   }
 
   manager.startTasks();
+  // Sparkline history: a sample every 10 minutes into this hour's row (kept 14 days).
+  const sample = () => { try { statHistory.sampleAll(client); } catch (e) { logger.warn(`Stats history: ${e.message}`); } };
+  sample();
+  setInterval(sample, 600000).unref?.();
   const missing = ['MessageContent', 'GuildMembers', 'GuildPresences'].filter((n) => !manager.intents.has(n));
   if (missing.length) {
     logger.warn(`Running without privileged intent(s): ${missing.join(', ')}. Some features are reduced. ` +
@@ -237,7 +244,7 @@ const client = await login();
 // The Good Boy hub (3.0): lets other people's Good Boy bots show this bot's servers in their switcher, and the other way round.
 let dashboardRef = null;
 const hub = hubUrl() && client.application ? new Hub({ base: hubUrl(), dataDir, app: client.application, url: () => dashboardRef?.baseUrl?.(), guilds: () => [...client.guilds.cache.keys()], log: (m) => logger.warn(m) }) : null;
-const dashboard = await startDashboard({ manager, client, db, logger, perms, version, dataDir, updates: link, hub }).catch((e) => { logger.warn(`Dashboard not started: ${e.message}`); return null; });
+const dashboard = await startDashboard({ manager, client, db, logger, perms, version, dataDir, updates: link, hub, statHistory }).catch((e) => { logger.warn(`Dashboard not started: ${e.message}`); return null; });
 dashboardRef = dashboard;
 if (hub) {
   const joinHub = () => hub.register().then((r) => { if (r.ok) logger.info('Joined the Good Boy hub.'); else if (r.skipped) logger.info(`Good Boy hub: skipped (${r.skipped}).`); }).catch((e) => logger.warn(`Good Boy hub: ${e.message}`));
@@ -251,6 +258,7 @@ async function shutdown(signal) {
   if (stopping) return;
   stopping = true;
   logger.info(`${signal} received - shutting down cleanly`);
+  try { statHistory.sampleAll(client); } catch { /* ignore */ }
   try { dashboard?.close(); await manager.shutdown(); await client.destroy(); db.close(); } catch { /* ignore */ }
   process.exit(0);
 }

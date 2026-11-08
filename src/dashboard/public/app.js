@@ -107,6 +107,7 @@ async function boot() {
   const asked = new URLSearchParams(location.search).get('guild');
   if (asked && state.me.guilds.some((g) => g.id === asked)) { state.gid = asked; history.replaceState(null, '', location.pathname); }
   state.gid ? await loadGuild() : showGuilds();
+  whatsNewOnce();
 }
 
 function showGuilds() {
@@ -221,18 +222,30 @@ function softReload() {
 const ICON = { moderation: '🛡', support: '🎫', community: '🏆', engagement: '💬', voice: '🔊', quotes: '❝', reminders: '⏰', roles: '🏷', integrations: '🔌', 'member-management': '👥', stats: '📊', achievements: '🏆', eclipseid: '🪪', partyfinder: '🎮', tempvoice: '🎙', economy: '🪙', games: '🎰', deadchat: '💬' };
 const TITLE = { moderation: 'Moderation', support: 'Support', community: 'Community', engagement: 'Engagement', voice: 'Voice', quotes: 'Quotes', reminders: 'Reminders', roles: 'Roles', integrations: 'Integrations', 'member-management': 'Members', stats: 'Statistics', achievements: 'Achievements', eclipseid: 'Member ID', partyfinder: 'Party Finder', tempvoice: 'Temporary voice', economy: 'Economy', games: 'Games', deadchat: 'Dead chat ping' };
 
-/** Every page this person can open. Panel-only people get just the tools they hold permission for. */
+/**
+ * Every page this person can open, laid out like the 3.0 design: Home, Modules, Tickets, Members, Moderation; then Fun
+ * (Arcade, Fishing, Music) and Bot (Logs, Settings). Other tools stay reachable from Home. Panel-only people get the
+ * pages for the tools they hold.
+ */
 function pages() {
   const d = state.data, admin = d.access === 'admin';
-  const list = [{ id: 'overview', icon: '⌂', label: 'Overview', group: 'SERVER' }];
-  if (admin) list.push({ id: 'modules', icon: '▦', label: 'Modules', group: 'SERVER' });
-  const mod = d.modules.find((m) => m.name === 'moderation');
-  if (mod && (admin ? mod.enabled : (mod.panels ?? []).some((p) => p.id === 'automod'))) list.push({ id: 'automod', icon: '🤖', label: 'AutoMod', group: 'SERVER' });
-  for (const m of d.modules) if ((admin ? m.enabled : true) && (m.panels ?? []).length) list.push({ id: `tool:${m.name}`, icon: ICON[m.name] ?? '◆', label: TITLE[m.name] ?? cap(m.name), group: 'TOOLS' });
-  if (admin) list.push({ id: 'permissions', icon: '♙', label: 'Permissions', group: 'ADMIN' }, { id: 'feedback', icon: '💬', label: 'Tester feedback', group: 'ADMIN' }, { id: 'logs', icon: '≡', label: 'Logs', group: 'ADMIN' });
-  if (state.me?.botOwner) list.push({ id: 'updates', icon: '⬆', label: 'Updates', group: 'ADMIN' });
-  list.push({ id: 'appearance', icon: '✦', label: 'Appearance', group: 'YOU' });
-  if (admin && String(state.page).startsWith('module:')) list.push({ id: state.page, icon: '▦', label: 'Modules', group: 'SERVER', hidden: true });
+  const on = (name) => d.modules.find((m) => m.name === name && (admin ? m.enabled : true));
+  const hasPanel = (name, id) => (on(name)?.panels ?? []).some((p) => !id || p.id === id);
+  const list = [{ id: 'overview', icon: '⌂', label: 'Home', group: '' }];
+  if (admin) list.push({ id: 'modules', icon: '▦', label: 'Modules', group: '' });
+  if (hasPanel('support', 'archive')) list.push({ id: 'tickets', icon: '🎫', label: 'Tickets', group: '' });
+  if (hasPanel('community')) list.push({ id: 'tool:community', icon: '👥', label: 'Members', group: '' });
+  const mod = on('moderation');
+  if (mod && (admin || hasPanel('moderation', 'automod') || hasPanel('moderation', 'cases'))) list.push({ id: 'automod', icon: '🛡', label: 'Moderation', group: '' });
+  if (admin && on('games')) list.push({ id: 'arcade', icon: '🎮', label: 'Arcade', group: 'FUN' }, { id: 'fishing', icon: '🎣', label: 'Fishing', group: 'FUN' });
+  if (admin && on('music')) list.push({ id: 'module:music', icon: '🎵', label: 'Music', group: 'FUN' });
+  if (admin) list.push({ id: 'logs', icon: '≡', label: 'Logs', group: 'BOT' });
+  list.push({ id: 'settings', icon: '⚙', label: 'Settings', group: 'BOT' });
+  // Reachable, but not in the sidebar: the other tools, and pages opened from Settings or Home.
+  for (const m of d.modules) if ((admin ? m.enabled : true) && (m.panels ?? []).length && !list.some((x) => x.id === `tool:${m.name}`)) list.push({ id: `tool:${m.name}`, icon: ICON[m.name] ?? '◆', label: TITLE[m.name] ?? cap(m.name), hidden: true });
+  for (const [id, label] of [['permissions', 'Permissions'], ['feedback', 'Tester feedback'], ['whatsnew', "What's new"], ['appearance', 'Appearance']]) if (admin || id === 'whatsnew' || id === 'appearance') list.push({ id, label, hidden: true });
+  if (state.me?.botOwner) list.push({ id: 'updates', label: 'Updates', hidden: true });
+  if (String(state.page).startsWith('module:') && !list.some((x) => x.id === state.page)) list.push({ id: state.page, icon: '▦', label: 'Modules', hidden: true });
   return list;
 }
 
@@ -243,32 +256,39 @@ function render() {
   const d = state.data, list = pages(), current = list.find((p) => p.id === state.page) ?? list[0];
   const side = h('aside', { class: 'side glass', 'aria-label': 'Dashboard navigation' });
   let group = null;
+  side.append(h('div', { class: 'side-brand' }, h('img', { src: '/good-boy-logo.png', alt: '' }), h('strong', {}, 'Good Boy'), h('span', { class: 'muted' }, state.me?.version ?? '')));
   side.append(serverSwitcher());
   for (const p of list) {
     if (p.hidden) continue;
-    if (p.group !== group) { group = p.group; side.append(h('div', { class: 'side-label' }, group)); }
+    if (p.group !== group) { group = p.group; if (group) side.append(h('div', { class: 'side-label' }, group)); }
     const on = p.id === current.id || (p.id === 'modules' && current.id.startsWith('module:'));
     side.append(h('button', { class: 'nav-item' + (on ? ' active' : ''), title: p.label, 'aria-current': on ? 'page' : null, onclick: () => go(p.id) },
       h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, p.icon), h('span', { class: 'nav-name' }, p.label)));
   }
-  side.append(h('button', { class: 'nav-item', onclick: showGuilds }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '↩'), h('span', { class: 'nav-name' }, 'All servers')));
+  side.append(h('div', { class: 'side-foot' }, h('span', { id: 'live-chip', class: 'live-chip off' }, '○ Connecting…'), h('span', { class: 'grow' }), h('a', { href: '/logout', class: 'muted', title: `Signed in as ${state.me?.user?.username ?? ''}` }, 'Log out')));
 
   const workspace = h('section', { class: 'workspace' });
-  workspace.append(h('div', { class: 'card row' }, h('div', {}, h('strong', {}, current.label), h('div', { class: 'muted' }, d.guild.name)),
-    h('div', { class: 'row-end' }, d.access === 'panel' ? h('span', { class: 'badge' }, 'limited access') : null, h('span', { id: 'live-chip', class: 'live-chip off' }, '○ Connecting…'))));
+  if (current.id === 'tickets') workspace.classList.add('bleed');
+  else workspace.append(h('div', { class: 'pagehead' }, h('div', {}, h('h1', {}, current.id === 'overview' ? greeting() : current.label), h('p', { class: 'muted' }, current.id === 'overview' ? homeSub() : d.guild.name)),
+    h('div', { class: 'row-end' }, d.access === 'panel' ? h('span', { class: 'badge' }, 'limited access') : null)));
   workspace.append(h('div', { id: 'changed-banner', class: 'banner', hidden: true }, 'Something changed in this server while you were editing. ',
     h('button', { class: 'ghost', onclick: () => loadGuild() }, 'Show the latest')));
   app.append(h('div', { class: 'shell' }, side, workspace), feedbackButton());
   state.panels = new Map();
 
-  if (current.id === 'overview') renderOverview(workspace);
+  if (current.id === 'overview') renderHome(workspace);
   else if (current.id === 'modules') renderModules(workspace);
   else if (current.id.startsWith('module:')) renderModulePage(workspace, current.id.slice(7));
-  else if (current.id === 'automod') renderAutomod(workspace);
+  else if (current.id === 'automod') renderModeration(workspace);
   else if (current.id === 'permissions') renderPermissions(workspace);
   else if (current.id === 'logs') renderLogs(workspace);
   else if (current.id === 'updates') renderUpdates(workspace);
   else if (current.id === 'appearance') renderAppearance(workspace);
+  else if (current.id === 'whatsnew') renderWhatsNew(workspace);
+  else if (current.id === 'tickets') workspace.append(ticketArchive(state.data.modules.find((m) => m.name === 'support')));
+  else if (current.id === 'settings') renderSettingsHub(workspace);
+  else if (current.id === 'arcade') renderGames(workspace, false);
+  else if (current.id === 'fishing') renderGames(workspace, true);
   else if (current.id === 'feedback') renderFeedback(workspace);
   else if (current.id.startsWith('tool:')) renderTool(workspace, current.id.slice(5));
   if (state.live) { liveChip('on'); paintPulse(); paintFeed(); }
