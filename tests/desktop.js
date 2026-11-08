@@ -5,6 +5,7 @@
  * Desktop app tests. These cover everything in desktop/lib (settings, checks, log cleaning, the bot runner with the real
  * supervisor script) plus static checks on the Electron files. Electron itself is NOT started here.
  */
+import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { EventEmitter } from 'node:events';
@@ -35,7 +36,7 @@ import { inviteUrl as botInvite, clientIdFromToken } from '../scripts/inviteLib.
 import { appIdFromToken, redirectUriFor } from '../desktop/lib/discord.js';
 import { normalizeBase } from '../src/dashboard/server.js';
 import { brandStatus, applyBrand, applyCustom, BRAND } from '../desktop/lib/brand.js';
-import { createLicense, verifyLicense, generateKeyPair, hasFeature } from '../desktop/lib/license.js';
+import { createLicense, verifyLicense, generateKeyPair, hasFeature, readCancelList, CANCEL_LIST_URL } from '../desktop/lib/license.js';
 import { SecretFile } from '../desktop/lib/vault.js';
 import { signModule, verifyModule, hashModule, SIG_FILE } from '../desktop/lib/modsign.js';
 
@@ -219,12 +220,32 @@ export default async function ({ test }) {
     assert.deepEqual(Object.keys(only.results), ['icon'], 'keeping the look up only touches the parts that are missing'); assert.equal(sent.length, 1);
     assert.match((await applyCustom(FAKE_TOKEN, { name: 'a' }, fake)).error, /2 to 32/);
     sent.length = 0; assert.equal((await applyCustom(FAKE_TOKEN, { image: png }, fake)).ok, true); assert.deepEqual(sent.map((x) => x[1]), ['avatar']);
+    // Licensed bots: description (with the credit kept) and banner.
+    const bodies = [];
+    const ok = async (url, o) => { bodies.push([new URL(url).pathname, JSON.parse(o.body)]); return { ok: true, status: 200, json: async () => ({}) }; };
+    assert.equal((await applyCustom(FAKE_TOKEN, { description: 'The best fishing bot in Cozy Cove.\n\nGood Boy v2.3.3 · Basic Ghost Labs', banner: png, version: '3.0.0' }, ok)).ok, true);
+    assert.deepEqual(bodies.map(([p2, b]) => [p2, Object.keys(b)]), [['/api/v10/users/@me', ['banner']], ['/api/v10/applications/@me', ['description']]]);
+    assert.equal(bodies[1][1].description, 'The best fishing bot in Cozy Cove.\n\nGood Boy v3.0.0 · Basic Ghost Labs', 'the credit stays, once, with the current version');
+    const { describeWithCredit } = await import('../desktop/lib/brand.js');
+    assert.equal(describeWithCredit('', '3.0.0'), 'Good Boy v3.0.0 · Basic Ghost Labs', 'an empty description still has the credit');
+    assert.ok(describeWithCredit('x'.repeat(600), '3.0.0').length <= 400 && describeWithCredit('x'.repeat(600), '3.0.0').endsWith('Basic Ghost Labs'), 'a long description is shortened, never the credit');
     const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
     assert.match(main, /async function keepBrand\(\) \{\n  if \(!bundled \|\| whiteLabel\(\)/, 'free versions put the Good Boy look back by themselves; licensed ones are left alone');
     assert.match(main.slice(main.indexOf("'gb:brand-custom'"), main.indexOf("'gb:brand-custom'") + 200), /if \(!whiteLabel\(\)\) return/, 'own name and picture need a licence');
     for (const f of ['avatar.png', 'banner.png', 'app-icon.png']) { const b = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'brand', f)); assert.equal(b.toString('latin1', 1, 4), 'PNG', f); assert.ok(b.length < 8 * 1024 * 1024, `${f} is under Discord's size limit`); }
     const banner = fs.readFileSync(path.join(root, 'desktop', 'renderer', 'brand', 'banner.png')); assert.equal(banner.readUInt32BE(16) / banner.readUInt32BE(20), 2.5, 'banner is 5:2 like Discord\'s');
     assert.ok(fs.existsSync(path.join(root, 'desktop', 'renderer', 'tray.png')) && fs.existsSync(path.join(root, 'desktop', 'build', 'icon.ico')));
+  });
+
+  await test('cancel list: only a list signed with the owner key cancels licences, and junk is ignored', () => {
+    const { publicKey, privateKey } = generateKeyPair();
+    const sign = (obj, key = privateKey) => { const body = JSON.stringify(obj); return JSON.stringify({ body, sig: crypto.sign(null, Buffer.from(body), crypto.createPrivateKey(key)).toString('base64') }); };
+    assert.deepEqual(readCancelList(sign({ v: 1, at: 5, revoked: ['a1b2c3d4e5f6', '<script>'] }), publicKey), { at: 5, revoked: ['a1b2c3d4e5f6'] });
+    assert.equal(readCancelList(sign({ v: 1, at: 5, revoked: [] }, generateKeyPair().privateKey), publicKey), null, 'someone else\'s list is ignored');
+    const f = JSON.parse(sign({ v: 1, at: 5, revoked: ['a1b2c3d4e5f6'] })); f.body = f.body.replace('a1b2', 'ffff');
+    assert.equal(readCancelList(JSON.stringify(f), publicKey), null, 'a changed list is ignored');
+    assert.equal(readCancelList('not json', publicKey), null); assert.equal(readCancelList(sign({ v: 1, at: 5, revoked: [] }), null), null);
+    assert.equal(CANCEL_LIST_URL, 'https://raw.githubusercontent.com/jamiechastain10-blip/Good-Boy-Bot/main/licences/revoked.json');
   });
 
   await test('licences: signed by the owner, tied to one bot, with an end date; forged, changed, moved, ended and cancelled keys are all refused', () => {
@@ -275,7 +296,7 @@ export default async function ({ test }) {
     assert.match(verifyModule(bad, publicKey).error, /lowercase/);
     assert.equal(hashModule(dir), hashModule(dir), 'the same folder always hashes the same');
     const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
-    const add = main.slice(main.indexOf("'gb:module-add'"), main.indexOf("'gb:module-sign'"));
+    const add = main.slice(main.indexOf("'gb:module-add'"), main.indexOf("'gb:save-settings'"));
     assert.ok(add.indexOf('verifyModule(') < add.indexOf('fs.cpSync('), 'the signature is checked before anything is copied or run');
     assert.match(add, /if \(!sig\.ok && !canAddUnsigned\(\)\) return/);
     assert.match(main, /const canAddUnsigned = \(\) => edition\.id === 'owner' \|\| edition\.features\.includes\('devtools'\)/);
@@ -770,9 +791,10 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
     const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
     const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'licCreate', 'licKeygen', 'licRevoke', 'licState', 'moduleAdd', 'moduleSet', 'moduleSign', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'levels', 'openDashboardBrowser', 'dashShow', 'dashBounds', 'dashHide', 'dashReload', 'onGoto', 'onDash', 'updateCheck', 'updateInstall', 'updateLater', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
-    assert.match(main, /const ownerOnly = \(\) =>/); for (const h of ['gb:lic-keygen', 'gb:lic-create', 'gb:lic-revoke']) assert.match(main.slice(main.indexOf(`'${h}'`), main.indexOf(`'${h}'`) + 200), /ownerOnly\(\)/, `${h} only works in the Owner version`);
-    assert.ok(!/privateKey/.test(main.slice(main.indexOf("'gb:lic-state'"), main.indexOf("'gb:lic-keygen'"))), 'the signing key is never sent to the window');
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'moduleAdd', 'moduleSet', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'levels', 'openDashboardBrowser', 'dashShow', 'dashBounds', 'dashHide', 'dashReload', 'onGoto', 'onDash', 'updateCheck', 'updateInstall', 'updateLater', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken'].sort());
+    assert.ok(!/privateKey|createLicense|generateKeyPair|signModule|gb:lic-create|gb:module-sign/.test(main), 'licences and module signatures are made only in Licence Studio, never in the app');
+    assert.ok(!readEdition({ edition: 'owner' }).features.includes('licenses'), 'not even the Owner version makes licences');
+    assert.match(main, /function addContextMenu\(wc\)/); assert.equal((main.match(/addContextMenu\((win\.webContents|wc)\);/g) ?? []).length, 2, 'right-click works in the app and in the dashboard');
     assert.match(main, /url && url\.startsWith\('https:\/\/discord\.com\/'\)/, 'setup only ever opens discord.com pages');
     assert.match(main, /vault: bundled \? vault\.describe\(\) : null/, 'the window gets the vault description, never its contents');
     const readers = [...main.matchAll(/vault\.read\(\)/g)].map((m) => [...main.slice(0, m.index).matchAll(/function (\w+)\(/g)].pop()?.[1]);

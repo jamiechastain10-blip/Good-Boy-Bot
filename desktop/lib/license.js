@@ -7,7 +7,7 @@
 // cannot be moved to another bot or have its date changed.
 import crypto from 'node:crypto';
 
-export const FEATURES = Object.freeze({ whitelabel: 'Own name and picture, no Good Boy credit' });
+export const FEATURES = Object.freeze({ whitelabel: 'Own name, picture, banner and description (the Good Boy credit stays)' });
 const PREFIX = 'GB1';
 const b64u = (buf) => Buffer.from(buf).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 const unb64u = (s) => Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
@@ -46,6 +46,22 @@ export function verifyLicense(key, publicKey, { appId = null, now = Date.now(), 
   if (appId && p.app !== String(appId)) return { ok: false, payload: p, error: 'This licence is for a different bot.' };
   if (p.exp != null && p.exp <= now) return { ok: false, payload: p, expired: true, error: `This licence ended on ${new Date(p.exp).toLocaleDateString()}.` };
   return { ok: true, payload: p };
+}
+
+/** Where Good Boy apps download the list of cancelled licences. Licence Studio makes and signs it. */
+export const CANCEL_LIST_URL = 'https://raw.githubusercontent.com/jamiechastain10-blip/Good-Boy-Bot/main/licences/revoked.json';
+
+/** Reads a cancel list from Licence Studio. Returns { at, revoked } only if it was signed with the owner's key. */
+export function readCancelList(text, publicKey) {
+  if (!publicKey) return null;
+  try {
+    const f = typeof text === 'string' ? JSON.parse(text) : text;
+    if (typeof f?.body !== 'string' || typeof f?.sig !== 'string' || f.body.length > 500000) return null;
+    if (!crypto.verify(null, Buffer.from(f.body), crypto.createPublicKey(publicKey), unb64u(f.sig))) return null;
+    const b = JSON.parse(f.body);
+    if (b.v !== 1 || !Number.isFinite(b.at) || !Array.isArray(b.revoked)) return null;
+    return { at: b.at, revoked: b.revoked.filter((x) => typeof x === 'string' && /^[0-9a-f]{12}$/.test(x)) };
+  } catch { return null; }
 }
 
 export const hasFeature = (check, f) => !!check?.ok && check.payload.features.includes(f);

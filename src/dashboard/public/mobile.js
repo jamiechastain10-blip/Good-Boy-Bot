@@ -26,6 +26,8 @@ const ICON = {
   announce: 'M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1zM17 8a5 5 0 0 1 0 8',
   events: 'M7 4h10v4a5 5 0 0 1-10 0zM5 5H3a3 3 0 0 0 4 4M19 5h2a3 3 0 0 1-4 4M12 13v4M8 21h8',
   modules: 'M9 3h6v3a2 2 0 1 0 4 0V3h2v6h-3a2 2 0 1 0 0 4h3v8h-6v-3a2 2 0 1 0-4 0v3H3v-8h3a2 2 0 1 0 0-4H3V3z',
+  tickets: 'M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z',
+  tools: 'M14 6a4 4 0 0 0-5 5l-6 6 2 2 6-6a4 4 0 0 0 5-5l-2 2-2-2z',
 };
 function icon(name) { const s = document.createElementNS(SVG, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', ICON[name]); s.append(p); return s; }
 function toast(msg, bad = false) { const t = document.getElementById('toast'); t.textContent = msg; t.className = `show${bad ? ' bad' : ''}`; clearTimeout(toast.t); toast.t = setTimeout(() => { t.className = ''; }, 3200); }
@@ -86,10 +88,11 @@ async function boot() {
   pairBanner();
   try { S.me = await api('/api/me'); }
   catch (e) { if (e.status === 401) return signIn(e.data?.loginReady); return offline(); }
-  const usable = S.me.guilds.filter((g) => g.access === 'admin');
+  // Every server where you are an admin, or where your role gives you dashboard tools (3.0: not admins only).
+  const usable = S.me.guilds;
   if (!usable.length) {
     tabsEl.hidden = true;
-    return view.replaceChildren(h('div', { class: 'hero' }, h('h1', {}, 'No servers to manage'), h('p', { class: 'sub' }, 'You need Manage Server (or a role the bot owner gave dashboard access) in a server where Good Boy is.'), h('a', { class: 'btn quiet', href: '/logout' }, 'Log out')));
+    return view.replaceChildren(h('div', { class: 'hero' }, h('h1', {}, 'No servers yet'), h('p', { class: 'sub' }, 'You need Manage Server, or a role an admin gave dashboard access, in a server where Good Boy is.'), h('a', { class: 'btn quiet', href: '/logout' }, 'Log out')));
   }
   const saved = store.get('gb-guild');
   await pick(usable.find((g) => g.id === saved)?.id ?? usable[0].id);
@@ -102,20 +105,27 @@ async function pick(id) {
   renderTabs(); show(S.tab);
 }
 document.getElementById('server').addEventListener('click', () => {
-  const list = S.me?.guilds?.filter((g) => g.access === 'admin') ?? [];
+  const list = S.me?.guilds ?? [];
   if (list.length < 2) return;
   const close = () => sheet.remove();
   const sheet = h('div', { class: 'sheet', onclick: (e) => { if (e.target === sheet) close(); } }, h('div', { class: 'panel' }, h('div', { class: 'section' }, 'Choose a server'),
     h('div', { class: 'group' }, list.map((g) => h('button', { class: 'row', style: { width: '100%', border: '0', background: 'none', textAlign: 'left' }, onclick: () => { close(); pick(g.id); } },
       g.icon ? h('img', { class: 'av', src: `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=64`, alt: '' }) : h('span', { class: 'av' }, initials(g.name)),
-      h('div', { class: 'two' }, h('b', {}, g.name)), g.id === S.gid ? h('span', { class: 'tag' }, 'Open') : null)))));
+      h('div', { class: 'two' }, h('b', {}, g.name), h('small', {}, g.access === 'admin' ? 'Admin' : 'Your tools')), g.id === S.gid ? h('span', { class: 'tag' }, 'Open') : null)))));
   document.body.append(sheet);
 });
 
-const TABS = [['home', 'Home'], ['levels', 'Levels'], ['announce', 'Announce'], ['events', 'Events'], ['modules', 'Modules']];
+const hasArchive = () => (S.guild?.modules ?? []).some((m) => m.name === 'support' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'archive')));
+/** Admins get the full set; people with dashboard tools get Home, Tickets (if they may see them) and their tools. */
+function tabsFor() {
+  if (S.guild?.access !== 'admin') return [['home', 'Home'], ...(hasArchive() ? [['tickets', 'Tickets']] : []), ['tools', 'Tools']];
+  return [['home', 'Home'], ...(hasArchive() ? [['tickets', 'Tickets']] : []), ['levels', 'Levels'], ['announce', 'Announce'], ['modules', 'Modules']];
+}
 function renderTabs() {
   tabsEl.hidden = false;
-  tabsEl.replaceChildren(...TABS.map(([id, label]) => h('button', { 'aria-current': S.tab === id ? 'page' : null, onclick: () => show(id) }, icon(id), label)));
+  const tabs = tabsFor();
+  if (!tabs.some(([id]) => id === S.tab) && !['events'].includes(S.tab)) S.tab = 'home';
+  tabsEl.replaceChildren(...tabs.map(([id, label]) => h('button', { 'aria-current': S.tab === id ? 'page' : null, onclick: () => show(id) }, icon(id), label)));
 }
 async function show(tab) {
   S.tab = tab; renderTabs(); window.scrollTo(0, 0);
@@ -124,12 +134,40 @@ async function show(tab) {
   catch (e) { if (e.status === 401) return signIn(); view.replaceChildren(h('p', { class: 'center muted' }, e.message)); }
 }
 
+// ---------------------------------------------------------------- one ticket, read like the chat
+async function openTicket(number) {
+  view.replaceChildren(h('p', { class: 'center muted' }, 'Loading…'));
+  let tk; try { tk = await api(`${moduleUrl('support', 'views', 'archiveTicket')}?number=${number}`); } catch (e) { return view.replaceChildren(h('p', { class: 'center muted' }, e.message)); }
+  const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const files = (list) => (list.length ? h('div', { class: 'tk-files' }, list.map((a) => (a.url && /\.(png|jpe?g|gif|webp)$/i.test(a.name) ? h('a', { href: a.url, target: '_blank', rel: 'noopener' }, h('img', { src: a.url, alt: a.name, loading: 'lazy' })) : h('small', { class: 'muted' }, `📎 ${a.name}`)))) : null);
+  const about = tk.about ? h('div', { class: 'group' }, h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', {}, `About @${tk.about.name ?? 'unknown'}`),
+    h('small', {}, [tk.about.created && `Account made ${new Date(tk.about.created).toLocaleDateString()}`, tk.about.joined ? `joined ${new Date(tk.about.joined).toLocaleDateString()}` : tk.about.inServer === false ? 'not in the server' : null,
+      tk.background.about ? `${tk.background.about.warnings} warnings · reported ${tk.background.about.reports} times` : null].filter(Boolean).join(' · '))))) : null;
+  view.replaceChildren(h('button', { class: 'btn quiet', onclick: () => show('tickets') }, '‹ Tickets'),
+    h('h1', {}, `#${String(tk.number).padStart(3, '0')} · ${tk.type}`), h('p', { class: 'sub' }, `Opened ${when(tk.openedAt)}${tk.closedAt ? ` · closed ${when(tk.closedAt)}` : ' · open'}`), about,
+    tk.answers.length ? h('div', { class: 'group' }, tk.answers.map((a) => h('div', { class: 'row' }, h('div', { class: 'two' }, h('small', {}, a.q), h('b', { style: { fontWeight: 500 } }, a.a))))) : null,
+    files(tk.files),
+    h('div', { class: 'group tk-chat' }, tk.messages.length ? tk.messages.map((x) => h('div', { class: 'row tk-msg' },
+      x.author.avatar ? h('img', { class: 'av', src: x.author.avatar, alt: '' }) : h('span', { class: 'av' }, initials(x.author.name)),
+      h('div', { class: 'two' }, h('b', {}, x.author.name, ' ', h('small', { class: 'muted' }, when(x.at), x.editedAt ? ' (edited)' : '', x.deleted ? ' (deleted)' : '')),
+        x.content ? h('span', {}, x.content) : null, ...x.embeds.map((e) => h('small', { class: 'muted' }, [e.title, e.description].filter(Boolean).join(': '))), files(x.attachments))))
+      : [h('div', { class: 'row' }, h('small', { class: 'muted' }, 'No messages were kept for this ticket.'))]));
+  window.scrollTo(0, 0);
+}
+
 // ---------------------------------------------------------------- pages
 const needs = (mod, what) => [h('div', { class: 'group' }, h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', {}, `${pretty(mod)} is off`), h('small', {}, `Turn it on to use ${what}.`)),
   h('button', { class: 'tag', style: { border: 0 }, onclick: async () => { await toggle(mod, true); show(S.tab); } }, 'Turn on')))];
 
 const PAGES = {
   async home() {
+    if (S.guild.access !== 'admin') {
+      const panels = S.guild.modules.flatMap((m) => (m.panels ?? []).map((p) => ({ m, p })));
+      return [h('h1', {}, 'Home'), h('p', { class: 'sub' }, `${S.guild.guild?.name ?? 'This server'} · your role gives you these tools.`),
+        h('div', { class: 'group' }, panels.map(({ m, p }) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show(p.id === 'archive' ? 'tickets' : 'tools') },
+          h('div', { class: 'two' }, h('b', {}, p.title), h('small', {}, pretty(m.name))), h('span', { class: 'end muted' }, '›')))),
+        h('p', { class: 'note' }, `Signed in as ${S.me.user.username}. `, h('a', { href: '/logout' }, 'Log out'))];
+    }
     const st = S.guild.stats ?? {};
     const on = S.guild.modules.filter((m) => m.enabled).length;
     return [h('h1', {}, 'Home'), h('p', { class: 'sub' }, 'Your bot at a glance.'),
@@ -139,7 +177,38 @@ const PAGES = {
       h('div', { class: 'group' },
         [['announce', 'Send an announcement', 'Post to any channel, with or without a ping'], ['events', 'Start an event hub', 'Teams get their own voice rooms'], ['levels', 'See the leaderboard', 'Who has the most XP']]
           .map(([tab, title, small]) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show(tab) }, h('div', { class: 'two' }, h('b', {}, title), h('small', {}, small)), h('span', { class: 'end muted' }, '›')))),
+      h('div', { class: 'lock' }, 'Restart, updates, the bot token, backups and licences are only in the Windows app.'),
       h('p', { class: 'note' }, `Signed in as ${S.me.user.username}. `, h('a', { href: '/logout' }, 'Log out'), changeLink() ? ' · ' : null, changeLink())];
+  },
+
+  async tickets() {
+    const q = { search: '', status: '' };
+    const listBox = h('div', { class: 'group' }, h('div', { class: 'row' }, h('small', { class: 'muted' }, 'Loading…')));
+    const searchIn = h('input', { type: 'search', id: 't-q', placeholder: 'Search every ticket message' });
+    const load = async () => {
+      const params = new URLSearchParams(Object.entries(q).filter(([, v]) => v));
+      const d = await api(`${moduleUrl('support', 'views', 'archive')}?${params}`).catch((e) => ({ rows: [], error: e.message }));
+      listBox.replaceChildren(...(d.rows.length ? d.rows.map((r) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => openTicket(r.number) },
+        h('div', { class: 'two' }, h('b', {}, `#${String(r.number).padStart(3, '0')} · ${r.type}`), h('small', {}, r.match ? r.match.replace(/\[\[|\]\]/g, '') : `${r.opener.name ?? ''}${r.about?.name ? ` about @${r.about.name}` : ''}`)),
+        h('span', { class: r.status === 'open' ? 'tag' : 'tag warn' }, r.status === 'open' ? 'Open' : 'Closed'))) : [h('div', { class: 'row' }, h('small', { class: 'muted' }, d.error ?? (q.search ? 'No ticket has those words.' : 'No tickets yet.')))]));
+    };
+    let t; searchIn.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { q.search = searchIn.value.trim(); load(); }, 300); });
+    const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Status' }, [['', 'All'], ['open', 'Open'], ['closed', 'Closed']].map(([v, l]) =>
+      h('button', { type: 'button', 'aria-pressed': String(v === q.status), onclick: (e) => { q.status = v; for (const b of seg.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); load(); } }, l)));
+    load();
+    return [h('h1', {}, 'Tickets'), h('p', { class: 'sub' }, 'Every ticket, with its messages and files.'), h('div', { class: 'group' }, h('div', { class: 'field' }, searchIn), h('div', { class: 'field' }, seg)), listBox];
+  },
+
+  async tools() {
+    const panels = S.guild.modules.flatMap((m) => (m.panels ?? []).filter((p) => p.id !== 'archive').map((p) => ({ m, p })));
+    const out = [h('h1', {}, 'Tools'), h('p', { class: 'sub' }, 'The tools your role gives you here.')];
+    for (const { m, p } of panels) {
+      const d = await viewOf(m.name, p.view).catch(() => ({ rows: [] }));
+      const cols = (p.columns ?? []).slice(0, 3);
+      out.push(h('div', { class: 'section' }, p.title), h('div', { class: 'group' }, (d.rows ?? []).length ? d.rows.slice(0, 25).map((r) => h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', {}, String(r[cols[0]?.key] ?? '')), h('small', {}, cols.slice(1).map((c) => r[c.key]).filter((x) => x != null && x !== '').join(' · ')))))
+        : [h('div', { class: 'row' }, h('small', { class: 'muted' }, p.empty ?? 'Nothing here yet.'))]));
+    }
+    return out;
   },
 
   async levels() {

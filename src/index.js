@@ -2,6 +2,8 @@
  * Basic Ghost Labs - Good Boy
  * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
  */
+import { Hub, hubUrl } from './hub.js';
+import { syncEmojis } from './emojis.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -94,7 +96,7 @@ async function control(action, p = {}) {
   return { ok: false, error: 'Unknown request.' };
 }
 const queue = new ApiQueue();
-const manager = new ModuleManager({ db, perms, queue, builtins });
+const manager = new ModuleManager({ db, perms, queue, builtins, dataDir });
 manager.version = version;
 manager.rootDir = root;
 
@@ -156,9 +158,9 @@ function wire(client) {
   client.on(Events.Error, (e) => logger.error(`Discord client error: ${e.message}`));
 }
 
-/** Keeps a "Good Boy vX · Basic Ghost Labs" line at the end of the bot's Discord description; the owner's own text is left alone. */
+/** Keeps a "Good Boy vX · Basic Ghost Labs" line at the end of the bot's Discord description; the owner's own text is left alone.
+ *  Every copy keeps this credit, white-label ones included. */
 async function syncDescription(app) {
-  if (/^(0|false|off|no)$/i.test(process.env.GOODBOY_VERSION_IN_DESCRIPTION ?? '')) return;
   try {
     const next = withVersionLine(app.description, version);
     if (next !== (app.description ?? '')) { await app.edit({ description: next }); logger.info(`Bot description now ends with the version line (v${version}).`); }
@@ -171,6 +173,9 @@ async function onReady(client) {
   try {
     const app = await client.application.fetch();
     await syncDescription(app);
+    syncEmojis(client.application, { log: (m) => logger.warn(m) })
+      .then((r) => { if (r.added || r.removed || r.failed) logger.info(`Animated emojis: ${r.added} added, ${r.removed} old removed, ${r.kept} kept${r.failed ? `, ${r.failed} failed` : ''}.`); })
+      .catch((e) => logger.warn(`Animated emojis could not be set up: ${e.message}. Normal emojis are used instead.`));
     const o = app.owner;
     if (o?.members) { manager.ownerIds.add(o.ownerId); for (const id of o.members.keys()) manager.ownerIds.add(id); }
     else if (o?.id) manager.ownerIds.add(o.id);
@@ -229,7 +234,18 @@ async function login() {
 }
 
 const client = await login();
-const dashboard = await startDashboard({ manager, client, db, logger, perms, version, dataDir, updates: link }).catch((e) => { logger.warn(`Dashboard not started: ${e.message}`); return null; });
+// The Good Boy hub (3.0): lets other people's Good Boy bots show this bot's servers in their switcher, and the other way round.
+let dashboardRef = null;
+const hub = hubUrl() && client.application ? new Hub({ base: hubUrl(), dataDir, app: client.application, url: () => dashboardRef?.baseUrl?.(), guilds: () => [...client.guilds.cache.keys()], log: (m) => logger.warn(m) }) : null;
+const dashboard = await startDashboard({ manager, client, db, logger, perms, version, dataDir, updates: link, hub }).catch((e) => { logger.warn(`Dashboard not started: ${e.message}`); return null; });
+dashboardRef = dashboard;
+if (hub) {
+  const joinHub = () => hub.register().then((r) => { if (r.ok) logger.info('Joined the Good Boy hub.'); else if (r.skipped) logger.info(`Good Boy hub: skipped (${r.skipped}).`); }).catch((e) => logger.warn(`Good Boy hub: ${e.message}`));
+  setTimeout(joinHub, 60000).unref?.();
+  setInterval(joinHub, 6 * 3600000).unref?.();
+} else if (String(process.env.GOODBOY_HUB ?? '').toLowerCase() === 'off' && process.env.GOODBOY_HUB_URL && client.application) {
+  new Hub({ base: String(process.env.GOODBOY_HUB_URL).replace(/\/+$/, ''), dataDir, app: client.application, url: () => null, guilds: () => [] }).leave().catch(() => {});
+}
 
 async function shutdown(signal) {
   if (stopping) return;

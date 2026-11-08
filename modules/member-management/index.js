@@ -7,8 +7,10 @@
  */
 import {
   SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder,
-  TextInputBuilder, TextInputStyle, MessageFlags, PermissionFlagsBits as P,
+  TextInputBuilder, TextInputStyle, MessageFlags, PermissionFlagsBits as P, AttachmentBuilder,
 } from 'discord.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { formModal, readForm } from '../../src/modalkit.js';
 import { formStore } from '../../src/forms.js';
 import { UserError, fillTemplate, normalizeHex, hexToInt, sanitizeName, truncate, ts, roleGrantProblem, getChannelOption, describeDiscordError } from '../../src/util.js';
@@ -48,7 +50,53 @@ async function onJoin(ctx, member) {
   const ch = channelOf(ctx, 'welcomeChannel');
   if (!ch) return;
   const text = truncate(fillTemplate(ctx.config.get('welcomeMessage'), vars(member)), 1900);
-  await ctx.queue(() => ch.send({ content: text, allowedMentions: { users: [member.id] } }));
+  await ctx.queue(() => ch.send({ ...greeting(ctx, 'welcome', member, text), allowedMentions: { users: [member.id] } }));
+}
+
+// 3.0: a picture with welcome and goodbye messages. The picture is uploaded once with /greeting image and kept on this
+// computer, so it keeps working even if the original link stops. A plain message stays plain; with a picture the
+// message becomes a card with the member's avatar.
+export const GREET_IMAGE_TYPES = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const greetFile = (ctx, kind) => { const name = ctx.config.get(`${kind}Image`); return name ? path.join(ctx.fileDir('greetings'), name) : null; };
+export function greeting(ctx, kind, member, text) {
+  const file = greetFile(ctx, kind);
+  if (!file || !fs.existsSync(file)) return { content: text };
+  const name = path.basename(file);
+  const e = new EmbedBuilder().setColor(ctx.config.get(`${kind}Color`) || (kind === 'welcome' ? 0x57f287 : 0x99aab5)).setDescription(text)
+    .setImage(`attachment://${name}`);
+  const avatar = member.user?.displayAvatarURL?.({ size: 128 });
+  if (avatar) e.setThumbnail(avatar);
+  return { content: kind === 'welcome' ? `<@${member.id}>` : undefined, embeds: [e], files: [new AttachmentBuilder(fs.readFileSync(file), { name })] };
+}
+const GREET_FIELDS = [
+  { id: 'message', kind: 'select', label: 'Which message', value: 'welcome', options: [{ label: 'Welcome message', value: 'welcome' }, { label: 'Goodbye message', value: 'goodbye' }] },
+  { id: 'image', kind: 'files', label: 'Picture (leave empty to remove it)', desc: 'PNG, JPG, GIF or WebP, under 8 MB.', required: false, maxValues: 1 },
+];
+const greetingPopup = (ctx, i) => i.showModal(formModal('greet:image', 'Welcome and goodbye pictures', GREET_FIELDS));
+async function greetingImageSubmit(ctx, i) {
+  if (!ctx.perms.check(i.member, 'member-management.manage')) throw new UserError("You don't have permission for that (`member-management.manage`).");
+  const v = readForm(i, GREET_FIELDS);
+  const kind = v.message === 'goodbye' ? 'goodbye' : 'welcome';
+  const att = v.image?.[0] ?? null;
+  const old = greetFile(ctx, kind);
+  if (!att) {
+    if (old) fs.rmSync(old, { force: true });
+    ctx.config.set(`${kind}Image`, '');
+    return i.reply({ content: `The ${kind} picture was removed. ${kind === 'welcome' ? 'Welcome' : 'Goodbye'} messages are plain text again.`, flags: EPH });
+  }
+  const ext = String(att.name ?? '').split('.').pop().toLowerCase();
+  if (!GREET_IMAGE_TYPES.includes(ext)) throw new UserError('Use a PNG, JPG, GIF or WebP picture.');
+  if ((att.size ?? 0) > 8 * 1024 * 1024) throw new UserError('That picture is too big. Use one under 8 MB.');
+  await i.deferReply({ flags: EPH });
+  const r = await fetch(att.url).catch(() => null);
+  if (!r?.ok) throw new UserError('Could not download that picture. Try uploading it again.');
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (old) fs.rmSync(old, { force: true });
+  const name = `${kind}-${Date.now()}.${ext}`;
+  fs.writeFileSync(path.join(ctx.fileDir('greetings'), name), buf);
+  ctx.config.set(`${kind}Image`, name);
+  const preview = greeting(ctx, kind, i.member, fillTemplate(ctx.config.get(`${kind}Message`), vars(i.member)));
+  return i.editReply({ content: `Saved. Here is how ${kind} messages will look:`, embeds: preview.embeds, files: preview.files, allowedMentions: NOPING });
 }
 
 async function onLeave(ctx, member) {
@@ -63,7 +111,7 @@ async function onLeave(ctx, member) {
   const ch = channelOf(ctx, 'goodbyeChannel');
   if (!ch) return;
   const text = truncate(fillTemplate(ctx.config.get('goodbyeMessage'), vars(member)), 1900);
-  await ctx.queue(() => ch.send({ content: text, allowedMentions: NOPING }));
+  await ctx.queue(() => ch.send({ ...greeting(ctx, 'goodbye', member, text), allowedMentions: NOPING }));
 }
 
 // ------------------------------------------------------------------ profiles
@@ -399,6 +447,8 @@ export default {
     { key: 'goodbyeEnabled', type: 'toggle', label: 'Send goodbye messages', default: false },
     { key: 'goodbyeChannel', type: 'channel', label: 'Goodbye channel' },
     { key: 'goodbyeMessage', type: 'text', label: 'Goodbye message', description: '{username} {server} {count}', default: '**{username}** has left the server.' },
+    { key: 'welcomeImage', type: 'text', label: 'Welcome picture (set with /greeting image)', default: '' },
+    { key: 'goodbyeImage', type: 'text', label: 'Goodbye picture (set with /greeting image)', default: '' },
     { key: 'verificationRole', type: 'role', label: 'Role given after verifying' },
     { key: 'unverifiedRole', type: 'role', label: 'Role new members get until verified (optional)' },
     { key: 'verifyMessage', type: 'text', label: 'Verification panel text', default: 'Press the button below to verify and unlock the server.' },
@@ -416,11 +466,16 @@ export default {
     { key: 'timezoneOffset', type: 'number', label: 'Server timezone offset from UTC (hours)', default: 0, min: -12, max: 14 },
     { key: 'afkEnabled', type: 'toggle', label: 'AFK status', default: true },
   ],
-  permissions: [{ key: 'member-management.manage', label: 'Post verification panels', default: 'admin' }],
+  permissions: [{ key: 'member-management.manage', label: 'Post verification panels and set welcome pictures', default: 'admin' }],
   commands: [
     {
       permission: 'member-management.manage',
       ownPopup: ['setup'], // opens its own popup when run with nothing filled in
+      permission: 'member-management.manage',
+      data: new SlashCommandBuilder().setName('greeting').setDescription('(Staff) Add a picture to welcome or goodbye messages (opens a form)'),
+      execute: greetingPopup,
+    },
+    {
       data: new SlashCommandBuilder().setName('verify').setDescription('Verification gate')
         .addSubcommand((s) => s.setName('setup').setDescription('Set the roles and post the verification panel')
           .addRoleOption((o) => o.setName('role').setDescription('Role members get after verifying (leave everything empty for a popup)'))
@@ -477,6 +532,7 @@ export default {
   components: [
     { prefix: 'verify:', execute: (ctx, i) => (i.customId.startsWith('verify:form:') ? verifyForm(ctx, i) : verifyClick(ctx, i)) },
     { prefix: 'intro:', execute: introSubmit },
+    { prefix: 'greet:', execute: greetingImageSubmit },
   ],
   events: { guildMemberAdd: onJoin, guildMemberRemove: onLeave, messageCreate: onMessage },
   tasks: [{ name: 'birthdays', everyMs: 600000, runOnEnable: true, run: birthdayTask }],

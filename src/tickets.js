@@ -42,31 +42,55 @@ export function findCategory(id, custom = []) {
   return t ? { id: t.id, emoji: t.emoji ?? '🎫', label: t.label, urgency: 'normal', custom: true, questions: t.questions ?? [], categoryId: t.categoryId } : null;
 }
 
-/** The popup a member sees for a category. Fields: { id, label, style: 'short'|'paragraph', required, max, placeholder }. */
+/** Evidence uploads: every form ends with this (Discord allows up to 10 files). */
+export const FILES_FIELD = { id: 'files', kind: 'files', label: 'Screenshots or files (optional)', desc: 'Up to 10. Only you and staff can see them.', required: false, maxValues: 10 };
+/**
+ * The popup a member sees for a category, as popup-kit fields: { id, kind, label, desc, required, max, placeholder }.
+ * Reports use Discord's member picker (it searches everyone in the server), with a box for people who are not in it.
+ */
 export function questionsFor(cat) {
   if (cat.custom) {
-    return (cat.questions ?? []).slice(0, 5).map((q, n) => ({ id: `q${n}`, label: q, style: n === 0 ? 'paragraph' : 'short', required: true, max: 1000 }));
+    return [...(cat.questions ?? []).slice(0, 4).map((q, n) => ({ id: `q${n}`, kind: n === 0 ? 'paragraph' : 'text', label: String(q).slice(0, 45), required: true, max: 1000 })), FILES_FIELD];
   }
   if (cat.report) {
-    const must = cat.report === 'required';
     return [
-      { id: 'username', label: must ? 'Their username' : 'Their username (if you know it)', style: 'short', required: false, max: 40, placeholder: 'e.g. coolguy123 - no spaces' },
-      { id: 'userid', label: must ? 'Their user ID' : 'Their user ID (if you know it)', style: 'short', required: false, max: 25, placeholder: 'Right-click them with Developer Mode on > Copy User ID' },
-      { id: 'details', label: 'What happened?', style: 'paragraph', required: true, max: 1000, placeholder: 'Say what they did, where, and roughly when.' },
-      { id: 'evidence', label: 'Evidence (message links, screenshots)', style: 'paragraph', required: false, max: 800, placeholder: 'Paste message links or image links. Nothing here is shown to them.' },
+      { id: 'who', kind: 'user', label: 'Who is it about?', desc: cat.report === 'required' ? 'Search the member list by name. Not in the server? Use the next box.' : 'Search the member list, if you know who it is.', required: false, placeholder: 'Search members' },
+      { id: 'outside', kind: 'text', label: 'Not in the server? Their name or ID', required: false, max: 60, placeholder: 'e.g. coolguy123 or their user ID' },
+      { id: 'details', kind: 'paragraph', label: 'What happened?', required: true, max: 1000, placeholder: 'Say what they did, where, and roughly when.' },
+      { id: 'evidence', kind: 'paragraph', label: 'Message links (optional)', required: false, max: 800, placeholder: 'Paste message links. Nothing here is shown to them.' },
+      FILES_FIELD,
     ];
   }
   if (cat.appeal) {
     return [
-      { id: 'what', label: 'What are you appealing?', style: 'short', required: true, max: 200, placeholder: 'e.g. 7 day ban on 12 March for spam' },
-      { id: 'why', label: 'Why should it be reviewed?', style: 'paragraph', required: true, max: 1000 },
-      { id: 'extra', label: 'Anything else staff should know', style: 'paragraph', required: false, max: 800 },
+      { id: 'what', kind: 'text', label: 'What are you appealing?', required: true, max: 200, placeholder: 'e.g. 7 day ban on 12 March for spam' },
+      { id: 'why', kind: 'paragraph', label: 'Why should it be reviewed?', required: true, max: 1000 },
+      { id: 'extra', kind: 'paragraph', label: 'Anything else staff should know', required: false, max: 800 },
+      FILES_FIELD,
     ];
   }
   return [
-    { id: 'details', label: 'How can we help?', style: 'paragraph', required: true, max: 1000, placeholder: 'Give as much detail as you can.' },
-    { id: 'extra', label: 'Links or extra details (optional)', style: 'paragraph', required: false, max: 800 },
+    { id: 'details', kind: 'paragraph', label: 'How can we help?', required: true, max: 1000, placeholder: 'Give as much detail as you can.' },
+    { id: 'extra', kind: 'paragraph', label: 'Links or extra details (optional)', required: false, max: 800 },
+    FILES_FIELD,
   ];
+}
+
+/** Who a report is about, from the member picker (`who`, an id) or the "not in the server" box (`outside`). */
+export function reportedFrom({ who, outside }, opts = {}) {
+  if (who) return parseReported({ userid: who }, opts);
+  const raw = String(outside ?? '').trim();
+  const isId = /^<@!?\d+>$/.test(raw) || /^\d+$/.test(raw); // all digits: checked as an ID (and explained if it is not one)
+  return parseReported(isId ? { userid: raw } : { username: raw }, opts);
+}
+
+/** When a Discord account was made, from its id. */
+export const accountCreated = (id) => Number((BigInt(id) >> 22n) + 1420070400000n);
+/** "3 years", "5 months", "12 days", "2 hours". */
+export function ageText(ms, now = Date.now()) {
+  const d = Math.max(0, now - ms), day = 86400000;
+  const [n, unit] = d >= 365 * day ? [Math.floor(d / (365 * day)), 'year'] : d >= 30 * day ? [Math.floor(d / (30 * day)), 'month'] : d >= day ? [Math.floor(d / day), 'day'] : [Math.max(1, Math.floor(d / 3600000)), 'hour'];
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
 // ------------------------------------------------------------------ the reported person
@@ -85,7 +109,7 @@ export function parseReported({ username, userid }, { required = false } = {}) {
     id = m[1];
   }
   const name = normalizeName(username);
-  if (required && !id && !name) throw new UserError('Tell us who you are reporting: their username, their user ID, or both.');
+  if (required && !id && !name) throw new UserError('Tell us who it is about: pick them in the member search, or type their name or ID in the box below it.');
   return { id, name: name || null };
 }
 

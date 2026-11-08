@@ -256,8 +256,9 @@ function lzwEncode(minSize, indices) {
  * @param {{width: number, height: number, loop?: number, frames: {x?: number, y?: number, w?: number, h?: number, rgba: Uint8Array|Uint8ClampedArray, delay: number}[]}} gif
  *  Each frame is a rectangle (default: the whole picture) painted over the previous frame. `delay` is in milliseconds.
  *  `onFrame` (optional, async) is awaited between frames so a long encode does not freeze the bot.
+ *  `transparent`: pixels with alpha under 128 become see-through, and each frame replaces the last (for emojis).
  */
-export async function encodeGif({ width, height, loop = 0, frames }, { onFrame } = {}) {
+export async function encodeGif({ width, height, loop = 0, frames, transparent = false }, { onFrame } = {}) {
   if (!frames.length) throw new GifError('A GIF needs at least one frame.');
   const parts = [];
   const push = (...bytes) => parts.push(Uint8Array.from(bytes));
@@ -267,11 +268,22 @@ export async function encodeGif({ width, height, loop = 0, frames }, { onFrame }
   for (const f of frames) {
     const x = f.x ?? 0, y = f.y ?? 0, w = f.w ?? width, h = f.h ?? height;
     if (w < 1 || h < 1 || x + w > width || y + h > height || f.rgba.length !== w * h * 4) throw new GifError('A frame does not fit the picture.');
-    const { palette, indices, colors } = quantize(f.rgba);
+    let { palette, indices, colors } = transparent ? {} : quantize(f.rgba);
+    let tIndex = -1;
+    if (transparent) {
+      const n = w * h, clear = new Uint8Array(n), solid = Uint8Array.from(f.rgba);
+      let fill = -1;
+      for (let i = 0; i < n; i++) if (f.rgba[i * 4 + 3] < 128) clear[i] = 1; else if (fill < 0) fill = i;
+      if (fill >= 0) for (let i = 0; i < n; i++) if (clear[i]) solid.set(f.rgba.subarray(fill * 4, fill * 4 + 3), i * 4);
+      ({ palette, indices, colors } = quantize(solid, 255));
+      tIndex = colors; colors += 1;
+      for (let i = 0; i < n; i++) if (clear[i]) indices[i] = tIndex;
+    }
     let tb = 1; while ((1 << tb) < colors) tb++; // the palette holds 2^tb colours (GIF's smallest table is 2)
     const minSize = Math.max(2, tb);
     const delay = Math.max(2, Math.round(f.delay / 10));
-    push(0x21, 0xf9, 4, 0x04, ...le(delay), 0, 0); // disposal 1: leave the picture, the next frame paints over it
+    if (tIndex >= 0) push(0x21, 0xf9, 4, 0x09, ...le(delay), tIndex, 0); // disposal 2 + see-through colour
+    else push(0x21, 0xf9, 4, 0x04, ...le(delay), 0, 0); // disposal 1: leave the picture, the next frame paints over it
     push(0x2c, ...le(x), ...le(y), ...le(w), ...le(h), 0x80 | (tb - 1));
     parts.push(palette.subarray(0, (1 << tb) * 3));
     push(minSize);

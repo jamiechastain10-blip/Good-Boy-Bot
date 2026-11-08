@@ -54,7 +54,25 @@ export async function applyBrand(token, files, current, fetchFn = fetch, { parts
 }
 
 /** Licensed (white-label) bots only: their own name and picture. */
-export async function applyCustom(token, { name = null, image = null, mime = 'image/png' } = {}, fetchFn = fetch) {
+const DESCRIPTION_MAX = 400;
+const CREDIT_RE = /^Good Boy v[0-9A-Za-z.+-]+ · Basic Ghost Labs$/;
+/** The owner's description with the Good Boy credit line kept at the end (the same rule the bot uses). */
+export function describeWithCredit(text, version) {
+  const line = `Good Boy v${version} · Basic Ghost Labs`;
+  const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
+  while (lines.length && (lines.at(-1).trim() === '' || CREDIT_RE.test(lines.at(-1).trim()))) lines.pop();
+  let mine = lines.join('\n').trim();
+  const room = DESCRIPTION_MAX - line.length - (mine ? 2 : 0);
+  if (mine.length > room) mine = mine.slice(0, Math.max(0, room - 1)).trimEnd() + '…';
+  return mine ? `${mine}\n\n${line}` : line;
+}
+
+/**
+ * A licensed bot's own look: name, picture and banner (the bot's profile) and description (the application).
+ * The description always keeps the Good Boy credit line at the end.
+ */
+export async function applyCustom(token, { name = null, image = null, mime = 'image/png', banner = null, bannerMime = 'image/png', description = null, version = '0.0.0' } = {}, fetchFn = fetch) {
+  const auth = { Authorization: `Bot ${String(token ?? '').trim()}`, 'Content-Type': 'application/json' };
   const body = {};
   if (name != null) {
     const n = String(name).trim();
@@ -62,9 +80,17 @@ export async function applyCustom(token, { name = null, image = null, mime = 'im
     body.username = n;
   }
   if (image) body.avatar = `data:${mime};base64,${Buffer.from(image).toString('base64')}`;
-  if (!Object.keys(body).length) return { ok: true };
-  const r = await fetchFn(`${API}/users/@me`, { method: 'PATCH', headers: { Authorization: `Bot ${String(token ?? '').trim()}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) }).catch(() => null);
-  if (!r) return { ok: false, error: 'Could not reach Discord.' };
-  let json = null; try { json = await r.json(); } catch { /* empty */ }
-  return r.ok ? { ok: true } : { ok: false, error: plain(r.status, json) };
+  if (banner) body.banner = `data:${bannerMime};base64,${Buffer.from(banner).toString('base64')}`;
+  const send = async (url, payload) => {
+    const r = await fetchFn(url, { method: 'PATCH', headers: auth, body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) }).catch(() => null);
+    if (!r) return { ok: false, error: 'Could not reach Discord.' };
+    let json = null; try { json = await r.json(); } catch { /* empty */ }
+    return r.ok ? { ok: true } : { ok: false, error: plain(r.status, json) };
+  };
+  if (Object.keys(body).length) { const r = await send(`${API}/users/@me`, body); if (!r.ok) return r; }
+  if (description != null) {
+    const r = await send(`${API}/applications/@me`, { description: describeWithCredit(description, version) });
+    if (!r.ok) return r;
+  }
+  return { ok: true };
 }

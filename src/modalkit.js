@@ -6,11 +6,11 @@
  * read them back. A popup holds at most 5 fields and each label is at most 45 characters; both are checked here so a
  * bad form fails in tests, not in Discord.
  *
- * Field kinds: text, paragraph, number, channel, role, roles, user, select (single choice).
+ * Field kinds: text, paragraph, number, channel, role, roles, user, select (single choice), files (uploads).
  */
 import {
   ModalBuilder, LabelBuilder, TextInputBuilder, TextInputStyle, ChannelSelectMenuBuilder, RoleSelectMenuBuilder,
-  UserSelectMenuBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType,
+  UserSelectMenuBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelType, FileUploadBuilder,
 } from 'discord.js';
 import { UserError } from './util.js';
 
@@ -60,6 +60,10 @@ function component(f) {
         .addOptions(f.options.map((o) => { const b = new StringSelectMenuOptionBuilder().setLabel(o.label).setValue(o.value); if (o.description) b.setDescription(o.description); if (o.value === f.value) b.setDefault(true); return b; }));
       return ['setStringSelectMenuComponent', s];
     }
+    case 'files': {
+      const u = new FileUploadBuilder().setCustomId(f.id).setMinValues(req ? 1 : 0).setMaxValues(f.maxValues ?? 10).setRequired(req);
+      return ['setFileUploadComponent', u];
+    }
     default: throw new Error(`Unknown field kind ${f.kind}`);
   }
 }
@@ -100,6 +104,10 @@ export function readForm(i, fields) {
     else if (kind === 'roles') out[f.id] = keysOf(i.fields.getSelectedRoles(f.id, false));
     else if (kind === 'user') out[f.id] = f.maxValues > 1 ? keysOf(i.fields.getSelectedUsers(f.id, false)) : keysOf(i.fields.getSelectedUsers(f.id, false))[0] ?? null;
     else if (kind === 'select') out[f.id] = (i.fields.getStringSelectValues(f.id) ?? [])[0] ?? null;
+    else if (kind === 'files') {
+      let files = null; try { files = i.fields.getUploadedFiles(f.id, false); } catch { files = null; }
+      out[f.id] = [...(files?.values?.() ?? [])].map((a) => ({ name: String(a.name ?? 'file'), url: String(a.url ?? ''), size: a.size ?? 0, contentType: a.contentType ?? null }));
+    }
   }
   return out;
 }

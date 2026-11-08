@@ -10,6 +10,7 @@
  * Only install modules you wrote or have reviewed.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import semver from 'semver';
@@ -53,6 +54,14 @@ export class RequirementError extends UserError {
   constructor(message) { super(message); this.code = 'REQUIREMENT'; }
 }
 
+const OFF_KEY = '__offChannels';
+const NEVER_OFF_HERE = new Set(['moderation', 'support', 'support-html-transcripts']);
+/** Events that happen in a channel: where they happened, for the per-channel switch. */
+const msgWhere = (m) => m?.channel ?? (m?.channelId ? { id: m.channelId } : null);
+const CHANNEL_EVENTS = {
+  messageCreate: msgWhere, messageUpdate: (o, n) => msgWhere(n ?? o), messageDelete: msgWhere,
+  messageReactionAdd: (r) => msgWhere(r?.message), messageReactionRemove: (r) => msgWhere(r?.message),
+};
 export const cmdJson = (c) => (typeof c?.data?.toJSON === 'function' ? c.data.toJSON() : c?.data);
 
 
@@ -89,8 +98,10 @@ function withTimeout(promise, ms, label) {
 }
 
 export class ModuleManager {
-  constructor({ db, perms, queue, builtins = [], log = logger }) {
+  constructor({ db, perms, queue, builtins = [], log = logger, dataDir = null }) {
     this.db = db;
+    /** Where modules keep files (ticket archives). Tests without one get a temporary folder. */
+    this.dataDir = dataDir ?? process.env.GOODBOY_DATA_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), 'goodboy-data-'));
     this.perms = perms;
     this.queue = queue;
     this.log = log;
@@ -268,6 +279,8 @@ export class ModuleManager {
       get client() { return self.client; },
       get guild() { return self.client?.guilds.cache.get(guildId) ?? null; },
       hasIntent: (n) => self.intents.has(n),
+      /** A folder for this module's files in this server (made when first asked for). */
+      fileDir: (...parts) => { const d = path.join(self.dataDir, 'files', name, guildId, ...parts.map((x) => String(x).replace(/[^\w.-]/g, '_'))); fs.mkdirSync(d, { recursive: true }); return d; },
       log: {
         info: (m, meta) => self.log.info(tag(m), { guild: guildId, ...meta }),
         warn: (m, meta) => { self.log.warn(tag(m), { guild: guildId, ...meta }); self.db.addLog(guildId, name, 'warn', m); },
@@ -576,12 +589,36 @@ export class ModuleManager {
     catch (err) { if (!(err instanceof UserError)) this.recordError(name, guildId, what, err); else this.log.debug?.(`${name} ${what}: ${err.message}`); }
   }
 
+  // ------------------------------------------------------------------ per-channel switch (3.0)
+  /** Channels or categories where a module is switched off. Safety modules never are. */
+  offIn(guildId, name) {
+    if (NEVER_OFF_HERE.has(name)) return [];
+    const v = this.db.getConfig(guildId, name, OFF_KEY);
+    return Array.isArray(v) ? v.filter((x) => SNOWFLAKE.test(String(x))) : [];
+  }
+  setOffIn(guildId, name, ids) {
+    if (NEVER_OFF_HERE.has(name)) throw new UserError('Moderation, logs and tickets always work everywhere, so they cannot be switched off in a channel.');
+    const clean = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter((x) => SNOWFLAKE.test(x)))].slice(0, 100);
+    this.db.setConfig(guildId, name, OFF_KEY, clean);
+    return clean;
+  }
+  /** Is the module switched off where this happened? channel: a channel object or { id, parentId }. */
+  isOffHere(guildId, name, channel) {
+    if (!channel) return false;
+    const list = this.offIn(guildId, name);
+    if (!list.length) return false;
+    const parent = channel.parentId ?? null, grand = channel.isThread?.() ? channel.parent?.parentId ?? null : null;
+    return !!(list.includes(channel.id) || (parent && list.includes(parent)) || (grand && list.includes(grand)));
+  }
+
   async dispatch(eventName, guildId, ...args) {
     const act = this.active.get(guildId);
     if (!act) return;
     const jobs = [];
+    const where = CHANNEL_EVENTS[eventName]?.(...args) ?? null;
     for (const [name, def] of act) {
       const handler = def.events?.[eventName];
+      if (handler && where && this.isOffHere(guildId, name, where)) continue;
       if (handler) jobs.push(this.#guard(name, guildId, `event ${eventName}`, () => handler(this.ctx(guildId, name), ...args)));
     }
     await Promise.all(jobs);
@@ -737,6 +774,7 @@ export class ModuleManager {
       if (cmd.permission && !this.perms.check(interaction.member, cmd.permission)) {
         return await this.reply(interaction, `You don't have permission for that. (\`${cmd.permission}\` - by default: ${this.perms.describeDefault(cmd.permission)})`);
       }
+      if (this.isOffHere(guildId, def.name, interaction.channel) && !this.perms.isAdmin(interaction.member)) return await this.reply(interaction, 'That is switched off in this channel. Try it in another one.');
       if (await this.#autoPopup(interaction, cmd)) return;
       stopNet = this.#deferNet(interaction, cmd.defer ?? 'ephemeral');
       await cmd.execute(this.ctx(guildId, def.name), interaction);
@@ -881,7 +919,7 @@ export class ModuleManager {
     return [...this.defs.values()].map(({ def }) => ({
       name: def.name, version: def.version, type: def.type, description: def.description ?? '',
       requires: def.requires ?? null, dependencies: def.dependencies ?? [],
-      enabled: this.isActive(guildId, def.name), status: this.status(def.name),
+      enabled: this.isActive(guildId, def.name), status: this.status(def.name), offChannels: this.offIn(guildId, def.name), canSwitchOffHere: !NEVER_OFF_HERE.has(def.name),
       settings: (def.settings ?? []).map((s) => ({ ...s })),
       values: this.getSettingValues(guildId, def.name),
       permissions: (def.permissions ?? []).map((p) => ({ key: p.key, label: p.label, default: p.default ?? 'admin', roles: this.db.permRoles(guildId, p.key) })),

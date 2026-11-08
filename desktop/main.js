@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { normalize } from './lib/settings.js';
 import { checkBotDir, findNode, isSafeDashboardUrl, isDashboardWindowUrl, dashboardUrl, dashboardPort } from './lib/checks.js';
 import { BotRunner } from './lib/runner.js';
-import { Vault, SecretFile } from './lib/vault.js';
+import { Vault } from './lib/vault.js';
 import { parseEnv, safeBotSettings, looksLikeToken } from './lib/envfile.js';
 import { readEdition } from './lib/edition.js';
 import { ensureBotCode, seedData } from './lib/botinstall.js';
@@ -25,8 +25,8 @@ import { takeControl } from './lib/takeover.js';
 import { Share, shareSettings, isTailscaleLink } from './lib/share.js';
 import { updateMode, channelFor, readLatest, latestApi, releasesPage, restartPlan } from './lib/updater.js';
 import { brandStatus, applyBrand, applyCustom } from './lib/brand.js';
-import { createLicense, verifyLicense, generateKeyPair, hasFeature, FEATURES } from './lib/license.js';
-import { signModule, verifyModule, moduleNameOf } from './lib/modsign.js';
+import { verifyLicense, hasFeature, readCancelList, CANCEL_LIST_URL } from './lib/license.js';
+import { verifyModule, moduleNameOf } from './lib/modsign.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const startHidden = process.argv.includes('--hidden');
@@ -53,8 +53,7 @@ const P = {
   dataDir: () => path.join(app.getPath('userData'), 'bot-data'),
   settings: () => path.join(app.getPath('userData'), 'settings.json'),
   vault: () => path.join(app.getPath('userData'), 'secrets.bin'),
-  licenseKey: () => path.join(app.getPath('userData'), 'licence-signing-key.bin'),
-  issued: () => path.join(app.getPath('userData'), 'licences-issued.json'),
+  cancelList: () => path.join(app.getPath('userData'), 'licences-cancelled.json'),
   publicKey: path.join(here, 'license-public-key.pem'),
   extraModules: () => path.join(app.getPath('userData'), 'bot-modules'),
 };
@@ -83,7 +82,7 @@ const nodePath = () => (bundled ? P.bundledNode : nodeInfo.path || 'node');
 /** Environment for the bot: the computer's basics plus the saved bot settings. Nothing from Electron leaks in. */
 function childEnv() {
   const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(ELECTRON_|NODE_OPTIONS$|GOODBOY_SMOKE)/i.test(k)));
-  const brandEnv = whiteLabel() && edition.id !== 'owner' ? { GOODBOY_WHITELABEL: '1', GOODBOY_VERSION_IN_DESCRIPTION: 'false' } : {};
+  const brandEnv = whiteLabel() && edition.id !== 'owner' ? { GOODBOY_WHITELABEL: '1' } : {};
   return bundled ? { ...base, ...vault.read(), ...brandEnv, GOODBOY_DATA_DIR: P.dataDir(), GOODBOY_EXTRA_MODULES: P.extraModules() } : base;
 }
 
@@ -93,7 +92,7 @@ function recheck() {
     const v = vault.read();
     redirectUri = redirectUriFor(v);
     if (!knownAppId) knownAppId = appIdFromToken(v.DISCORD_TOKEN);
-    licence = settings.license ? verifyLicense(settings.license, publicKey, { appId: appIdFromToken(v.DISCORD_TOKEN) }) : { ok: false };
+    licence = settings.license ? verifyLicense(settings.license, publicKey, { appId: appIdFromToken(v.DISCORD_TOKEN), revoked: cancelled().revoked }) : { ok: false };
     const problems = [];
     if (!prep.done) problems.push(prep.error || 'Getting the bot ready...');
     if (!v.DISCORD_TOKEN) problems.push('Finish setup: Good Boy needs your bot token.');
@@ -134,6 +133,16 @@ async function openDashboard() {
   showWindow();
   send('goto', 'dashboard');
 }
+/** Right-click: cut, copy, paste and select all in text boxes, copy on selected text, and copy a link's address. */
+function addContextMenu(wc) {
+  wc.on('context-menu', (_e, p) => {
+    const items = [];
+    if (p.isEditable) items.push({ role: 'cut', enabled: p.editFlags.canCut }, { role: 'copy', enabled: p.editFlags.canCopy }, { role: 'paste', enabled: p.editFlags.canPaste }, { type: 'separator' }, { role: 'selectAll' });
+    else if (p.selectionText?.trim()) items.push({ role: 'copy' });
+    if (/^https?:\/\//.test(p.linkURL || '')) items.push(...(items.length ? [{ type: 'separator' }] : []), { label: 'Copy link address', click: () => clipboard.writeText(p.linkURL) });
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win ?? undefined });
+  });
+}
 function makeDashView() {
   if (dashView) return dashView;
   dashView = new WebContentsView({ webPreferences: { partition: 'persist:dashboard', contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
@@ -143,6 +152,7 @@ function makeDashView() {
   const external = (u) => { if (/^https:\/\//.test(u)) shell.openExternal(u); };
   wc.setWindowOpenHandler(({ url: u }) => { external(u); return { action: 'deny' }; });
   wc.on('will-navigate', (e, u) => { if (!dashOrigin || new URL(u).origin !== dashOrigin) { e.preventDefault(); external(u); } });
+  addContextMenu(wc);
   wc.on('render-process-gone', () => { dashLoaded = false; send('dash', { state: 'error', message: 'The dashboard stopped. Click Reload.' }); });
   wc.on('did-fail-load', (_e, code, desc, _u, main) => { if (main && code !== -3) { dashLoaded = false; send('dash', { state: 'error', message: `The dashboard didn't load (${desc}).` }); } });
   return dashView;
@@ -213,6 +223,7 @@ async function prepare() {
   if (settings.startBotWithApp && ready() && !smokeDir) startBot();
   if (!smokeDir && settings.shareAuto) { setTimeout(() => keepShared().catch((e) => log(`share: ${e.message}`)), 8000); setInterval(() => keepShared().catch(() => {}), 30 * 60000).unref?.(); }
   if (!smokeDir) { setTimeout(() => keepBrand().catch(() => {}), 20000); setInterval(() => keepBrand().catch(() => {}), 6 * 3600000).unref?.(); }
+  if (!smokeDir) { setTimeout(() => refreshCancelList(), 30000); setInterval(() => refreshCancelList(), 12 * 3600000).unref?.(); }
 }
 
 // ---- windows
@@ -249,6 +260,7 @@ function createWindow() {
   });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+  addContextMenu(win.webContents);
   if (smokeDir) {
     win.webContents.once('did-finish-load', () => { log('page loaded'); setTimeout(() => smokeCheck().catch((e) => { log(`smoke error ${e.stack}`); app.exit(1); }), 1500); });
     win.webContents.on('did-fail-load', (_e, code, desc) => log(`page failed to load: ${code} ${desc}`));
@@ -295,7 +307,7 @@ async function smokeCheck() {
   if (process.env.GOODBOY_SMOKE_SEED) out.seed = await runTool({ nodePath: nodePath(), botDir: botDir(), args: ['import', process.env.GOODBOY_SMOKE_SEED, P.dataDir()] });
   await applySettings({ setupComplete: true, theme: 'light' });
   recheck(); send('state', snapshot()); await wait(900);
-  for (const page of ['overview', 'levels', 'modules', 'log', 'updates', ...(edition.features.includes('licenses') ? ['licenses'] : []), 'settings']) {
+  for (const page of ['overview', 'levels', 'modules', 'log', 'updates', 'settings']) {
     await js(`document.querySelector('[data-nav="${page}"]')?.click()`); await wait(900);
     out.pages[page] = await js(`(() => { const m = document.querySelector('main'); return { shown: m?.dataset.page, text: (m?.innerText || '').slice(0, 300), groups: document.querySelectorAll('main .group').length }; })()`);
     await shot(`page-${page}`);
@@ -456,16 +468,19 @@ async function keepBrand() {
   log(`Good Boy look kept up: ${parts.join(', ')}`);
 }
 ipcMain.handle('gb:brand-custom', async (_e, form) => {
-  if (!whiteLabel()) return { ok: false, error: 'Your own name and picture come with a white-label licence.' };
-  let image = null, mime = 'image/png';
-  if (form?.pickImage) {
-    const r = await dialog.showOpenDialog(win, { title: 'Choose a profile picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'gif'] }] });
-    if (r.canceled || !r.filePaths[0]) return { ok: false, cancelled: true };
-    const st = fs.statSync(r.filePaths[0]);
-    if (st.size > 8 * 1024 * 1024) return { ok: false, error: 'That picture is too big. Discord takes up to 8 MB.' };
-    image = fs.readFileSync(r.filePaths[0]); mime = /\.jpe?g$/i.test(r.filePaths[0]) ? 'image/jpeg' : /\.gif$/i.test(r.filePaths[0]) ? 'image/gif' : 'image/png';
-  }
-  return applyCustom(savedToken(), { name: form?.name ? String(form.name) : null, image, mime });
+  if (!whiteLabel()) return { ok: false, error: 'Your own name, picture, banner and description come with a white-label licence.' };
+  const pick = async (title) => {
+    const r = await dialog.showOpenDialog(win, { title, properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'gif'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    if (fs.statSync(r.filePaths[0]).size > 8 * 1024 * 1024) throw new Error('That picture is too big. Discord takes up to 8 MB.');
+    return { data: fs.readFileSync(r.filePaths[0]), mime: /\.jpe?g$/i.test(r.filePaths[0]) ? 'image/jpeg' : /\.gif$/i.test(r.filePaths[0]) ? 'image/gif' : 'image/png' };
+  };
+  try {
+    const opts = { name: form?.name ? String(form.name) : null, description: form?.description == null ? null : String(form.description), version: app.getVersion() };
+    if (form?.pickImage) { const p = await pick('Choose a profile picture'); if (!p) return { ok: false, cancelled: true }; opts.image = p.data; opts.mime = p.mime; }
+    if (form?.pickBanner) { const p = await pick('Choose a banner (about 680 x 240)'); if (!p) return { ok: false, cancelled: true }; opts.banner = p.data; opts.bannerMime = p.mime; }
+    return await applyCustom(savedToken(), opts);
+  } catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle('gb:brand-apply', async () => {
   const current = await verifyToken(savedToken());
@@ -478,33 +493,26 @@ ipcMain.handle('gb:brand-apply', async () => {
   return { ok: true, results: r.results, ...(after.ok ? { bot: after.bot, ...brandStatus(after, keep) } : {}) };
 });
 
-// ---- licences: the Owner app makes them, every app can use one
-const licenceKeys = () => new SecretFile(P.licenseKey(), safeStorage);
-const readIssued = () => { try { return JSON.parse(fs.readFileSync(P.issued(), 'utf8')).issued ?? []; } catch { return []; } };
-const writeIssued = (list) => { fs.mkdirSync(path.dirname(P.issued()), { recursive: true }); fs.writeFileSync(P.issued(), JSON.stringify({ issued: list }, null, 2)); };
-const ownerOnly = () => { if (!edition.features.includes('licenses')) throw new Error('Only the Owner version can make licences.'); };
-ipcMain.handle('gb:lic-state', () => {
-  if (!edition.features.includes('licenses')) return { owner: false };
-  const k = licenceKeys().read();
-  return { owner: true, hasKey: !!k, publicKey: k?.publicKey ?? null, builtInKeyMatches: !!k && !!publicKey && k.publicKey.trim() === publicKey.trim(), issued: readIssued(), features: FEATURES };
-});
-ipcMain.handle('gb:lic-keygen', () => {
-  try { ownerOnly(); if (licenceKeys().read()) return { ok: false, error: 'You already have a signing key. Making a new one would stop every licence you gave out.' }; licenceKeys().write(generateKeyPair()); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
-});
-ipcMain.handle('gb:lic-create', (_e, form) => {
+// ---- licences: made in Licence Studio (owner only, separate app); every app can use one
+/** The newest genuine cancel list this app has seen. */
+function cancelled() {
+  let text = null; try { text = fs.readFileSync(P.cancelList(), 'utf8'); } catch { /* none yet */ }
+  return readCancelList(text, publicKey) ?? { at: 0, revoked: [] };
+}
+async function refreshCancelList() {
+  if (!publicKey) return;
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
   try {
-    ownerOnly();
-    const k = licenceKeys().read();
-    if (!k) return { ok: false, error: 'Make your signing key first.' };
-    const f = form && typeof form === 'object' ? form : {};
-    const { key, payload } = createLicense({ privateKey: k.privateKey, appId: String(f.appId ?? '').trim(), to: String(f.to ?? ''), days: f.days === 'lifetime' ? null : Number(f.days), until: f.until || null, features: Array.isArray(f.features) ? f.features.map(String) : [] });
-    writeIssued([{ ...payload, key, revoked: false }, ...readIssued()]);
-    return { ok: true, key, payload };
-  } catch (e) { return { ok: false, error: e.message }; }
-});
-ipcMain.handle('gb:lic-revoke', (_e, id) => {
-  try { ownerOnly(); writeIssued(readIssued().map((x) => (x.id === String(id) ? { ...x, revoked: true } : x))); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
-});
+    const r = await fetch(CANCEL_LIST_URL, { signal: ctl.signal, cache: 'no-store' });
+    if (!r.ok) return;
+    const text = await r.text();
+    const list = readCancelList(text, publicKey);
+    if (!list || list.at <= cancelled().at) return;
+    fs.mkdirSync(path.dirname(P.cancelList()), { recursive: true }); fs.writeFileSync(P.cancelList(), text);
+    const before = licence.ok; recheck();
+    if (before && !licence.ok) { log('licence cancelled'); send('state', snapshot()); }
+  } catch { /* offline: keep the last list */ } finally { clearTimeout(t); }
+}
 ipcMain.handle('gb:lic-apply', async (_e, key) => {
   const k = String(key ?? '').trim();
   if (!k) { await applySettings({ license: '' }); recheck(); send('state', snapshot()); return { ok: true, removed: true }; }
@@ -537,16 +545,6 @@ ipcMain.handle('gb:module-add', async () => {
   const loaded = await runner.control('modules-load', {});
   if (!loaded.ok || !loaded.added?.includes(name)) { fs.rmSync(dest, { recursive: true, force: true }); return { ok: false, error: loaded.errors?.[name] ?? loaded.error ?? 'The bot could not load it.' }; }
   return { ok: true, name, signed: sig.ok, version: check.version };
-});
-ipcMain.handle('gb:module-sign', async () => {
-  try {
-    ownerOnly();
-    const k = licenceKeys().read();
-    if (!k) return { ok: false, error: 'Make your signing key first (Licences page).' };
-    const r = await dialog.showOpenDialog(win, { title: 'Choose the module folder to sign', properties: ['openDirectory'] });
-    if (r.canceled || !r.filePaths[0]) return { ok: false, cancelled: true };
-    return { ok: true, ...signModule(r.filePaths[0], k.privateKey) };
-  } catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle('gb:save-settings', (_e, patch) => applySettings(patch));
 

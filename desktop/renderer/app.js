@@ -213,7 +213,7 @@ const PAGES = {
     const running = S.bot.state === 'running';
     const add = async () => { const r = await gb.moduleAdd(); if (r.cancelled) return; if (!r.ok) return toast(r.error, true); toast(r.later ? `${prettyModule(r.name)} was added. It loads the next time the bot starts.` : `${prettyModule(r.name)} was added. Turn it on below.`); refreshModules(true); };
     return [el('div', { class: 'titlerow' }, el('div', {}, el('h1', {}, 'Modules'), el('p', { class: 'sub' }, running ? `Features for ${MOD.live?.guildName ?? 'your server'}. Switch them on or off here.` : 'Start the bot to switch modules on or off.')),
-        el('div', { class: 'actions' }, el('button', { class: 'btn', onclick: add }, 'Add module...'), has('licenses') ? el('button', { class: 'btn quiet', onclick: async () => { const r = await gb.moduleSign(); if (r.cancelled) return; toast(r.ok ? `Signed ${r.name}. Anyone's Good Boy can now add it.` : r.error, !r.ok); } }, 'Sign a module...') : null)),
+        el('div', { class: 'actions' }, el('button', { class: 'btn', onclick: add }, 'Add module...'))),
       moduleRows(999), dashboardCallout('Every module\'s settings, panels and permissions are in the dashboard.'),
       el('p', { class: 'note' }, S.edition.id === 'consumer' ? 'For safety, only modules signed by Basic Ghost Labs can be added. A module is code that runs inside your bot.' : 'A module is code that runs inside your bot. Only add modules you trust.')];
   },
@@ -278,42 +278,6 @@ const PAGES = {
               el('div', { class: 'row' }, el('button', { class: 'btn quiet', onclick: () => gb.chooseNode() }, 'Choose node...')))]))];
   },
   setup() { return wizard(); },
-  licenses() {
-    const L = LIC.state;
-    if (!L) { refreshLic(); return [el('h1', {}, 'Licences'), el('p', { class: 'sub' }, 'Loading...')]; }
-    if (!L.hasKey) return [el('h1', {}, 'Licences'), el('p', { class: 'sub' }, 'Give other servers a white-label licence for a set time.'),
-      el('div', { class: 'group' }, el('div', { class: 'row inset' }, tile('key', 'amber'), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Make your signing key'), el('span', { class: 'meta' }, 'Licences are signed with a key that stays on this computer, encrypted. Nobody can make or change a licence without it.')),
-        el('span', { class: 'val' }, el('button', { class: 'btn', onclick: async () => { const r = await gb.licKeygen(); if (!r.ok) return toast(r.error, true); toast('Signing key made.'); LIC.state = null; render(); } }, 'Make key'))))];
-    const f = LIC.form;
-    const durations = [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['365', '1 year'], ['lifetime', 'Lifetime'], ['date', 'Pick a date']];
-    const appIn = el('input', { value: f.appId, placeholder: 'For example 1469714389648015571', inputmode: 'numeric', oninput: (e) => { f.appId = e.target.value.trim(); } });
-    const toIn = el('input', { value: f.to, placeholder: 'For example Joe\'s server', oninput: (e) => { f.to = e.target.value; } });
-    const dateIn = el('input', { type: 'date', value: f.until, oninput: (e) => { f.until = e.target.value; } });
-    const now = Date.now();
-    const status = (x) => (x.revoked ? ['tag off', 'Cancelled'] : x.exp && x.exp <= now ? ['tag wait', 'Ended'] : ['tag ok', 'Active']);
-    return [el('h1', {}, 'Licences'), el('p', { class: 'sub' }, 'White-label licences for other servers: their own bot name and picture, no Good Boy credit.'),
-      L.builtInKeyMatches ? null : el('div', { class: 'callout' }, el('b', {}, 'One-time step: build your key into Good Boy'),
-        el('p', {}, 'Other copies of Good Boy can only check your licences once your public key is built in. Copy it and send it to your developer; it is safe to share.'),
-        el('button', { class: 'link', onclick: async () => { await gb.copy(L.publicKey); toast('Public key copied.'); } }, 'Copy public key')),
-      el('div', { class: 'cols' },
-        el('div', {}, el('div', { class: 'section-title' }, 'New licence'), el('div', { class: 'group' },
-          el('div', { class: 'field' }, el('label', {}, 'Who it is for'), toIn),
-          el('div', { class: 'field' }, el('label', {}, 'Their bot\'s Application ID'), appIn, el('span', { class: 'meta' }, 'They find it in the Developer Portal: their app > General Information > Application ID.')),
-          el('div', { class: 'field' }, el('label', {}, 'How long'), el('span', { class: 'seg wrap', role: 'group' }, durations.map(([v, label]) => el('button', { 'aria-pressed': f.days === v, onclick: () => { f.days = v; render(); } }, label))), f.days === 'date' ? dateIn : null),
-          el('div', { class: 'row' }, el('span', { class: 'lab' }, 'White-label: own name and picture, no Good Boy credit'), el('input', { type: 'checkbox', class: 'switch', checked: true, disabled: true, 'aria-label': 'White-label' })),
-          el('div', { class: 'row' }, el('button', { class: 'btn', onclick: async () => {
-            const r = await gb.licCreate({ appId: f.appId, to: f.to, days: f.days === 'date' ? '' : f.days, until: f.days === 'date' ? f.until : '', features: ['whitelabel'] });
-            if (!r.ok) return toast(r.error, true);
-            LIC.last = r.key; LIC.state = null; await gb.copy(r.key); toast('Licence made and copied. Send it to them.'); refreshLic();
-          } }, 'Create licence'))),
-          LIC.last ? el('div', { class: 'redirect' }, el('b', {}, 'New licence key'), el('div', { class: 'copyrow' }, el('code', { class: 'key' }, LIC.last), el('button', { class: 'btn quiet', onclick: async () => { await gb.copy(LIC.last); toast('Copied.'); } }, 'Copy'))) : null),
-        el('div', {}, el('div', { class: 'section-title' }, `Licences you made (${L.issued.length})`), el('div', { class: 'group' },
-          L.issued.length ? L.issued.map((x) => { const [cls, label] = status(x); return el('div', { class: 'row' }, el('div', { class: 'two' }, el('span', { class: 'lab' }, x.to || 'No name'), el('span', { class: 'meta' }, `Bot ${x.app} · ${x.exp ? `until ${new Date(x.exp).toLocaleDateString()}` : 'lifetime'}`)),
-            el('span', { class: 'val' }, el('span', { class: cls }, label), el('button', { class: 'link', onclick: async () => { await gb.copy(x.key); toast('Copied.'); } }, 'Copy'),
-              x.revoked ? null : el('button', { class: 'link', onclick: async () => { await gb.licRevoke(x.id); LIC.state = null; toast('Licence cancelled.'); refreshLic(); } }, 'Cancel'))); })
-            : el('div', { class: 'empty' }, 'No licences yet.')),
-          el('p', { class: 'note' }, 'Cancelling marks the licence here. It stops working on their side once update publishing is set up, because cancelled keys are shared along with updates.')))];
-  },
 };
 let forceSetup = false;
 
@@ -370,19 +334,22 @@ function shareGroup() {
 const W = { step: 'welcome', token: '', verify: null, checking: false, secret: '', imported: null };
 const STEPS = ['token', 'secret', 'brand', 'invite', 'done'];
 const B = { status: null, busy: false, results: null };
-const LIC = { state: null, form: { appId: '', to: '', days: '30', until: '' }, last: null, loading: false };
-async function refreshLic() { if (LIC.loading) return; LIC.loading = true; LIC.state = await gb.licState(); LIC.loading = false; render(); }
 function brandGroup() {
   const st = B.status;
   if (!st && !B.asked) { B.asked = true; refreshBrand(); }
   if (S.whiteLabel) {
     const nameIn = el('input', { placeholder: 'Bot name', maxlength: '32', 'aria-label': 'Bot name' });
+    const descIn = el('textarea', { placeholder: 'What your bot is about', maxlength: '360', rows: '3', 'aria-label': 'Bot description' });
+    const done = (what) => (r) => { if (!r.cancelled) toast(r.ok ? `${what} changed.` : r.error, !r.ok); };
     return [el('div', { class: 'section-title' }, 'Your bot\'s look'), el('div', { class: 'group' },
       el('div', { class: 'field' }, el('label', {}, 'Name'), nameIn),
-      el('div', { class: 'row' }, el('button', { class: 'btn', onclick: async () => { const r = await gb.brandCustom({ name: nameIn.value }); toast(r.ok ? 'Name changed.' : r.error, !r.ok); } }, 'Save name'),
-        el('button', { class: 'btn quiet', onclick: async () => { const r = await gb.brandCustom({ pickImage: true }); if (r.cancelled) return; toast(r.ok ? 'Picture changed.' : r.error, !r.ok); } }, 'Choose picture...'),
+      el('div', { class: 'row' }, el('button', { class: 'btn', onclick: async () => done('Name')(await gb.brandCustom({ name: nameIn.value })) }, 'Save name')),
+      el('div', { class: 'row' }, el('button', { class: 'btn quiet', onclick: async () => done('Picture')(await gb.brandCustom({ pickImage: true })) }, 'Choose picture...'),
+        el('button', { class: 'btn quiet', onclick: async () => done('Banner')(await gb.brandCustom({ pickBanner: true })) }, 'Choose banner...')),
+      el('div', { class: 'field' }, el('label', {}, 'Description'), descIn),
+      el('div', { class: 'row' }, el('button', { class: 'btn', onclick: async () => done('Description')(await gb.brandCustom({ description: descIn.value })) }, 'Save description'),
         el('button', { class: 'link', disabled: B.busy, onclick: applyBrandNow }, 'Use the Good Boy look'))),
-      el('p', { class: 'note' }, 'Your licence lets you use your own name and picture.')];
+      el('p', { class: 'note' }, 'Your licence lets you use your own name, picture, banner and description. A short "Good Boy" credit line stays at the end of the description.')];
   }
   return [el('div', { class: 'section-title' }, 'Good Boy look'), el('div', { class: 'group' }, el('div', { class: 'row inset' }, el('img', { class: 'mini', src: 'brand/avatar.png', alt: '' }), el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Name, picture and banner on Discord'), el('span', { class: 'meta' }, st ? (st.done ? 'Your bot looks like Good Boy. It is kept that way automatically.' : 'Some parts are not set yet. Good Boy keeps trying in the background.') : 'Checking...')),
     el('span', { class: 'val' }, el('button', { class: st?.done ? 'btn quiet' : 'btn', disabled: B.busy, onclick: applyBrandNow }, B.busy ? 'Applying...' : st?.done ? 'Apply again' : 'Apply'))))];
@@ -583,7 +550,7 @@ async function finishSetup(start) {
 const NAV = () => [
   ['Server', [['dashboard', 'Dashboard', 'grid', 'indigo']]],
   ['Bot', [['overview', 'Overview', 'home', 'blue'], ['levels', 'Levels', 'star', 'amber', sum?.memberCount], ['modules', 'Modules', 'puzzle', 'violet', (sum?.modules ?? []).length || null], ['log', 'Log', 'log', 'gray']]],
-  [S.edition.id === 'owner' ? 'Owner' : 'App', [['updates', 'Updates', 'down', 'mint'], ...(has('licenses') ? [['licenses', 'Licences', 'key', 'amber']] : []), ['settings', 'Settings', 'gear', 'teal']]],
+  [S.edition.id === 'owner' ? 'Owner' : 'App', [['updates', 'Updates', 'down', 'mint'], ['settings', 'Settings', 'gear', 'teal']]],
 ];
 function go(p) { page = p; render(); }
 

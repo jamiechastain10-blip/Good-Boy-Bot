@@ -1,0 +1,8 @@
+# The Good Boy hub (Cloudflare Worker). See README.md in this folder.
+name = "goodboy-hub"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[[kv_namespaces]]
+binding = "HUB"
+id = "PUT-YOUR-KV-NAMESPACE-ID-HERE"

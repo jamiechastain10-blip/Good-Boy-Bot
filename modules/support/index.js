@@ -19,8 +19,10 @@ import { formStore } from '../../src/forms.js';
 import { formModal, readForm } from '../../src/modalkit.js';
 import {
   URGENCY, CATEGORIES, CLOSE_FIELDS, CLOSE_KINDS, findCategory, questionsFor, parseReported, matchWatch, describeMatches,
-  outcomeLabel, readCloseForm, inactive, summarize, normalizeName,
+  outcomeLabel, readCloseForm, inactive, summarize, normalizeName, reportedFrom, accountCreated, ageText,
 } from '../../src/tickets.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
@@ -105,6 +107,11 @@ async function logTo(ctx, payload, { staffOnly = false } = {}) {
 function historyEnsure(ctx, t, channelId) {
   ctx.sql.run(`INSERT OR IGNORE INTO support_history (guild_id, number, channel_id, opener_id, opener_tag, category, category_label, urgency, opened_at, first_response_at, claimed_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, ctx.guildId, t.number, channelId, t.opener, t.openerTag, t.category ?? t.type ?? 'other', t.typeLabel, t.priority ?? 'normal', t.createdAt, t.firstResponseAt ?? null, t.claimedBy ?? null);
+}
+/** Who the ticket is about, the answers and the kept files, for the archive. */
+function historyDetails(ctx, t) {
+  ctx.sql.run('UPDATE support_history SET reported_id = ?, reported_name = ?, details = ? WHERE guild_id = ? AND number = ?',
+    t.report?.id ?? null, t.report?.name ?? t.people?.about?.name ?? null, JSON.stringify({ answers: t.answers ?? [], people: t.people ?? null, files: t.files ?? [] }), ctx.guildId, t.number);
 }
 function historyClose(ctx, t, channelId, f) {
   historyEnsure(ctx, t, channelId);
@@ -203,10 +210,87 @@ function checkLimit(ctx, user) {
   if (mine.length >= max) throw new UserError(`You already have ${mine.length} open ticket(s): ${mine.map((t) => `<#${t.key.slice(7)}>`).join(' ')}`);
 }
 
-async function openTicket(ctx, i, cat, answers, reported) {
+// ------------------------------------------------------------------ evidence, member cards and the archive
+const MAX_FILE = 25 * 1024 * 1024, MAX_REPOST = 10 * 1024 * 1024, MAX_TOTAL = 60 * 1024 * 1024;
+const safeName = (n) => String(n ?? 'file').replace(/[^\w.-]+/g, '_').replace(/^\.+/, '').slice(0, 80) || 'file';
+/** Downloads files straight away: Discord's links to uploads stop working after about a day. Returns { name, buf, contentType, size, error }. */
+async function download(files, fetchFn = globalThis.fetch) {
+  const out = [];
+  let total = 0;
+  for (const f of files.slice(0, 10)) {
+    if (!/^https:\/\//.test(f.url)) { out.push({ ...f, error: 'not a Discord file link' }); continue; }
+    if (f.size > MAX_FILE || total + (f.size ?? 0) > MAX_TOTAL) { out.push({ ...f, error: 'too big to keep' }); continue; }
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const r = await fetchFn(f.url, { signal: ctl.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > MAX_FILE) throw new Error('too big to keep');
+      total += buf.length;
+      out.push({ name: safeName(f.name), buf, contentType: f.contentType, size: buf.length });
+    } catch (e) { out.push({ ...f, error: e.name === 'AbortError' ? 'took too long to download' : e.message }); } finally { clearTimeout(t); }
+  }
+  return out;
+}
+/** Keeps a ticket file on this computer. Returns the stored name. */
+function keepFile(ctx, number, prefix, name, buf) {
+  const stored = `${prefix}-${safeName(name)}`;
+  fs.writeFileSync(path.join(ctx.fileDir('tickets', number), stored), buf);
+  return stored;
+}
+
+/** A member's card: name, id, account age and when they joined (or that they are not in the server). */
+async function personCard(ctx, id, fallbackName = null) {
+  if (!id) return { id: null, name: fallbackName, lines: [`**${fallbackName ?? 'Unknown'}** · no user ID given`], avatar: null, inServer: false };
+  const member = await ctx.guild?.members.fetch(id).catch(() => null);
+  const user = member?.user ?? await ctx.client?.users?.fetch?.(id).catch(() => null);
+  const name = user?.username ?? fallbackName ?? id;
+  let made = null; try { made = accountCreated(id); } catch { /* not an id */ }
+  const lines = [`**${member?.displayName && member.displayName !== name ? `${member.displayName} (@${name})` : `@${name}`}** · \`${id}\``];
+  if (made) lines.push(`Account made <t:${Math.floor(made / 1000)}:D> (${ageText(made)} ago)`);
+  lines.push(member?.joinedTimestamp ? `Joined <t:${Math.floor(member.joinedTimestamp / 1000)}:D> (${ageText(member.joinedTimestamp)} ago)` : member ? 'In the server' : 'Not in the server');
+  return { id, name, lines, avatar: user?.displayAvatarURL?.({ size: 128 }) ?? null, inServer: !!member, created: made, joined: member?.joinedTimestamp ?? null };
+}
+
+/** What staff should know about someone: their moderation history, reports about them and their earlier tickets. Staff only. */
+function staffFacts(ctx, id) {
+  if (!id) return null;
+  const hist = ctx.api('moderation')?.history?.(ctx.guildId, id) ?? [];
+  const count = (t) => hist.filter((e) => e.type === t).length;
+  const reports = ctx.sql.all('SELECT status, ticket_number, created_at FROM support_watch WHERE guild_id = ? AND target_id = ? ORDER BY id DESC', ctx.guildId, id);
+  const tickets = ctx.sql.get('SELECT COUNT(*) AS n FROM support_history WHERE guild_id = ? AND opener_id = ?', ctx.guildId, id).n;
+  const last = hist.slice(0, 3).map((e) => `· ${e.type} <t:${Math.floor(e.at / 1000)}:d>${e.reason ? `: ${truncate(e.reason, 60)}` : ''}`);
+  return {
+    warnings: count('warn'), timeouts: count('timeout'), kicks: count('kick'), bans: count('ban'), reports: reports.length,
+    confirmed: reports.filter((r) => r.status === 'confirmed').length, tickets,
+    text: [`Warnings **${count('warn')}** · timeouts **${count('timeout')}** · kicks **${count('kick')}** · bans **${count('ban')}**`,
+      `Reported **${reports.length}** time${reports.length === 1 ? '' : 's'} before${reports.length ? ` (${reports.filter((r) => r.status === 'confirmed').length} confirmed)` : ''} · opened **${tickets}** ticket${tickets === 1 ? '' : 's'}`,
+      ...last].join('\n'),
+  };
+}
+
+/** Saves one ticket message in the archive (and its attachments on this computer). */
+async function archiveMessage(ctx, number, message, { fetchFn } = {}) {
+  const files = [...(message.attachments?.values?.() ?? [])].map((a) => ({ name: a.name, url: a.url, size: a.size, contentType: a.contentType }));
+  const kept = [];
+  if (files.length) {
+    for (const [k, f] of (await download(files, fetchFn)).entries()) kept.push(f.error ? { name: safeName(f.name), error: f.error } : { name: f.name, stored: keepFile(ctx, number, `${message.id}-${k}`, f.name, f.buf), size: f.size, contentType: f.contentType ?? null });
+  }
+  const embeds = (message.embeds ?? []).map((e) => { const d = e.toJSON?.() ?? e.data ?? e; return { title: d.title ?? null, description: d.description ?? null, fields: (d.fields ?? []).map((x) => ({ name: x.name, value: x.value })), color: d.color ?? null }; });
+  ctx.sql.run(`INSERT OR REPLACE INTO support_archive (guild_id, number, message_id, channel_id, author_id, author_name, author_avatar, bot, content, embeds, attachments, created_at, edited_at, deleted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)`, ctx.guildId, number, message.id, message.channelId, message.author?.id ?? null,
+  message.member?.displayName ?? message.author?.globalName ?? message.author?.username ?? 'Unknown', message.author?.displayAvatarURL?.({ size: 64 }) ?? null,
+  message.author?.bot ? 1 : 0, String(message.content ?? ''), JSON.stringify(embeds), JSON.stringify(kept), message.createdTimestamp ?? Date.now());
+  const text = [message.content, ...embeds.flatMap((e) => [e.title, e.description, ...e.fields.map((x) => `${x.name} ${x.value}`)])].filter(Boolean).join('\n');
+  ctx.sql.run('DELETE FROM support_archive_fts WHERE guild_id = ? AND message_id = ?', ctx.guildId, message.id);
+  if (text) ctx.sql.run('INSERT INTO support_archive_fts (content, guild_id, number, message_id) VALUES (?, ?, ?, ?)', text, ctx.guildId, number, message.id);
+}
+
+async function openTicket(ctx, i, cat, answers, reported, files = []) {
   await i.deferReply({ flags: EPH });
   const guild = i.guild;
   checkLimit(ctx, i.user);
+  const evidence = files.length ? await download(files) : [];
 
   const number = ctx.data.update('counter', (n) => n + 1, 0);
   const staffIds = staffRoleIds(ctx);
@@ -229,6 +313,7 @@ async function openTicket(ctx, i, cat, answers, reported) {
   const ticket = {
     number, opener: i.user.id, openerTag: i.user.tag, type: cat.id, category: cat.id, typeLabel: cat.label, status: 'open', claimedBy: null,
     priority: cat.urgency, createdAt: now, lastActivity: now, answers, report: reported?.id || reported?.name ? { id: reported.id, name: reported.name } : null,
+    files: evidence.map((f, k) => (f.error ? { name: safeName(f.name), error: f.error } : { name: f.name, stored: keepFile(ctx, number, `evidence-${k}`, f.name, f.buf), size: f.size })),
   };
 
   // Does this ticket touch anyone already on the watch log? (Checked before this ticket's own report is added.)
@@ -253,6 +338,34 @@ async function openTicket(ctx, i, cat, answers, reported) {
 
   const sent = await channel.send({ content: `<@${i.user.id}> ${staffIds.map((r) => `<@&${r}>`).join(' ')}`, embeds: [controlEmbed(ticket)], components: controlRows(ticket, cat), allowedMentions: { users: [i.user.id], roles: staffIds } });
   ticket.controlMessageId = sent.id; saveTicket(ctx, channel.id, ticket);
+
+  // Who is involved, filled in automatically (public details only; the staff log gets the history).
+  const opener = await personCard(ctx, i.user.id);
+  const about = ticket.report ? await personCard(ctx, ticket.report.id, ticket.report.name) : null;
+  const cards = new EmbedBuilder().setColor(urgencyOf(ticket).color).setTitle('Who is involved')
+    .addFields({ name: 'Opened by', value: opener.lines.join('\n'), inline: true }, ...(about ? [{ name: cat.report ? 'About' : 'Mentioned', value: about.lines.join('\n'), inline: true }] : []));
+  if (about?.avatar) cards.setThumbnail(about.avatar);
+  await channel.send({ embeds: [cards], allowedMentions: NOPING }).catch(() => {});
+  ticket.people = { opener: { id: opener.id, name: opener.name, created: opener.created, joined: opener.joined }, about: about ? { id: about.id, name: about.name, created: about.created ?? null, joined: about.joined ?? null, inServer: about.inServer } : null };
+  // Evidence: posted in the ticket so staff can see it, and kept on this computer for the archive.
+  const okFiles = evidence.filter((f) => !f.error);
+  const repost = okFiles.filter((f) => f.size <= MAX_REPOST);
+  const missed = evidence.filter((f) => f.error).map((f) => `${f.name} (${f.error})`);
+  if (okFiles.length || missed.length) {
+    await channel.send({ content: [`📎 Evidence from <@${i.user.id}>`, okFiles.length > repost.length ? `${okFiles.length - repost.length} large file(s) are kept in the ticket archive on the bot's computer.` : null, missed.length ? `Could not keep: ${missed.join(', ')}` : null].filter(Boolean).join('\n'),
+      files: repost.map((f) => new AttachmentBuilder(f.buf, { name: f.name })), allowedMentions: NOPING }).catch(() => {});
+  }
+  saveTicket(ctx, channel.id, ticket);
+  historyDetails(ctx, ticket);
+  const facts = staffFacts(ctx, ticket.report?.id ?? null);
+  const openerFacts = staffFacts(ctx, i.user.id);
+  if (facts || ticket.report || openerFacts?.reports) {
+    const staffInfo = new EmbedBuilder().setColor(urgencyOf(ticket).color).setTitle(`Ticket ${numberTag(ticket)} · background`).setDescription(`<#${channel.id}> · only staff see this.`);
+    if (about) staffInfo.addFields({ name: `About ${about.name ? `@${about.name}` : 'them'}`, value: [about.lines.slice(1).join(' · '), facts?.text ?? 'No user ID, so no history to look up.'].filter(Boolean).join('\n').slice(0, 1024) });
+    if (openerFacts) staffInfo.addFields({ name: `Opened by @${opener.name}`, value: openerFacts.text.slice(0, 1024) });
+    if (about?.avatar) staffInfo.setThumbnail(about.avatar);
+    await logTo(ctx, { embeds: [staffInfo] }, { staffOnly: true });
+  }
 
   await logTo(ctx, { embeds: [new EmbedBuilder().setColor(urgencyOf(ticket).color).setTitle(`${cat.urgency === 'urgent' ? '🚨 ' : ''}Ticket opened`).setDescription(`${numberTag(ticket)} (${cat.label}) · ${URGENCY[cat.urgency].label} · by <@${i.user.id}> → <#${channel.id}>`).setTimestamp()] });
   if (matches.length) {
@@ -326,16 +439,17 @@ async function onComponent(ctx, i) {
     const cat = findCategory(arg, customTypes(ctx));
     if (!cat || hidden(ctx).has(cat.id)) throw new UserError('That kind of ticket is not available any more.');
     checkLimit(ctx, i.user);
-    return i.showModal(modalFrom(`ticket:form:${cat.id}`, cat.label, questionsFor(cat)));
+    return i.showModal(formModal(`ticket:form:${cat.id}`, cat.label, questionsFor(cat)));
   }
   if (action === 'form') {
     const cat = findCategory(arg, customTypes(ctx));
     if (!cat || hidden(ctx).has(cat.id)) throw new UserError('That kind of ticket is not available any more.');
-    const get = getter(i);
     const qs = questionsFor(cat);
-    const answers = qs.map((q) => ({ q: q.label.replace(/ \(.*\)$/, ''), a: String(get(q.id) ?? '').trim() })).filter((a, n) => a.a || qs[n].required);
-    const reported = cat.report ? parseReported({ username: get('username'), userid: get('userid') }, { required: cat.report === 'required' }) : null;
-    return openTicket(ctx, i, cat, answers, reported);
+    const v = readForm(i, qs);
+    const asked = qs.filter((q) => (q.kind === 'text' || q.kind === 'paragraph') && q.id !== 'outside');
+    const answers = asked.map((q) => ({ q: q.label.replace(/ \(.*\)$/, ''), a: String(v[q.id] ?? '').trim() })).filter((a, n) => a.a || asked[n].required);
+    const reported = cat.report ? reportedFrom({ who: v.who, outside: v.outside }, { required: cat.report === 'required' }) : null;
+    return openTicket(ctx, i, cat, answers, reported, v.files ?? []);
   }
 
   // ---- watch-log popups (not inside a ticket channel)
@@ -668,9 +782,11 @@ async function ticketCommand(ctx, i) {
 
 // ------------------------------------------------------------------ housekeeping
 async function onMessage(ctx, message) {
-  if (!message.guild || message.author?.bot || !chans(ctx).has(message.channelId)) return;
+  if (!message.guild || !chans(ctx).has(message.channelId)) return;
   const t = getTicket(ctx, message.channelId);
-  if (!t || t.status !== 'open') return;
+  if (!t) return;
+  if (ctx.config.get('archiveTickets')) await archiveMessage(ctx, t.number, message).catch((e) => ctx.log.warn(`Could not archive a ticket message: ${e.message}`));
+  if (message.author?.bot || t.status !== 'open') return;
   const now = Date.now();
   let changed = false;
   if (now - (t.lastActivity ?? 0) > 60000) { t.lastActivity = now; changed = true; }
@@ -768,6 +884,7 @@ export default {
     { key: 'transcriptFormat', type: 'select', label: 'Transcript format', description: 'html needs the support-html-transcripts add-on', options: ['txt', 'html'], default: 'txt' },
     { key: 'dmTranscript', type: 'toggle', label: 'DM the transcript to the ticket owner', default: true },
     { key: 'deleteDelaySeconds', type: 'number', label: 'Seconds before a deleted ticket vanishes', default: 5, min: 1, max: 60 },
+    { key: 'archiveTickets', type: 'toggle', label: 'Keep every ticket message and file in the archive on this computer', default: true },
   ],
   permissions: [
     { key: 'support.staff', label: 'Ticket staff: claim, close with notes, priority, appeals, transcripts', default: 'moderator' },
@@ -789,6 +906,16 @@ export default {
       status TEXT NOT NULL DEFAULT 'open', outcome_by TEXT, outcome_note TEXT, outcome_at INTEGER, created_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS support_watch_target ON support_watch (guild_id, target_id);
     CREATE INDEX IF NOT EXISTS support_watch_name ON support_watch (guild_id, target_name);
+  ` }, { id: 2, sql: `
+    CREATE TABLE IF NOT EXISTS support_archive (
+      guild_id TEXT NOT NULL, number INTEGER NOT NULL, message_id TEXT NOT NULL, channel_id TEXT, author_id TEXT, author_name TEXT, author_avatar TEXT,
+      bot INTEGER NOT NULL DEFAULT 0, content TEXT NOT NULL DEFAULT '', embeds TEXT NOT NULL DEFAULT '[]', attachments TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL, edited_at INTEGER, deleted INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guild_id, message_id));
+    CREATE INDEX IF NOT EXISTS support_archive_ticket ON support_archive (guild_id, number, created_at);
+    CREATE VIRTUAL TABLE IF NOT EXISTS support_archive_fts USING fts5(content, guild_id UNINDEXED, number UNINDEXED, message_id UNINDEXED);
+    ALTER TABLE support_history ADD COLUMN reported_id TEXT;
+    ALTER TABLE support_history ADD COLUMN reported_name TEXT;
+    ALTER TABLE support_history ADD COLUMN details TEXT;
   ` }],
   commands: [
     {
@@ -839,10 +966,70 @@ export default {
   ],
   events: {
     messageCreate: onMessage,
+    messageUpdate: async (ctx, oldM, newM) => {
+      if (!chans(ctx).has(newM.channelId) || !ctx.config.get('archiveTickets')) return;
+      const row = ctx.sql.get('SELECT number, content FROM support_archive WHERE guild_id = ? AND message_id = ?', ctx.guildId, newM.id);
+      if (!row || newM.content == null || newM.content === row.content) return;
+      ctx.sql.run('UPDATE support_archive SET content = ?, edited_at = ? WHERE guild_id = ? AND message_id = ?', newM.content, Date.now(), ctx.guildId, newM.id);
+      ctx.sql.run('DELETE FROM support_archive_fts WHERE guild_id = ? AND message_id = ?', ctx.guildId, newM.id);
+      ctx.sql.run('INSERT INTO support_archive_fts (content, guild_id, number, message_id) VALUES (?, ?, ?, ?)', newM.content, ctx.guildId, row.number, newM.id);
+    },
+    messageDelete: async (ctx, m) => { ctx.sql.run('UPDATE support_archive SET deleted = 1 WHERE guild_id = ? AND message_id = ?', ctx.guildId, m.id); },
     channelDelete: onChannelDelete,
   },
   tasks: [{ name: 'maintenance', everyMs: 600000, run: maintenance }],
   views: {
+    /**
+     * The ticket archive: every ticket, newest first. Query: search (words in any message), status (open|closed),
+     * type, staff (who closed or claimed it), reported (an id), page.
+     */
+    async archive(ctx, q = {}) {
+      const where = ['h.guild_id = ?'], args = [ctx.guildId];
+      if (q.status === 'open') where.push('h.closed_at IS NULL'); else if (q.status === 'closed') where.push('h.closed_at IS NOT NULL');
+      if (q.type) { where.push('h.category = ?'); args.push(String(q.type)); }
+      if (q.staff) { where.push('(h.closed_by = ? OR h.claimed_by = ?)'); args.push(String(q.staff), String(q.staff)); }
+      if (q.reported) { where.push('h.reported_id = ?'); args.push(String(q.reported)); }
+      if (q.opener) { where.push('h.opener_id = ?'); args.push(String(q.opener)); }
+      let hits = null;
+      const words = String(q.search ?? '').trim().slice(0, 100);
+      if (words) {
+        const match = words.split(/\s+/).map((w) => `"${w.replace(/"/g, '""')}"`).join(' ');
+        hits = new Map(ctx.sql.all(`SELECT number, snippet(support_archive_fts, 0, '[[', ']]', '…', 12) AS snip FROM support_archive_fts WHERE support_archive_fts MATCH ? AND guild_id = ? LIMIT 500`, match, ctx.guildId).map((r) => [Number(r.number), r.snip]));
+        const nums = [...hits.keys()];
+        where.push(`(h.number IN (${nums.map(() => '?').join(',') || 'NULL'}) OR h.opener_tag LIKE ? OR h.reported_name LIKE ? OR h.reason LIKE ? OR h.notes LIKE ? OR h.details LIKE ?)`);
+        args.push(...nums, `%${words}%`, `%${words}%`, `%${words}%`, `%${words}%`, `%${words}%`);
+      }
+      const page = Math.max(0, Number(q.page) || 0), size = 50;
+      const rows = ctx.sql.all(`SELECT h.*, (SELECT COUNT(*) FROM support_archive a WHERE a.guild_id = h.guild_id AND a.number = h.number) AS messages
+        FROM support_history h WHERE ${where.join(' AND ')} ORDER BY h.opened_at DESC LIMIT ? OFFSET ?`, ...args, size + 1, page * size);
+      return {
+        page, more: rows.length > size,
+        rows: rows.slice(0, size).map((h) => ({ number: h.number, type: h.category_label ?? h.category, category: h.category, urgency: h.urgency, opener: { id: h.opener_id, name: h.opener_tag },
+          about: h.reported_id || h.reported_name ? { id: h.reported_id, name: h.reported_name } : null, openedAt: h.opened_at, closedAt: h.closed_at, closedBy: h.closed_by, claimedBy: h.claimed_by,
+          status: h.closed_at ? 'closed' : 'open', resolution: h.resolution, messages: h.messages, match: hits?.get(h.number) ?? null })),
+        types: [...CATEGORIES, ...customTypes(ctx)].map((c) => ({ id: c.id, label: c.label })),
+      };
+    },
+    /** One ticket in full: details, who is involved, staff background, and every message (query: number). */
+    async archiveTicket(ctx, q = {}) {
+      const number = Number(q.number);
+      const h = ctx.sql.get('SELECT * FROM support_history WHERE guild_id = ? AND number = ?', ctx.guildId, number);
+      if (!h) throw new UserError('That ticket is not in the archive.');
+      const details = (() => { try { return JSON.parse(h.details ?? '{}'); } catch { return {}; } })();
+      const file = (stored) => `/api/guilds/${ctx.guildId}/modules/support/files/${number}/${encodeURIComponent(stored)}`;
+      const messages = ctx.sql.all('SELECT * FROM support_archive WHERE guild_id = ? AND number = ? ORDER BY created_at, message_id', ctx.guildId, number).map((m) => ({
+        id: m.message_id, author: { id: m.author_id, name: m.author_name, avatar: m.author_avatar, bot: !!m.bot }, content: m.content, embeds: JSON.parse(m.embeds), at: m.created_at, editedAt: m.edited_at, deleted: !!m.deleted,
+        attachments: JSON.parse(m.attachments).map((a) => ({ ...a, url: a.stored ? file(a.stored) : null })),
+      }));
+      return {
+        number, type: h.category_label ?? h.category, urgency: h.urgency, openedAt: h.opened_at, closedAt: h.closed_at, closedBy: h.closed_by, claimedBy: h.claimed_by,
+        resolution: h.resolution, reason: h.reason, action: h.action_taken, notes: h.notes, outcome: h.outcome,
+        opener: { id: h.opener_id, name: h.opener_tag, ...(details.people?.opener ?? {}) }, about: details.people?.about ?? (h.reported_id || h.reported_name ? { id: h.reported_id, name: h.reported_name } : null),
+        answers: details.answers ?? [], files: (details.files ?? []).map((f) => ({ ...f, url: f.stored ? file(f.stored) : null })),
+        background: { about: staffFacts(ctx, h.reported_id), opener: staffFacts(ctx, h.opener_id) },
+        messages,
+      };
+    },
     async tickets(ctx) {
       const rows = ctx.data.list('ticket:').map(({ key, value: t }) => ({ id: key.slice(7), number: `#${t.number}`, category: t.typeLabel, urgency: urgencyOf(t).label, status: t.status, opener: nameOf(ctx, t.opener),
         claimed: t.claimedBy ? nameOf(ctx, t.claimedBy) : '—', opened: when(t.createdAt), rank: urgencyOf(t).rank })).sort((a, b) => b.rank - a.rank || 0);
@@ -868,6 +1055,9 @@ export default {
     },
   },
   panels: [
+    { id: 'archive', title: 'Ticket archive', view: 'archive', pageViews: ['archiveTicket'], permission: 'support.staff', private: true, kind: 'ticket-archive',
+      description: 'Every ticket with its messages and files, read like the Discord chat it came from.', empty: 'No tickets yet.',
+      columns: [{ key: 'number', label: '#' }, { key: 'type', label: 'Type' }, { key: 'status', label: 'Status' }, { key: 'messages', label: 'Messages' }] },
     { id: 'tickets', title: 'Tickets', view: 'tickets', permission: 'support.staff', private: true,
       description: 'Open tickets, newest first. Staff work on them in their ticket channels.',
       empty: 'No tickets are open right now.', recentTitle: 'Recently closed', recentEmpty: 'No tickets have been closed yet.',
