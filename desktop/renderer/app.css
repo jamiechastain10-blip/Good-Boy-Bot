@@ -279,3 +279,8 @@ main[data-page="dashboard"] .wrap{max-width:none;margin:0;flex:1;display:flex;fl
 #app .dash-bar .dash-link:hover,#app .dash-bar .dash-link:focus-visible{color:#fff;background:rgba(255,255,255,.08);outline:none}
 #app.dash-full .dash-bar .dash-link{color:#aab6cc}
 .dash-app+.btn{margin-left:8px}
+
+/* 3.0.7: update status in the dashboard's top bar */
+.dash-upd{font-size:12.5px;color:#aab6cc;padding:4px 10px;white-space:nowrap}
+#app .dash-bar .dash-upd.ready{background:#3ba55d!important;color:#fff!important}
+#app .dash-bar .dash-upd.bad{background:#ed4245!important;color:#fff!important}

@@ -171,6 +171,7 @@ async function syncDash() {
   const r = want ? dashRect() : null;
   if (want && r && r.width > 0) {
     if (DASH.shown) return gb.dashBounds(r);
+    if (DASH.loading) return; // already opening it
     DASH.loading = true;
     const res = await gb.dashShow(r);
     DASH.loading = false;
@@ -222,7 +223,14 @@ const PAGES = {
   },
   dashboard() {
     const running = S.bot.state === 'running';
-    const appNav = el('nav', { class: 'dash-app', 'aria-label': 'Good Boy app' },
+    // 3.0.7: what the updater is doing shows here, because the dashboard covers the Updates page.
+    const u = S.update ?? {};
+    const upd = u.phase === 'ready' ? el('button', { class: 'dash-link dash-upd ready', onclick: () => gb.updateInstall() }, `Restart to update to ${u.version}`)
+      : u.phase === 'downloading' ? el('span', { class: 'dash-upd' }, `Downloading ${u.version ?? 'update'}${u.percent != null ? ` · ${Math.round(u.percent)}%` : ''}`)
+      : u.phase === 'available' ? el('button', { class: 'dash-link dash-upd ready', onclick: () => gb.updateOpen() }, `${u.version} is out · get it`)
+      : u.phase === 'error' ? el('button', { class: 'dash-link dash-upd bad', onclick: () => go('updates') }, 'Update problem')
+      : null;
+    const appNav = el('nav', { class: 'dash-app', 'aria-label': 'Good Boy app' }, upd,
       [['overview', 'Overview'], ['updates', 'Updates'], ['settings', 'Settings · look · licence']].map(([id, label]) => el('button', { class: 'dash-link', onclick: () => go(id) }, label)));
     const bar = el('div', { class: 'dash-bar' }, el('b', {}, 'Dashboard'), el('span', { class: 'dash-server' }, sum?.guild?.name ?? ''), appNav,
       running ? el('button', { class: 'btn quiet small', onclick: async () => { DASH.error = ''; DASH.shown = false; render(); const res = await gb.dashReload(dashRect()); if (res?.ok) DASH.shown = true; else { DASH.error = res?.message || 'The dashboard could not open.'; render(); } } }, 'Reload') : null);

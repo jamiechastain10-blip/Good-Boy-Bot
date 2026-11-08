@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.7
+**Fix: the Windows app could open to a white window. Updates are visible from the dashboard.**
+
+<!-- members -->
+fixed the windows app sometimes showing a white screen
+<!-- /members -->
+
+**Windows app**
+- Found the cause of the white window: when the bot started, the app could start loading the built-in dashboard twice at the same moment. The second load cancelled the first, and the dashboard was left blank on top of the window. Now only one load can run at a time, and a replaced load is no longer treated as a failure.
+- Every build now starts the app with a stand-in bot running, opens the dashboard several times at once, and refuses to release if it loads more than once or doesn't draw. A white window can't reach anyone again without the build catching it.
+- **Updates you can see:** while the dashboard fills the window, its top bar shows what the updater is doing: downloading (with %), **Restart to update**, a new version to get, or an update problem.
+- Every update step is written to the app's log (`%APPDATA%\Good Boy\app.log`), so an update that doesn't happen can be looked into.
+
 ## 3.0.6
 **Paste links in the music player, a much more useful phone app, and one dashboard link for every Good Boy bot.**
 
