@@ -120,7 +120,7 @@
   const sync = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; placeNav(); placeSegs(); }); };
 
   /* ---------- squish on press ---------- */
-  doc.addEventListener('pointerdown', (e) => { const b = e.target.closest?.('button, .tile, .gb-tile, .quick, .guild'); if (b && !b.disabled) jelly(b, b.matches('.tile, .gb-tile, .quick, .guild') ? 0.4 : 0.7); }, { passive: true });
+  // 3.0: no wobble on press; buttons only darken slightly (in CSS).
 
   /* ---------- Dynamic Island ---------- */
   const island = {
@@ -182,7 +182,7 @@
   };
 
   function start() {
-    addFilter(); aurora();
+    addFilter(); // 3.0: no aurora background (the flat look from the 3.0 design)
     new MutationObserver(sync).observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-current', 'aria-pressed', 'aria-selected'] });
     addEventListener('resize', sync); sync();
   }

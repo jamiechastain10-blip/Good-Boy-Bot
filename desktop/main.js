@@ -27,6 +27,7 @@ import { updateMode, channelFor, readLatest, latestApi, releasesPage, restartPla
 import { brandStatus, applyBrand, applyCustom } from './lib/brand.js';
 import { verifyLicense, hasFeature, readCancelList, CANCEL_LIST_URL } from './lib/license.js';
 import { verifyModule, moduleNameOf } from './lib/modsign.js';
+import { readNotes } from './lib/notes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const startHidden = process.argv.includes('--hidden');
@@ -150,8 +151,18 @@ function makeDashView() {
   const wc = dashView.webContents;
   wc.session.setPermissionRequestHandler((_wc, _perm, cb) => cb(false)); // the dashboard never needs camera, mic, location...
   const external = (u) => { if (/^https:\/\//.test(u)) shell.openExternal(u); };
-  wc.setWindowOpenHandler(({ url: u }) => { external(u); return { action: 'deny' }; });
-  wc.on('will-navigate', (e, u) => { if (!dashOrigin || new URL(u).origin !== dashOrigin) { e.preventDefault(); external(u); } });
+  // Links from the dashboard to the app itself (bot controls and the app's own pages), only inside the Windows app.
+  const appLink = (u) => {
+    const m = /^goodboy-app:\/\/(restart|stop|start|page\/(overview|levels|modules|log|updates|settings|whatsnew))$/.exec(String(u));
+    if (!m) return false;
+    if (m[1] === 'restart') { if (ready()) runner.stop().then(() => startBot()).catch(() => {}); }
+    else if (m[1] === 'stop') runner.stop();
+    else if (m[1] === 'start') startBot();
+    else { hideDash(); send('goto', m[2]); }
+    return true;
+  };
+  wc.setWindowOpenHandler(({ url: u }) => { if (!appLink(u)) external(u); return { action: 'deny' }; });
+  wc.on('will-navigate', (e, u) => { if (appLink(u)) { e.preventDefault(); return; } if (!dashOrigin || new URL(u).origin !== dashOrigin) { e.preventDefault(); external(u); } });
   addContextMenu(wc);
   wc.on('render-process-gone', () => { dashLoaded = false; send('dash', { state: 'error', message: 'The dashboard stopped. Click Reload.' }); });
   wc.on('did-fail-load', (_e, code, desc, _u, main) => { if (main && code !== -3) { dashLoaded = false; send('dash', { state: 'error', message: `The dashboard didn't load (${desc}).` }); } });
@@ -307,7 +318,7 @@ async function smokeCheck() {
   if (process.env.GOODBOY_SMOKE_SEED) out.seed = await runTool({ nodePath: nodePath(), botDir: botDir(), args: ['import', process.env.GOODBOY_SMOKE_SEED, P.dataDir()] });
   await applySettings({ setupComplete: true, theme: 'light' });
   recheck(); send('state', snapshot()); await wait(900);
-  for (const page of ['overview', 'levels', 'modules', 'log', 'updates', 'settings']) {
+  for (const page of ['overview', 'levels', 'modules', 'log', 'updates', 'whatsnew', 'settings']) {
     await js(`document.querySelector('[data-nav="${page}"]')?.click()`); await wait(900);
     out.pages[page] = await js(`(() => { const m = document.querySelector('main'); return { shown: m?.dataset.page, text: (m?.innerText || '').slice(0, 300), groups: document.querySelectorAll('main .group').length }; })()`);
     await shot(`page-${page}`);
@@ -382,6 +393,13 @@ ipcMain.handle('gb:open-dashboard-browser', () => openDashboardInBrowser());
 // The Levels page: names and pictures come from the running bot (the database only has member numbers).
 ipcMain.handle('gb:levels', () => (runner?.status().state === 'running' ? runner.control('levels', {}) : { ok: false, error: 'The bot is not running.' }));
 ipcMain.handle('gb:recheck', () => { recheck(); return snapshot(); });
+// What's new: the bot's release notes; `fresh` is true the first time this version is opened.
+ipcMain.handle('gb:whatsnew', async () => {
+  const sections = readNotes(botDir() || P.bundledBot);
+  const fresh = !!settings.lastSeenVersion && settings.lastSeenVersion !== app.getVersion();
+  if (settings.lastSeenVersion !== app.getVersion()) await applySettings({ lastSeenVersion: app.getVersion() });
+  return { version: app.getVersion(), fresh, sections };
+});
 ipcMain.handle('gb:summary', () => (prep.done ? runTool({ nodePath: nodePath(), botDir: botDir(), args: ['summary', dataDir()] }) : { ok: false, error: 'Still getting the bot ready.' }));
 ipcMain.handle('gb:chrome', (_e, dark) => setChrome(!!dark));
 ipcMain.handle('gb:choose-folder', async () => {

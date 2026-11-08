@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.0.1
+**The 3.0 design's look in the dashboard and apps, moderation from the dashboard, 14-day charts and a What's new panel.**
+
+<!-- members -->
+the dashboard and apps got a cleaner look, staff can warn, time out, kick and ban right from the dashboard now, and the home page has little charts for the last two weeks. there's also a what's new page so you can always see what changed. it pops up once after each update
+<!-- /members -->
+
+**New look**
+- The dashboard, the phone app and the Windows app now use the 3.0 design: solid dark panels, one blue accent, new fonts, and no moving background or wobbly buttons.
+- The dashboard has a full-height sidebar and a new Home: a greeting, **Needs attention** (modules that still need setting up, unclaimed tickets), your tools, recent activity and who's signed in.
+
+**Moderation from the dashboard and apps**
+- **Warn, Time out, Kick and Ban** buttons in the ticket side panel, and in the right-click menu on any member's name.
+- One dialog for all of them: pick the action, write the reason (the member is told, and it goes in the mod log), choose how long for a timeout, or how many days of messages to remove for a ban. Timeouts can also be lifted.
+- The **Moderation** page now starts with the full history (every warning, timeout, kick and ban from Discord, the dashboard and AutoMod), with search, an **Act** button on each row and **Act on a member** for anyone by user ID. AutoMod is underneath.
+- The bot checks everything the same way as the commands: your own permission for that action, role order, no acting on yourself or the owner. Moderators can open the history with the dashboard.access permission.
+
+**Charts on Home**
+- Small charts under Members, In voice and the new **Messages today**, showing the last 14 days.
+- The bot now keeps an hourly count per server (members, messages from people, people in voice) for 14 days, then removes it. Counts only: no names and no message text. The privacy page says so.
+
+**What's new**
+- New **What's new** page in the dashboard (under You), the phone app (on Home) and the Windows app (next to Updates). It shows the short note for members first, then everything that changed, with earlier versions a click away.
+- After an update, a short "What's new" card shows once in each, with a button to the full list.
+
 ## 3.0.0
 **Good Boy 3.0: a new dashboard with full control of every module, rebuilt tickets with a searchable archive, animated games and Pong, a huge fishing expansion, music, pictures in welcome messages, the phone app for everyone with access, and licences.**
 

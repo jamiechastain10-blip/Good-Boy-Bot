@@ -489,6 +489,113 @@ export default async function runV30Tests({ test }) {
     other.cache.clear();
     assert.deepEqual(await other.lookup(['222222222222222222']), []);
   });
+
+  console.log('\n3.0.1 what\'s new');
+  await test('what\'s new: notes split into the members\' note and the full list; the dashboard serves them to anyone signed in; the Windows app reads the same file', async () => {
+    const { parseChangelog, whatsNew } = await import('../src/about.js');
+    const text = '# Changelog\n\n## 9.9.9\n**Big headline.**\n\n<!-- members -->\nhey all\n<!-- /members -->\n\n**Section**\n- one\n- two\n\n## 9.9.8\nOld stuff';
+    const [a, b] = whatsNew(parseChangelog(text));
+    assert.equal(a.version, '9.9.9'); assert.equal(a.headline, 'Big headline.'); assert.equal(a.members, 'hey all');
+    assert.ok(!a.notes.includes('members') && !a.notes.includes('Big headline') && a.notes.includes('- one'));
+    assert.equal(b.members, null);
+    const real = whatsNew(parseChangelog(fs.readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8')));
+    const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    assert.equal(real[0].version, pkg.version, 'the newest notes are for this version'); assert.ok(real[0].members, 'with a note for members');
+    const { readNotes } = await import('../desktop/lib/notes.js');
+    assert.deepEqual(readNotes(path.resolve(new URL('..', import.meta.url).pathname))[0], real[0], 'the Windows app reads them the same way');
+    const { makeWorld } = await import('./features.js');
+    const { startDashboard } = await import('../src/dashboard/server.js');
+    const w = await makeWorld([]).load();
+    w.mm.rootDir = path.resolve(new URL('..', import.meta.url).pathname);
+    const dash = await startDashboard({ manager: w.mm, client: w.client, db: w.db, logger: { info() {}, warn() {}, error() {} }, perms: w.perms, port: 0, host: '127.0.0.1', version: pkg.version });
+    try {
+      assert.equal((await fetch(`http://127.0.0.1:${dash.port}/api/whatsnew`)).status, 401);
+      dash.sessions.set('s1', { user: { id: 'u1', username: 'U', avatar: null }, guilds: [], expires: Date.now() + 60000 });
+      const d = await (await fetch(`http://127.0.0.1:${dash.port}/api/whatsnew`, { headers: { cookie: 'gb_sid=s1' } })).json();
+      assert.equal(d.version, pkg.version); assert.equal(d.sections[0].version, pkg.version);
+    } finally { dash.close(); }
+  });
+
+  console.log('\n3.0.1 moderation from the dashboard');
+  await test('dashboard moderation: permission, reason, hierarchy, owner and self checks; warn, time out, lift, kick and ban each work and land in the history', async () => {
+    const { makeWorld } = await import('./features.js');
+    const { PermissionFlagsBits: P } = await import('discord.js');
+    const w = await makeWorld(['moderation']).load();
+    const MOD = '310000000000000001', TGT = '310000000000000002', PLAIN = '310000000000000003', BOSS = '310000000000000004';
+    w.person(MOD, { bits: [P.Administrator], pos: 10, username: 'moddy' });
+    const t = w.person(TGT, { pos: 1, username: 'target' });
+    const timeouts = []; t.timeout = async (ms, why) => { timeouts.push([ms, why]); };
+    t.kickable = true; t.bannable = true; let kicked = 0; t.kick = async () => { kicked++; };
+    w.person(PLAIN, { username: 'plain' });
+    w.person(BOSS, { bits: [P.Administrator], pos: 50, username: 'boss' });
+    const bans = []; w.g.members.ban = async (id, o) => { bans.push([id, o]); };
+    const act = (body, by = MOD) => w.mm.runAction('1', 'moderation', 'member-action', body, { userId: by, username: by });
+    const UE = /./;
+    await assert.rejects(act({ userId: TGT, action: 'warn', reason: 'x' }, PLAIN), /permission/, 'needs the action\'s own permission');
+    await assert.rejects(act({ userId: TGT, action: 'warn', reason: '  ' }), /reason/i, 'a reason is needed');
+    await assert.rejects(act({ userId: TGT, action: 'explode', reason: 'x' }), /Choose/);
+    await assert.rejects(act({ userId: MOD, action: 'warn', reason: 'x' }), /yourself/);
+    await assert.rejects(act({ userId: BOSS, action: 'kick', reason: 'x' }), UE, 'cannot act on someone above you');
+    await assert.rejects(act({ userId: 'nope', action: 'warn', reason: 'x' }), /Pick a member/);
+    const warned = await act({ userId: TGT, action: 'warn', reason: 'be nice' });
+    assert.equal(warned.action, 'warn'); assert.equal(warned.user.id, TGT); assert.ok(warned.case);
+    assert.match(JSON.stringify(t.user.sent), /be nice/, 'the member is told');
+    await act({ userId: TGT, action: 'timeout', reason: 'cool off', minutes: 10 });
+    assert.equal(timeouts.at(-1)[0], 600000, 'ten minutes');
+    await act({ userId: TGT, action: 'timeout', reason: 'way too long', minutes: 999999 });
+    assert.ok(timeouts.at(-1)[0] <= 40320 * 60000 && timeouts.at(-1)[0] > 40319 * 60000 - 120000, 'capped at 28 days');
+    await act({ userId: TGT, action: 'untimeout' });
+    assert.equal(timeouts.at(-1)[0], null, 'lifting needs no reason');
+    await act({ userId: TGT, action: 'kick', reason: 'bye' }); assert.equal(kicked, 1);
+    await act({ userId: TGT, action: 'ban', reason: 'gone', deleteDays: 99 });
+    assert.equal(bans[0][0], TGT); assert.equal(bans[0][1].deleteMessageSeconds, 7 * 86400, 'at most 7 days of messages');
+    const { rows } = await w.mm.runView('1', 'moderation', 'cases');
+    assert.deepEqual(rows.map((r) => r.type).sort(), ['Banned', 'Kicked', 'Timed out', 'Timed out', 'Timeout lifted', 'Warned'].sort());
+    assert.ok(rows.every((r) => r.userId === TGT));
+    const panel = w.mm.describeForGuild('1').find((d) => d.name === 'moderation').panels.find((p) => p.id === 'cases');
+    assert.ok(panel.pageActions.includes('member-action') && panel.view === 'cases', 'the history panel allows the action');
+  });
+
+  console.log('\n3.0.1 stats history');
+  await test('stats history: counts people\'s messages per hour, samples members and voice, fills gaps, keeps exactly 14 days, serves it to admins', async () => {
+    const { Database } = await import('../src/db.js');
+    const { StatHistory, HOUR } = await import('../src/stats.js');
+    const db = new Database(':memory:');
+    let now = 1000 * HOUR + 5;
+    const sh = new StatHistory(db, { now: () => now });
+    const voice = new Map([['a', { channelId: 'v1', member: { user: { bot: false } } }], ['b', { channelId: null }], ['c', { channelId: 'v1', member: { user: { bot: true } } }]]);
+    voice.filter = (f) => { const m = new Map([...voice].filter(([, v]) => f(v))); return m; };
+    const client = { guilds: { cache: new Map([['g1', { memberCount: 50, voiceStates: { cache: voice } }]]) } };
+    sh.count('g1'); sh.count('g1'); sh.sampleAll(client);
+    sh.count('g1'); sh.sampleAll(client); // the same hour adds up
+    now += 3 * HOUR; client.guilds.cache.get('g1').memberCount = 53; sh.count('g1'); sh.sampleAll(client);
+    const s = sh.series('g1');
+    assert.equal(s.from, 1000 * HOUR); assert.equal(s.members.length, 4);
+    assert.deepEqual(s.messages, [3, 0, 0, 1]); assert.deepEqual(s.members, [50, 50, 50, 53], 'members carry across empty hours');
+    assert.deepEqual(s.voice, [1, null, null, 1], 'bots in voice do not count');
+    sh.count('g1'); assert.equal(sh.series('g1').messages.at(-1), 2, 'messages not written yet still show');
+    now += 15 * 24 * HOUR; sh.sampleAll(client);
+    assert.equal(db.q('SELECT COUNT(*) AS n FROM stat_history WHERE hour < ?').get(Math.floor(now / HOUR) - 14 * 24).n, 0, 'older than 14 days is removed');
+    assert.ok(sh.series('g1').members.length <= 14 * 24);
+    // the dashboard endpoint, admins only
+    const { makeWorld } = await import('./features.js');
+    const { startDashboard } = await import('../src/dashboard/server.js');
+    const { PermissionFlagsBits: P } = await import('discord.js');
+    const GID = '330000000000000001';
+    const w = await makeWorld([], { guildId: GID }).load();
+    const ADMIN = '320000000000000001', PLAIN = '320000000000000002';
+    w.person(ADMIN, { bits: [P.Administrator, P.ManageGuild] }); w.person(PLAIN);
+    const hist = new StatHistory(w.db); hist.count(GID); hist.record(GID, { members: 10, voice: 0 });
+    const dash = await startDashboard({ manager: w.mm, client: w.client, db: w.db, logger: { info() {}, warn() {}, error() {} }, perms: w.perms, port: 0, host: '127.0.0.1', statHistory: hist });
+    try {
+      for (const [sid, id] of [['sa', ADMIN], ['sp', PLAIN]]) dash.sessions.set(sid, { user: { id, username: id, avatar: null }, guilds: [], expires: Date.now() + 60000 });
+      const get = (sid) => fetch(`http://127.0.0.1:${dash.port}/api/guilds/${GID}/history`, { headers: { cookie: `gb_sid=${sid}` } });
+      assert.equal((await get('sp')).status, 403);
+      const d = await (await get('sa')).json();
+      assert.deepEqual(d.members, [10]); assert.deepEqual(d.messages, [1]);
+    } finally { dash.close(); }
+  });
+
 }
 
 const btn0 = (i) => { for (const row of i.replies[0].components ?? []) for (const c of (row.toJSON?.() ?? row).components ?? []) if (c.custom_id) return c.custom_id; return null; };

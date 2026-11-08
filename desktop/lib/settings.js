@@ -9,13 +9,14 @@ export const DEFAULTS = Object.freeze({
   startBotWithApp: true,   // start the bot when the app opens
   startAtLogin: false,     // open the app when you sign in to the computer
   closeAction: 'minimize', // 'minimize' = the X hides to the tray, 'quit' = the X quits (and stops the bot)
-  dashboardOnStart: false, // switch to the Dashboard page once the bot is running
+  dashboardOnStart: true,  // switch to the Dashboard page once the bot is running (3.0: the app opens into it)
   setupComplete: false,    // the first-run setup was finished
   license: '',             // a licence key someone was given (checked every start; not a secret)
   brandApplied: null,      // picture IDs Discord returned when the Good Boy look was applied
   theme: 'system',         // 'system' follows Windows/macOS light or dark
   autoRestartForUpdates: true, // restart by itself (after a 1-minute warning) once an update has downloaded
   shareAuto: false,        // keep the public dashboard link on: checked at every start and fixed if it went off
+  lastSeenVersion: '',     // the app version last opened (for What's new)
   keepAwake: false,        // stop the computer sleeping while the bot runs (the screen can still turn off)
 });
 const CLOSE = ['minimize', 'quit'];
@@ -39,5 +40,6 @@ export function normalize(raw) {
     autoRestartForUpdates: bool(r.autoRestartForUpdates, DEFAULTS.autoRestartForUpdates),
     shareAuto: bool(r.shareAuto, DEFAULTS.shareAuto),
     keepAwake: bool(r.keepAwake, DEFAULTS.keepAwake),
+    lastSeenVersion: typeof r.lastSeenVersion === 'string' && /^[0-9A-Za-z.+-]{0,32}$/.test(r.lastSeenVersion) ? r.lastSeenVersion : DEFAULTS.lastSeenVersion,
   };
 }

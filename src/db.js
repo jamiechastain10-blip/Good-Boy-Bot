@@ -46,6 +46,11 @@ const MIGRATIONS = [
     SELECT guild_id, 'engagement', key, value FROM module_config WHERE module = 'support' AND key = 'suggestionChannel';
   DELETE FROM module_config WHERE module = 'support' AND key = 'suggestionChannel';
   `,
+  // 3.0.1: hourly counts for the dashboard's sparklines (members, messages, people in voice). Kept 14 days.
+  `
+  CREATE TABLE IF NOT EXISTS stat_history (guild_id TEXT NOT NULL, hour INTEGER NOT NULL, members INTEGER, messages INTEGER NOT NULL DEFAULT 0, voice INTEGER,
+    PRIMARY KEY (guild_id, hour));
+  `,
 ];
 
 const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => '\\' + c);

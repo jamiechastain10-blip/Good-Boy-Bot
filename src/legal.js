@@ -41,6 +41,7 @@ function privacy(c) {
       'Moderation: warnings, timeouts, kicks and bans with the reason and moderator. AutoMod keeps up to 200 recent actions, each with a preview of at most 80 characters of the removed message (a server can turn the preview off).',
       'Message logs, if a server keeps them on: a copy of each message (its text and attachment names) for up to 7 days, only so the log can show what a message said after it is edited or deleted. Turning message logging off keeps nothing new.',
       'Eclipse ID and statistics, if a server enables them: the profile details you choose to share, achievements, and activity totals. These are counts; message text is not kept for statistics.',
+      'Server totals for the dashboard\'s charts: each hour, the member count, how many messages were sent and how many people were in voice. Counts only, with no names or message text, kept for 14 days.',
       'Technical logs: errors, and changes to settings and permissions, without passwords or tokens.',
     ]],
     ['What is not stored', ['Message text in general is not stored. It is read to run features (commands, AutoMod, XP) and discarded, except where a feature exists to keep it: tickets, suggestions, announcements and reminders you write, the AutoMod preview, and the 7-day message log copy above.', 'The dashboard never stores your Discord login token: it is used once to learn who you are and which servers you can manage, and revoked straight away.']],

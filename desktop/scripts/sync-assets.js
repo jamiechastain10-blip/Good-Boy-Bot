@@ -13,4 +13,5 @@ const from = path.resolve(here, '..', '..', 'src', 'dashboard', 'public', 'good-
 if (!fs.existsSync(from)) { console.error(`Missing ${from}. Run this from inside the full Good Boy project.`); process.exit(1); }
 fs.copyFileSync(from, path.resolve(here, '..', 'renderer', 'good-boy-logo.png'));
 for (const f of ['liquid.css', 'liquid.js']) fs.copyFileSync(path.join(path.dirname(from), f), path.resolve(here, '..', 'renderer', f));
+for (const f of ['Figtree.woff2', 'BricolageGrotesque.woff2', 'LICENSE-Figtree-Bricolage.txt']) fs.copyFileSync(path.join(path.dirname(from), 'fonts', f), path.resolve(here, '..', 'renderer', 'fonts', f));
 console.log('Logo and design system copied into desktop/renderer.');

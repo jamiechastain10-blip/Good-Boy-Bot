@@ -2471,7 +2471,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     for (const k of ['channels', 'roles', 'stats', 'corePermissions']) assert.equal(d[k], undefined, `${k} is withheld`);
     const names = Object.fromEntries(d.modules.map((m) => [m.name, m.panels.map((p) => p.id)]));
     assert.deepEqual(names.support?.sort(), ['archive', 'tickets', 'watch'], 'support panels default to moderators');
-    assert.equal(names.moderation, undefined, 'the AutoMod panel needs moderation.automod, which defaults to admins');
+    assert.deepEqual(names.moderation, ['cases'], 'moderators see the history (3.0.1); the AutoMod panel needs moderation.automod, which defaults to admins');
     assert.equal(d.modules.some((m) => 'settings' in m || 'values' in m || 'permissions' in m), false);
     for (const [method, p, body] of [['POST', gp('/modules/moderation/settings'), { key: 'logChannel', value: null }], ['POST', gp('/modules/support/disable'), {}], ['POST', gp('/permissions'), { key: 'dashboard.access', roles: [] }], ['GET', gp('/logs')]]) {
       const r = await w.req(method, p, { cookie, body });
