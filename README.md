@@ -34,7 +34,7 @@ Your bot, settings and data are kept. See [Troubleshooting](#troubleshooting) be
 - **Tickets rebuilt**: pick a type, pick the member, drop screenshots straight into the form, and a searchable archive
   that reads like the original chat.
 - **Fishing expansion**: 24 places, 2,000 fish, levels up to 4,000, strike timing and quick-time events.
-- **Animated games and Pong**, **music**, **pictures in welcome and leave messages**, and **What's new** in every app.
+- **Animated games** (being tested in 3.0.4: real cards, spinning reels, a moving fishing lake), **Pong**, **music**, **pictures in welcome and leave messages**, and **What's new** in every app.
 - **Licences**: a licensed bot can use its own name, picture, banner and description in the Windows app (the Good Boy
   credit always stays).
 

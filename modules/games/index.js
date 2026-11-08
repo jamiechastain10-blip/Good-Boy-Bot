@@ -22,6 +22,7 @@ import * as PONG from '../../src/pong.js';
 import * as CH from '../../src/fishchallenges.js';
 import { UserError, sleep } from '../../src/util.js';
 import { emoji as EM, emojiRef } from '../../src/emojis.js';
+import * as ART from '../../src/gameart.js';
 
 const EPH = MessageFlags.Ephemeral;
 // Game results are private to the player by default: a public message per play notified everyone following the channel.
@@ -51,6 +52,17 @@ const SESSION_MAX_MS = 10 * 60000;
 const COLORS = { slots: 0xe91e63, blackjack: 0x2ecc71, coinflip: 0xf1c40f, fish: 0x1abc9c, lose: 0xed4245, push: 0x95a5a6 };
 /** Delay between animation frames. Tests set the global to 0. */
 const frameMs = () => globalThis[Symbol.for('goodboy.games.frameMs')] ?? 750;
+// 3.0.4: games are drawn as animated pictures when the canvas package is installed and the server has not turned them off.
+const artOn = (ctx) => globalThis[Symbol.for('goodboy.games.art')] !== false && ctx.config.get('gamePictures') !== false;
+/** A message with the game's picture in the embed (or just the embed when there is no picture). edit: replace old files. */
+function withArt(embed, art, { edit = false } = {}) {
+  if (!art) return { embeds: [embed], ...(edit ? { files: [], attachments: [] } : {}) };
+  embed.setImage(`attachment://${art.name}`);
+  // 3.0.4: the pictures are new, so players are told they are being tested.
+  const foot = embed.data.footer?.text;
+  embed.setFooter({ text: foot ? `🧪 Being tested · ${foot}` : '🧪 Animated games are being tested. Tell staff if something looks wrong.' });
+  return { embeds: [embed], files: [{ attachment: art.file, name: art.name }], ...(edit ? { attachments: [] } : {}) };
+}
 
 const eco = (ctx) => {
   const api = ctx.api('economy');
@@ -140,8 +152,25 @@ function againRow(i, game, bet, label) {
     new ButtonBuilder().setCustomId(againId(i, game, [bet])).setEmoji('🔁').setLabel(`${label} (${fmtNum(bet)})`).setStyle(ButtonStyle.Success),
     pipe.button(i, game, [], { label: 'Change bet', emoji: '✏️' }));
 }
+async function slotsArt(ctx, r) {
+  if (!artOn(ctx)) return null;
+  const mult = C.slotMultiplier(r.reels);
+  const note = r.jackpotWon ? `JACKPOT! +${fmtNum(r.payout - r.bet)}` : r.payout > r.bet ? `${mult}x · +${fmtNum(r.payout - r.bet)}` : r.payout > 0 ? `Close! ${fmtNum(r.payout)} back` : 'No luck this time';
+  return ART.slotsImage({ symbols: r.reels.map((x) => C.slotEmoji(x)), note, win: r.payout > r.bet });
+}
 async function runSlots(ctx, i, bet, { update = false } = {}) {
   const r = playSlots(ctx, i.user.id, bet); // decided and paid now; the animation below only reveals it
+  const art = await slotsArt(ctx, r);
+  if (art) {
+    // One message: the picture spins the reels, stops them one by one and shows the result.
+    const e = new EmbedBuilder().setColor(r.payout > r.bet ? COLORS.slots : COLORS.lose).setTitle(`${EM('slot')} Slots · ${EM('coin')} ${fmtNum(r.bet)}`)
+      .setDescription(`Wallet: ${money(ctx, r.balance)}`).setFooter({ text: `Bet ${fmtNum(r.bet)} · jackpot pool ${fmtNum(pool(ctx))}` });
+    const msg = { ...withArt(e, art, { edit: update }), components: [againRow(i, 'slots', bet, 'Spin again')], allowedMentions: NOPING };
+    if (update) await i.update(msg); else await i.reply({ ...msg, ...vis(ctx) });
+    if (r.jackpotWon) shout(ctx, i, `💥 ${nameOf(i)} hit the slots **JACKPOT** and won ${money(ctx, r.payout)}!`, 'jackpot');
+    else if (r.payout >= bet * 20) shout(ctx, i, `🎰 ${nameOf(i)} won **${r.multiplier}x** on slots (${money(ctx, r.payout)})!`, 'bigwin');
+    return;
+  }
   const first = { embeds: [slotsEmbed(ctx, r, 0)], components: [], allowedMentions: NOPING };
   if (update) await i.update(first); else await i.reply({ ...first, ...vis(ctx) });
   for (const stopped of [1, 2]) { await sleep(frameMs()); await i.editReply({ embeds: [slotsEmbed(ctx, r, stopped)] }).catch(() => {}); }
@@ -161,6 +190,16 @@ async function runFlip(ctx, i, bet, side, { update = false } = {}) {
     record(ctx, i.user.id, 'coinflip', bet, payout);
     res = { landed, payout, balance: eco(ctx).wallet(ctx.guildId, i.user.id).coins };
   });
+  const row0 = () => new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(againId(i, 'coinflip', [bet, 'heads'])).setLabel('Heads again').setEmoji('🙂').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(againId(i, 'coinflip', [bet, 'tails'])).setLabel('Tails again').setEmoji('🪙').setStyle(ButtonStyle.Success),
+    pipe.button(i, 'coinflip', [], { label: 'Change bet', emoji: '✏️' }));
+  const art = artOn(ctx) ? await ART.coinImage({ side: res.landed, won: res.payout > 0, note: res.payout > 0 ? `You called ${side} · +${fmtNum(res.payout - bet)}` : `You called ${side} · -${fmtNum(bet)}` }) : null;
+  if (art) {
+    const e = new EmbedBuilder().setColor(res.payout > 0 ? COLORS.coinflip : COLORS.lose).setTitle(`${EM('coin')} Coin flip · ${EM('coin')} ${fmtNum(bet)}`).setDescription(`Wallet: ${money(ctx, res.balance)}`);
+    const msg = { ...withArt(e, art, { edit: update }), components: [row0()], allowedMentions: NOPING };
+    return update ? i.update(msg) : i.reply({ ...msg, ...vis(ctx) });
+  }
   const spinning = new EmbedBuilder().setColor(COLORS.coinflip).setTitle(`${EM('coin')} Coin flip`).setDescription(`You called **${side}** for ${money(ctx, bet)}...\n# ${EM('coin')} *flipping*`);
   if (update) await i.update({ embeds: [spinning], components: [] }); else await i.reply({ embeds: [spinning], allowedMentions: NOPING, ...vis(ctx) });
   await sleep(frameMs() * 1.5);
@@ -197,6 +236,27 @@ function bjEmbed(ctx, s, balance, { dealerShown = null } = {}) {
   e.setFooter({ text: `Tip: ${BJ_TIPS[(s.player.length + s.dealer.length + s.bet) % BJ_TIPS.length]}` });
   return e;
 }
+/** The table picture. move: what just happened ('deal' | 'hit' | 'reveal'), so the new cards slide in / turn over. */
+async function bjArt(ctx, s, move) {
+  if (!artOn(ctx)) return null;
+  const pv = C.handValue(s.player), hide = !s.done, dv = C.handValue(hide ? s.dealer.slice(0, 1) : s.dealer);
+  const net = s.done ? s.payout - s.bet : 0;
+  return ART.blackjackImage({
+    player: s.player, dealer: s.dealer, hide, playerTotal: `${pv.total}${pv.soft && pv.total < 21 ? ' soft' : ''}`, dealerTotal: dv.total,
+    newPlayer: move === 'deal' ? 0 : move === 'hit' ? s.player.length - 1 : s.player.length,
+    newDealer: move === 'deal' ? 0 : move === 'reveal' ? 2 : s.dealer.length,
+    flip: move === 'reveal' || (s.done && move === 'hit'),
+    result: s.done ? { text: `${pv.total} vs ${C.handValue(s.dealer).total} · ${RESULT_TEXT[s.result]}`, net } : null,
+  });
+}
+/** With a picture the embed only holds the bet, the wallet and a tip; the cards are in the picture. */
+function bjArtEmbed(ctx, s, balance) {
+  const won = s.done && s.payout > s.bet, push = s.done && s.payout === s.bet;
+  return new EmbedBuilder().setColor(s.done ? (won ? COLORS.blackjack : push ? COLORS.push : COLORS.lose) : COLORS.blackjack)
+    .setTitle(`${EM('cardflip')} Blackjack · ${EM('coin')} ${fmtNum(s.bet)}${s.doubled ? ' · doubled' : ''}`)
+    .setDescription(s.done ? `Wallet: ${money(ctx, balance)}` : null)
+    .setFooter({ text: `Tip: ${BJ_TIPS[(s.player.length + s.dealer.length + s.bet) % BJ_TIPS.length]}` });
+}
 function bjButtons(i, id, s, bet) {
   if (s.done) return [againRow(i, 'blackjack', bet, 'Deal again')];
   return [new ActionRowBuilder().addComponents(
@@ -221,7 +281,8 @@ async function startBlackjack(ctx, i, bet, { update = false } = {}) {
     if (s.done) bjFinish(ctx, id, i.user.id, s); else saveSession(ctx, id, i.user.id, 'blackjack', s);
     balance = eco(ctx).wallet(ctx.guildId, i.user.id).coins;
   });
-  const msg = { embeds: [bjEmbed(ctx, s, balance)], components: bjButtons(i, id, s, bet), allowedMentions: NOPING };
+  const art = await bjArt(ctx, s, 'deal');
+  const msg = { ...(art ? withArt(bjArtEmbed(ctx, s, balance), art, { edit: update }) : { embeds: [bjEmbed(ctx, s, balance)] }), components: bjButtons(i, id, s, bet), allowedMentions: NOPING };
   return update ? i.update(msg) : i.reply({ ...msg, ...vis(ctx) });
 }
 async function blackjackClick(ctx, i, id, action) {
@@ -238,6 +299,8 @@ async function blackjackClick(ctx, i, id, action) {
     if (s.done) bjFinish(ctx, id, i.user.id, s); else saveSession(ctx, id, i.user.id, 'blackjack', s);
     balance = eco(ctx).wallet(ctx.guildId, i.user.id).coins;
   });
+  const art = await bjArt(ctx, s, action === 'stand' || (action === 'double' && s.result !== 'bust') ? 'reveal' : 'hit');
+  if (art) return i.update({ ...withArt(bjArtEmbed(ctx, s, balance), art, { edit: true }), components: bjButtons(i, id, s, s.origBet ?? s.bet) });
   // The hand is already settled and paid; when the dealer played, show the cards turning over one by one.
   if (s.done && s.result !== 'bust' && s.dealer.length >= 2 && frameMs() > 0) {
     await i.update({ embeds: [bjEmbed(ctx, s, balance, { dealerShown: s.dealer.slice(0, 2) })], components: [] });
@@ -288,7 +351,7 @@ async function cast(ctx, i, setup, { update = false } = {}) {
       setup.biome, setup.rod, setup.bait, setup.tackle, ctx.guildId, i.user.id);
     saveSession(ctx, id, i.user.id, 'fish', s);
   });
-  const msg = { embeds: [reelEmbed(ctx, s)], components: reelButtons(id), allowedMentions: NOPING };
+  const msg = { ...(await reelMsg(ctx, s, id, { edit: update })), allowedMentions: NOPING };
   await (update ? i.update(msg) : i.reply({ ...msg, flags: EPH })); // fishing menus were already private
   scheduleBite(ctx, i, id, s);
 }
@@ -302,11 +365,28 @@ function scheduleBite(ctx, i, id, s) {
     let cur;
     try { cur = loadSession(ctx, id, i.user.id, 'fish'); } catch { return; }
     if (cur.status !== 'reeling' || cur.struck != null || cur.step > 0) return; // they already pressed something
-    i.editReply({ embeds: [reelEmbed(ctx, cur)], components: reelButtons(id) }).catch(() => {});
+    reelMsg(ctx, cur, id, { edit: true }).then((m) => i.editReply(m)).catch(() => {});
   }, wait).unref?.();
 }
 
 const rarityHint = (r) => ({ legendary: `${EM('shimmer')} Something **huge** is fighting back!`, mythical: `${EM('shimmer')} The water is glowing... this is no ordinary fish.` }[r] ?? `${EM('bite')} Something bit!`);
+/** The fishing picture for a cast in progress: waiting (waves and a bobbing float) or reeling (the meter). */
+async function reelArt(ctx, s, now = Date.now()) {
+  if (!artOn(ctx)) return null;
+  const b = F.biomeById(s.biome), rd = F.rodById(s.rod), waiting = !F.bitten(s, now);
+  return ART.fishingImage({ biome: s.biome, title: `${b.label} · ${waiting ? 'waiting for a bite' : 'reeling'}`, phase: waiting ? 'waiting' : 'reeling', s, control: rd.control, line: rd.line, track: F.TRACK,
+    hint: waiting ? 'Waiting for a bite… press Reel the moment it bites for a strike bonus.' : 'Keep the fish in the green and press Reel. Slack lets tension off.' });
+}
+/** With a picture, the embed keeps the notes (strike, surge, rarity hint) and the gear; the meter is in the picture. */
+async function reelMsg(ctx, s, id, { edit = false } = {}) {
+  const art = await reelArt(ctx, s);
+  if (!art) return { embeds: [reelEmbed(ctx, s)], components: reelButtons(id), ...(edit ? { files: [], attachments: [] } : {}) };
+  const now = Date.now(), waiting = !F.bitten(s, now), note = F.reelNote(s, now), b = F.biomeById(s.biome);
+  const top = waiting ? null : [s.surge ? `${EM('surge')} ${note}` : note, rarityHint(s.fish.rarity)].filter(Boolean).join('\n');
+  const e = new EmbedBuilder().setColor(s.surge ? 0xf1c40f : COLORS.fish).setTitle(`${b.emoji} ${b.label}`).setDescription(top || null)
+    .setFooter({ text: `${F.rodById(s.rod).label} · ${F.baitById(s.bait).label} · ${F.tackleById(s.tackle).label}` });
+  return { ...withArt(e, art, { edit }), components: reelButtons(id) };
+}
 function reelEmbed(ctx, s, now = Date.now()) {
   const b = F.biomeById(s.biome);
   const waiting = !F.bitten(s, now);
@@ -435,7 +515,7 @@ async function reelClick(ctx, i, id, action) {
     if (s.status === 'caught') landed = landFish(ctx, i.user.id, s);
     dropSession(ctx, id);
   });
-  if (s.status === 'reeling') return i.update({ embeds: [reelEmbed(ctx, s)], components: reelButtons(id) });
+  if (s.status === 'reeling') return i.update(await reelMsg(ctx, s, id, { edit: true }));
 
   const b = F.biomeById(s.biome);
   const e = new EmbedBuilder().setTitle(`${b.emoji} ${b.label}`);
@@ -456,7 +536,14 @@ async function reelClick(ctx, i, id, action) {
     const why = { snapped: `${EM('snap')} **Snap!** The line broke. Watch the tension bar, press Slack, or fit a Steel Leader.`, cut: '✂️ You cut the line.', idle: '⌛ You waited too long and it swam off.', tired: '😮‍💨 It tired you out and got away.' };
     e.setColor(COLORS.lose).setDescription(`${why[s.status === 'snapped' ? 'snapped' : s.reason] ?? '🐟 It got away!'}\nIt was a **${F.rarityById(s.fish.rarity).label}** fish.`);
   }
-  return i.update({ embeds: [e], components: [afterCastRow(i)] });
+  let art = null;
+  if (artOn(ctx)) {
+    if (s.status === 'caught') {
+      const r = F.rarityById(s.fish.rarity), mut = s.fish.mutation ? `${F.MUTATIONS[s.fish.mutation].label} ` : '';
+      art = await ART.fishingImage({ biome: s.biome, title: b.label, phase: 'caught', catchInfo: { rarity: s.fish.rarity, mutation: s.fish.mutation, title: `${r.label} · ${mut}${F.FISH[s.fish.species].name}`, sub: `${s.fish.weight} kg · +${fmtNum(s.fish.value)} coins · +${landed.xp} XP` } });
+    } else art = await ART.fishingImage({ biome: s.biome, title: b.label, phase: 'escaped', hint: s.status === 'snapped' ? 'Snap! The line broke.' : 'It got away.' });
+  }
+  return i.update({ ...withArt(e, art, { edit: true }), components: [afterCastRow(i)] });
 }
 function unlockText(before, after) {
   const unlocked = F.BIOMES.filter((x) => x.level > before && x.level <= after);
@@ -862,6 +949,7 @@ export default {
     { key: 'fishChallenges', type: 'toggle', label: 'Fishing challenges (3 daily and 1 weekly, with coin and XP rewards)', default: true },
     { key: 'minBet', type: 'number', label: 'Smallest bet', default: 10, min: 1, max: 1000000 },
     { key: 'maxBet', type: 'number', label: 'Biggest bet', default: 50000, min: 1, max: 100000000 },
+    { key: 'gamePictures', type: 'toggle', label: 'Animated pictures for slots, blackjack, coin flip and fishing (needs the canvas package; text otherwise)', default: true },
     { key: 'privateGames', type: 'toggle', label: 'Only the player sees their game (keeps the channel quiet)', default: true },
     { key: 'announceBigWins', type: 'toggle', label: 'Announce big wins publicly (no pings, at most one per member every 10 minutes)', default: false },
     { key: 'bigWinLevel', type: 'select', label: 'Which wins are announced', options: ['jackpots', 'mythical', 'rare'], default: 'mythical', description: 'jackpots = slots jackpots only · mythical = jackpots and Mythical fish · rare = also Legendary, Mutated and 20x+ slots' },

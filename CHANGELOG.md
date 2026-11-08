@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.4
+**Animated games (being tested).**
+
+<!-- members -->
+the games got a big glow up 🎮 blackjack has real cards that slide in and flip, slots actually spin, the coin flips, and fishing has a moving lake with a bobbing float, a reel meter and a shiny card when you land something rare. these are still being tested, so if anything looks weird tell staff
+<!-- /members -->
+
+**Games (being tested)**
+- **Blackjack:** the table is a picture with real-looking cards. New cards slide in, the dealer's face-down card flips over, and the result shows at the bottom.
+- **Slots:** all three reels spin, then stop one at a time; winning reels light up.
+- **Coin flip:** the coin spins in the air and lands on heads or tails.
+- **Fishing:** every place has its own colours. Waves roll and the float bobs while you wait; on a bite the float dips, and the reel meter and tension bar update with every press. A landed fish gets a catch card that shines for rare ones.
+- Results are still decided and paid before the animation plays, exactly as before.
+- These pictures are **being tested**: game messages say so in their footer. A server can turn them off in the Games settings (**Animated pictures**), and the games fall back to the text look if the bot's PC can't draw pictures.
+
 ## 3.0.3
 **A fix for the Windows app opening to a blank window.**
 
