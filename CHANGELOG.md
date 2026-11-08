@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.2
+**Licences are switched on in the Windows app.**
+
+<!-- members -->
+small update: licences now work in the windows app, so bots with one can use their own name, picture, banner and description
+<!-- /members -->
+
+**Licences**
+- The Windows app can now check licence keys. Paste yours in **Settings**, under Licence, to unlock your bot's own name, picture, banner and description (the Good Boy credit stays).
+- A licence only works for the bot it was made for, and cancelled licences stop working.
+- Nothing changes for bots without a licence.
+
 ## 3.0.1
 **The 3.0 design's look in the dashboard and apps, moderation from the dashboard, 14-day charts and a What's new panel.**
 
