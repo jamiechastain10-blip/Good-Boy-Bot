@@ -91,8 +91,11 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 // ---------------------------------------------------------------- sign-in and server list
 async function boot() {
+  const asked = new URLSearchParams(location.search).get('guild');
   try { state.me = await api('/api/me'); }
   catch (e) {
+    // Arriving from the Good Boy hub or another bot with ?guild=: go straight through Discord (it remembers you).
+    if (asked && /^\d{17,20}$/.test(asked) && e.data?.loginReady !== false) { location.href = `/login?guild=${asked}`; return; }
     clear();
     app.append(h('div', { class: 'card welcome' }, h('img', { src: '/good-boy-logo.png', alt: 'Good Boy logo' }), h('h2', {}, 'Sign in to Good Boy'),
       h('p', { class: 'muted' }, e.data?.loginReady === false
@@ -104,7 +107,6 @@ async function boot() {
   document.getElementById('who').replaceChildren(document.createTextNode(state.me.user.username + ' · '), h('a', { href: '/logout', class: 'muted' }, 'log out'));
   mountIsland();
   // A link from another Good Boy bot's switcher opens that server straight away (?guild=<id>).
-  const asked = new URLSearchParams(location.search).get('guild');
   if (asked && state.me.guilds.some((g) => g.id === asked)) { state.gid = asked; history.replaceState(null, '', location.pathname); }
   state.gid ? await loadGuild() : showGuilds();
   whatsNewOnce();

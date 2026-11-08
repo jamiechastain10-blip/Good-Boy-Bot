@@ -834,6 +834,49 @@ async function maintenance(ctx) {
 }
 
 // ------------------------------------------------------------------ dashboard
+// ------------------------------------------------------------------ dashboard and phone: work on a ticket (3.0.6)
+/** Checks the person is ticket staff and finds the open ticket. Returns { member, ticket, channel }. */
+async function staffTicket(ctx, body, actor) {
+  const member = await ctx.guild?.members.fetch(String(actor?.userId ?? '')).catch(() => null);
+  if (!member || !isStaff(ctx, member)) throw new UserError('Only ticket staff can do that.');
+  const channelId = String(body.channelId ?? '');
+  const ticket = getTicket(ctx, channelId);
+  if (!ticket) throw new UserError('That ticket is closed or was deleted.');
+  const channel = ctx.guild.channels.cache.get(channelId) ?? await ctx.guild.channels.fetch(channelId).catch(() => null);
+  if (!channel) throw new UserError("That ticket's channel is gone.");
+  return { member, ticket, channel };
+}
+export const ticketActions = {
+  async 'ticket-claim'(ctx, body, actor) {
+    const { member, ticket, channel } = await staffTicket(ctx, body, actor);
+    if (ticket.status !== 'open') throw new UserError('That ticket is closed.');
+    if (ticket.claimedBy && ticket.claimedBy !== member.id && !ctx.perms.isAdmin(member)) throw new UserError('Someone else already claimed it.');
+    ticket.claimedBy = ticket.claimedBy === member.id ? null : member.id;
+    saveTicket(ctx, channel.id, ticket);
+    await channel.send({ content: ticket.claimedBy ? `🙋 <@${member.id}> claimed this ticket.` : `<@${member.id}> released this ticket.`, allowedMentions: NOPING }).catch(() => {});
+    return { claimed: !!ticket.claimedBy };
+  },
+  async 'ticket-reply'(ctx, body, actor) {
+    const { member, ticket, channel } = await staffTicket(ctx, body, actor);
+    if (ticket.status !== 'open') throw new UserError('That ticket is closed.');
+    const text = String(body.text ?? '').trim().slice(0, 1900);
+    if (!text) throw new UserError('Write a reply first.');
+    await channel.send({ embeds: [new EmbedBuilder().setColor(0x6b93ff).setAuthor({ name: `${member.displayName} (staff)`, iconURL: member.displayAvatarURL?.() ?? undefined }).setDescription(text).setFooter({ text: 'Sent from the dashboard' })], allowedMentions: { users: [ticket.opener] } });
+    if (!ticket.firstResponseAt) { ticket.firstResponseAt = Date.now(); saveTicket(ctx, channel.id, ticket); }
+    return { ok: true };
+  },
+  async 'ticket-close'(ctx, body, actor) {
+    const { member, ticket, channel } = await staffTicket(ctx, body, actor);
+    if (ticket.status !== 'open') throw new UserError('That ticket is already closed.');
+    const form = readCloseForm((id) => body[id]);
+    const report = catOf(ctx, ticket)?.report && ticket.report?.watchId;
+    const outcome = report ? String(body.outcome ?? '') : null;
+    if (report && !['confirmed', 'unfounded', 'inconclusive'].includes(outcome)) throw new UserError('Say how the report turned out: right, wrong, or not enough to say.');
+    await closeTicket(ctx, channel, ticket, member.user ?? member, { kind: 'staff', form, outcome });
+    return { closed: true };
+  },
+};
+
 function setWatchStatus(ctx, body, actor, status) {
   const id = Number(body.userId ?? body.id);
   if (!Number.isInteger(id)) throw new UserError('Bad request.');
@@ -1037,7 +1080,7 @@ export default {
       };
     },
     async tickets(ctx) {
-      const rows = ctx.data.list('ticket:').map(({ key, value: t }) => ({ id: key.slice(7), number: `#${t.number}`, category: t.typeLabel, urgency: urgencyOf(t).label, status: t.status, opener: nameOf(ctx, t.opener),
+      const rows = ctx.data.list('ticket:').map(({ key, value: t }) => ({ id: key.slice(7), channelId: key.slice(7), num: t.number, report: !!(catOf(ctx, t)?.report && t.report?.watchId), claimedBy: t.claimedBy ?? null, number: `#${t.number}`, category: t.typeLabel, urgency: urgencyOf(t).label, status: t.status, opener: nameOf(ctx, t.opener),
         claimed: t.claimedBy ? nameOf(ctx, t.claimedBy) : '—', opened: when(t.createdAt), rank: urgencyOf(t).rank })).sort((a, b) => b.rank - a.rank || 0);
       const recent = ctx.sql.all('SELECT * FROM support_history WHERE guild_id = ? AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 25', ctx.guildId).map((r) => ({
         number: `#${r.number}`, category: r.category_label, kind: CLOSE_KINDS[r.close_kind] ?? r.close_kind, resolution: r.resolution ?? '—', by: r.closed_by ? nameOf(ctx, r.closed_by) : '—', closed: when(r.closed_at) }));
@@ -1050,6 +1093,7 @@ export default {
     },
   },
   actions: {
+    ...ticketActions,
     'watch-confirm': (ctx, body, actor) => setWatchStatus(ctx, body, actor, 'confirmed'),
     'watch-unfound': (ctx, body, actor) => setWatchStatus(ctx, body, actor, 'unfounded'),
     async 'watch-remove'(ctx, body) {
@@ -1064,7 +1108,7 @@ export default {
     { id: 'archive', title: 'Ticket archive', view: 'archive', pageViews: ['archiveTicket'], permission: 'support.staff', private: true, kind: 'ticket-archive',
       description: 'Every ticket with its messages and files, read like the Discord chat it came from.', empty: 'No tickets yet.',
       columns: [{ key: 'number', label: '#' }, { key: 'type', label: 'Type' }, { key: 'status', label: 'Status' }, { key: 'messages', label: 'Messages' }] },
-    { id: 'tickets', title: 'Tickets', view: 'tickets', permission: 'support.staff', private: true,
+    { id: 'tickets', title: 'Tickets', view: 'tickets', permission: 'support.staff', private: true, pageActions: ['ticket-claim', 'ticket-reply', 'ticket-close'],
       description: 'Open tickets, newest first. Staff work on them in their ticket channels.',
       empty: 'No tickets are open right now.', recentTitle: 'Recently closed', recentEmpty: 'No tickets have been closed yet.',
       columns: [{ key: 'number', label: '#' }, { key: 'category', label: 'Category' }, { key: 'urgency', label: 'Urgency' }, { key: 'status', label: 'Status' }, { key: 'opener', label: 'Opened by' }, { key: 'claimed', label: 'Claimed' }, { key: 'opened', label: 'Opened' }],

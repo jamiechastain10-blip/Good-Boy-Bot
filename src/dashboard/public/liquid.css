@@ -274,7 +274,7 @@ h4{font-family:var(--gb-text)!important}
 .card .card{background:var(--gb-raised)!important;border:1px solid var(--gb-rim-2)!important}
 .gbpop,.gbmenu{background:var(--gb-raised)!important;border:1px solid rgba(160,180,230,.2)!important;border-radius:12px!important;box-shadow:0 24px 60px rgba(0,0,0,.5)!important}
 /* buttons: flat; primary is the one blue, the rest are quiet */
-button:not(.ghost):not(.nav-item):not(.nav):not(.tab):not([role="tab"]):not(.opt):not(.link):not(.chip-x):not(.switch):not([class*="tog"]):not(.card):not(.quick):not(.guild):not(.gb-tile):not(.tile):not(.plain):not(.row):not(.server):not(.tabs>button){
+button:not(.ghost):not(.nav-item):not(.nav):not(.tab):not([role="tab"]):not(.opt):not(.link):not(.chip-x):not(.switch):not([class*="tog"]):not(.card):not(.quick):not(.guild):not(.gb-tile):not(.tile):not(.plain):not(.row):not(.server):not(.tabs>button):not(.btn.quiet):not(.btn.danger){
   background:var(--gb-accent)!important;color:var(--gb-accent-ink)!important;border:0;border-radius:var(--gb-r-sm)!important;font-weight:600;box-shadow:none!important}
 button.ghost,.btn.ghost,button.quiet,.btn.quiet{background:var(--gb-raised)!important;color:var(--gb-ink)!important;border:1px solid var(--gb-rim-2)!important;border-radius:var(--gb-r-sm)!important;box-shadow:none!important}
 button.danger,button.danger-text{background:var(--gb-raised)!important;color:var(--gb-bad)!important;border:1px solid var(--gb-rim-2)!important}
@@ -292,3 +292,7 @@ button.row,.server,.tabs>button{background:transparent!important;color:inherit!i
 .server{border:1px solid var(--gb-rim-2)!important;border-radius:10px!important;background:var(--gb-solid)!important}
 .tabs{background:rgba(15,19,28,.92)!important;border-top:1px solid var(--gb-rim-2)!important}
 .tabs>button{color:var(--gb-ink-2)!important}.tabs>button[aria-current="page"]{color:var(--gb-accent)!important}
+
+/* 3.0.6: segmented controls on the phone stay quiet (only the picked one stands out) */
+.seg>button{background:transparent!important;color:var(--gb-ink-2,#8b97ab)!important;box-shadow:none!important}
+.seg>button[aria-pressed="true"]{background:var(--gb-card,#1b2130)!important;color:var(--gb-ink,#e9edf5)!important}

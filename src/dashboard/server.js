@@ -255,7 +255,9 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       // No `prompt` parameter: `prompt=none` makes Discord refuse first-time logins. Discord shows its consent screen once, then remembers.
       return send(res, 302, '', {
         Location: `https://discord.com/oauth2/authorize?${q}`,
-        'Set-Cookie': `gb_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${STATE_MS / 1000}${secure() ? '; Secure' : ''}`,
+        // 3.0.6: remember which server to open after login (links from the Good Boy hub and other bots carry ?guild=).
+        'Set-Cookie': [`gb_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${STATE_MS / 1000}${secure() ? '; Secure' : ''}`,
+          ...(SNOWFLAKE.test(url.searchParams.get('guild') ?? '') ? [`gb_next=${url.searchParams.get('guild')}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${STATE_MS / 1000}${secure() ? '; Secure' : ''}`] : [])],
         'Cache-Control': 'no-store',
       });
     }
@@ -321,7 +323,8 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       });
       logger.info(`Dashboard login ok for user ${user.id}`);
       const attrs = `HttpOnly; SameSite=Lax; Path=/${secure() ? '; Secure' : ''}`;
-      return send(res, 302, '', { Location: '/', 'Set-Cookie': [`gb_sid=${sid}; ${attrs}; Max-Age=${SESSION_MS / 1000}`, `gb_state=; ${attrs}; Max-Age=0`], 'Cache-Control': 'no-store' });
+      const nextGuild = parseCookies(req.headers.cookie).gb_next;
+      return send(res, 302, '', { Location: SNOWFLAKE.test(nextGuild ?? '') ? `/?guild=${nextGuild}` : '/', 'Set-Cookie': [`gb_sid=${sid}; ${attrs}; Max-Age=${SESSION_MS / 1000}`, `gb_state=; ${attrs}; Max-Age=0`, `gb_next=; ${attrs}; Max-Age=0`], 'Cache-Control': 'no-store' });
     }
 
     // The desktop app runs the bot, so it may open the dashboard already signed in as the bot's owner. It asks the bot
@@ -384,7 +387,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         const found = await hub.lookup(elsewhere.map((g) => g.id)).catch(() => []);
         others = found.map((x) => { const g = elsewhere.find((y) => y.id === x.guildId); return { id: x.guildId, name: g?.name ?? 'Server', icon: g?.icon ?? null, bot: x.name, url: x.url }; });
       }
-      return json(res, 200, { user: s.user, guilds: checked.filter(Boolean), others, version, botOwner: manager.isBotOwner(s.user.id), dashboardUrl: base, local: !!s.local });
+      return json(res, 200, { user: s.user, guilds: checked.filter(Boolean), others, version, botOwner: manager.isBotOwner(s.user.id), dashboardUrl: base, local: !!s.local, hubUrl: hub?.base ?? null });
     }
 
     // What's new: the release notes of this version and the few before it. Anyone signed in.
@@ -427,6 +430,13 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         logger.info(`Update requested from the dashboard by ${s.user.username} (${s.user.id})`);
       }
       return json(res, 200, { supervised: true, ...(await updates.request(p.endsWith('/apply') ? 'apply' : 'check')) });
+    }
+
+    // ---- recent activity for the phone app's Home (3.0.6)
+    m = p.match(/^\/api\/guilds\/(\d+)\/activity$/);
+    if (m && req.method === 'GET') {
+      const a = await authorize(req, res, m[1]); if (!a) return;
+      return json(res, 200, { activity: recentActivity(a.guild.id).slice(-30).reverse() });
     }
 
     // ---- 14 days of hourly counts for the Home sparklines (3.0.1)

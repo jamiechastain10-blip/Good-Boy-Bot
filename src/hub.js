@@ -10,7 +10,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const hubUrl = (env = process.env) => (String(env.GOODBOY_HUB ?? '').toLowerCase() === 'off' ? null : (String(env.GOODBOY_HUB_URL ?? '').replace(/\/+$/, '') || null));
+/** The official Good Boy hub, built in so every bot (Windows app ones included) joins without any setting. Empty until it is online. */
+export const DEFAULT_HUB_URL = 'https://goodboyhub.pages.dev';
+export const hubUrl = (env = process.env) => (String(env.GOODBOY_HUB ?? '').toLowerCase() === 'off' ? null : (String(env.GOODBOY_HUB_URL ?? DEFAULT_HUB_URL).replace(/\/+$/, '') || null));
 export const signedText = (b) => JSON.stringify({ appId: b.appId, url: b.url ?? null, guilds: b.guilds ?? null, at: b.at, leave: !!b.leave });
 const PROOF_RE = /\n?gb-hub:[0-9a-f]{20}/g;
 

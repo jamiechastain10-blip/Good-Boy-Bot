@@ -279,6 +279,15 @@ export class ModuleManager {
       get client() { return self.client; },
       get guild() { return self.client?.guilds.cache.get(guildId) ?? null; },
       hasIntent: (n) => self.intents.has(n),
+      /** 3.0.6: whether this user runs the bot (owner or team member). */
+      isBotOwner: (userId) => self.isBotOwner(String(userId ?? '')),
+      /** 3.0.6: settings for the whole bot, the same in every server (only the bot owner should change them). */
+      botData: {
+        get: (k) => self.db.dataGet('_bot', name, k),
+        set: (k, v) => self.db.dataSet('_bot', name, k, v),
+      },
+      /** 3.0.6: a folder for the whole bot's tools and files (not per server). */
+      botDir: (...parts) => { const d = path.join(self.dataDir, 'files', name, '_bot', ...parts.map((x) => String(x).replace(/[^\w.-]/g, '_'))); fs.mkdirSync(d, { recursive: true }); return d; },
       /** A folder for this module's files in this server (made when first asked for). */
       fileDir: (...parts) => { const d = path.join(self.dataDir, 'files', name, guildId, ...parts.map((x) => String(x).replace(/[^\w.-]/g, '_'))); fs.mkdirSync(d, { recursive: true }); return d; },
       log: {

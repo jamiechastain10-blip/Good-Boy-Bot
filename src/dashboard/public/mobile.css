@@ -82,3 +82,10 @@ h1{font:700 30px/1.15 'Inter Display',Inter,sans-serif;margin:6px 0 4px;letter-s
 
 /* 3.0.1: what's new */
 .wn{padding:12px 16px}.wn-p{margin:0 0 10px;line-height:1.55}.wn-list{margin:0 0 10px;padding-left:18px}.wn-list li{margin:4px 0;line-height:1.5}
+
+/* 3.0.6: charts on Home */
+.charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.chart{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.chart b{font-size:18px}.spark{width:100%;height:30px;margin-top:4px}
+.spark-line{fill:none;stroke:var(--blue);stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.spark-fill{fill:var(--blue);opacity:.14}.spark-dot{fill:var(--blue)}
