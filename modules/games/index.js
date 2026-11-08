@@ -18,8 +18,10 @@ import { createPipeline, packToken, unpackToken } from '../../src/modalpipe.js';
 import { parseAmount, fmtNum } from '../../src/economy.js';
 import * as C from '../../src/casino.js';
 import * as F from '../../src/fishing.js';
+import * as PONG from '../../src/pong.js';
 import * as CH from '../../src/fishchallenges.js';
 import { UserError, sleep } from '../../src/util.js';
+import { emoji as EM, emojiRef } from '../../src/emojis.js';
 
 const EPH = MessageFlags.Ephemeral;
 // Game results are private to the player by default: a public message per play notified everyone following the channel.
@@ -124,13 +126,13 @@ function playSlots(ctx, userId, bet) {
 
 const reelLine = (shown) => `┃ ${shown.join(' ┃ ')} ┃`;
 function slotsEmbed(ctx, r, stopped) {
-  const shown = r.reels.map((x, k) => (k < stopped ? C.slotEmoji(x) : '🌀'));
-  const e = new EmbedBuilder().setColor(COLORS.slots).setTitle('🎰 Slots').setDescription(`# ${reelLine(shown)}`)
+  const shown = r.reels.map((x, k) => (k < stopped ? C.slotEmoji(x) : EM('slot')));
+  const e = new EmbedBuilder().setColor(COLORS.slots).setTitle(`${EM('slot')} Slots · ${EM('coin')} ${fmtNum(r.bet)}`).setDescription(`# ${reelLine(shown)}`)
     .setFooter({ text: `Bet ${fmtNum(r.bet)} · jackpot pool ${fmtNum(pool(ctx))}` });
   if (stopped < 3) return e;
   const net = r.payout - r.bet;
-  const line = r.jackpotWon ? `💥 **JACKPOT!** You won ${money(ctx, r.payout)}!` : r.payout >= r.bet * 5 ? `🎉 **Big win!** ${C.slotMultiplier(r.reels)}x - you won ${money(ctx, r.payout)}`
-    : r.payout > r.bet ? `✅ You won ${money(ctx, r.payout)} (${C.slotMultiplier(r.reels)}x)` : r.payout > 0 ? `😮 Close! ${money(ctx, r.payout)} back` : '❌ No luck this time.';
+  const line = r.jackpotWon ? `${EM('win')} **JACKPOT!** You won ${money(ctx, r.payout)}! ${EM('coins')}` : r.payout >= r.bet * 5 ? `${EM('win')} **Big win!** ${C.slotMultiplier(r.reels)}x - you won ${money(ctx, r.payout)}`
+    : r.payout > r.bet ? `${EM('coins')} You won ${money(ctx, r.payout)} (${C.slotMultiplier(r.reels)}x)` : r.payout > 0 ? `😮 Close! ${money(ctx, r.payout)} back` : `${EM('lose')} No luck this time.`;
   return e.setColor(net > 0 ? COLORS.slots : COLORS.lose).setDescription(`# ${reelLine(shown)}\n${line}\nWallet: ${money(ctx, r.balance)}`);
 }
 function againRow(i, game, bet, label) {
@@ -159,12 +161,12 @@ async function runFlip(ctx, i, bet, side, { update = false } = {}) {
     record(ctx, i.user.id, 'coinflip', bet, payout);
     res = { landed, payout, balance: eco(ctx).wallet(ctx.guildId, i.user.id).coins };
   });
-  const spinning = new EmbedBuilder().setColor(COLORS.coinflip).setTitle('🪙 Coin flip').setDescription(`You called **${side}** for ${money(ctx, bet)}...\n# 🪙 *flipping*`);
+  const spinning = new EmbedBuilder().setColor(COLORS.coinflip).setTitle(`${EM('coin')} Coin flip`).setDescription(`You called **${side}** for ${money(ctx, bet)}...\n# ${EM('coin')} *flipping*`);
   if (update) await i.update({ embeds: [spinning], components: [] }); else await i.reply({ embeds: [spinning], allowedMentions: NOPING, ...vis(ctx) });
   await sleep(frameMs() * 1.5);
   const won = res.payout > 0;
-  const done = new EmbedBuilder().setColor(won ? COLORS.coinflip : COLORS.lose).setTitle('🪙 Coin flip')
-    .setDescription(`It landed on **${res.landed}**!\n${won ? `✅ You won ${money(ctx, res.payout)}` : `❌ You lost ${money(ctx, bet)}`}\nWallet: ${money(ctx, res.balance)}`);
+  const done = new EmbedBuilder().setColor(won ? COLORS.coinflip : COLORS.lose).setTitle(`${EM('coin')} Coin flip`)
+    .setDescription(`# ${won ? EM('win') : EM('lose')} ${res.landed === 'heads' ? 'Heads' : 'Tails'}\n${won ? `${EM('coins')} You won ${money(ctx, res.payout)}` : `You lost ${money(ctx, bet)}`}\nWallet: ${money(ctx, res.balance)}`);
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(againId(i, 'coinflip', [bet, 'heads'])).setLabel('Heads again').setEmoji('🙂').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(againId(i, 'coinflip', [bet, 'tails'])).setLabel('Tails again').setEmoji('🪙').setStyle(ButtonStyle.Success),
@@ -173,17 +175,26 @@ async function runFlip(ctx, i, bet, side, { update = false } = {}) {
 }
 
 // ------------------------------------------------------------------ blackjack
-const RESULT_TEXT = { win: '✅ You win!', blackjack: '🃏 **Blackjack!** Pays 3 to 2.', lose: '❌ Dealer wins.', bust: '💥 Bust! Over 21.', push: '🤝 Push - your bet is returned.', expired: '⌛ Table timed out - you stood automatically.' };
-function bjEmbed(ctx, s, balance) {
-  const pv = C.handValue(s.player), dv = C.handValue(s.dealer);
-  const e = new EmbedBuilder().setColor(s.done ? (s.payout > s.bet ? COLORS.blackjack : s.payout === s.bet ? COLORS.push : COLORS.lose) : COLORS.blackjack)
-    .setTitle(`🃏 Blackjack · bet ${fmtNum(s.bet)}${s.doubled ? ' (doubled)' : ''}`)
+const RESULT_TEXT = { win: 'You win', blackjack: 'Blackjack! Pays 3 to 2', lose: 'Dealer wins', bust: 'Bust, over 21', push: 'Push, your bet is back', expired: 'Table timed out, you stood' };
+const BJ_TIPS = ['Doubling on 11 wins more often than not.', 'The dealer must draw to 16 and stand on 17.', 'A soft hand has an ace counted as 11: it cannot bust on the next card.', 'Standing on 12 against a dealer 4, 5 or 6 is usually right.', 'Blackjack pays 3 to 2; a push gives your bet back.'];
+/** Cards as text: each card in a tile; the dealer's face-down card is Good Boy's animated card back. */
+const cardTiles = (cards, hideSecond = false) => cards.map((c, k) => (hideSecond && k === 1 ? EM('card') : `\`${c}\``)).join(' ');
+function bjEmbed(ctx, s, balance, { dealerShown = null } = {}) {
+  const pv = C.handValue(s.player);
+  const dealer = dealerShown ?? s.dealer, hide = !s.done && dealerShown == null, dv = C.handValue(dealer);
+  const won = s.done && s.payout > s.bet, push = s.done && s.payout === s.bet;
+  const e = new EmbedBuilder().setColor(s.done ? (won ? COLORS.blackjack : push ? COLORS.push : COLORS.lose) : COLORS.blackjack)
+    .setTitle(`${EM('cardflip')} Blackjack`)
+    .setDescription(`${EM('coin')} Bet **${fmtNum(s.bet)}**${s.doubled ? ' · doubled' : ''}`)
     .addFields(
-      { name: `Dealer${s.done ? ` · ${dv.total}` : ''}`, value: C.cardsText(s.dealer, !s.done) },
-      { name: `You · ${pv.total}${pv.soft && pv.total < 21 ? ' (soft)' : ''}`, value: C.cardsText(s.player) },
+      { name: `Your hand · ${pv.total}${pv.soft && pv.total < 21 ? ' soft' : ''}`, value: cardTiles(s.player), inline: true },
+      { name: `Dealer · ${hide ? '?' : dv.total}`, value: cardTiles(dealer, hide), inline: true },
     );
-  if (s.done) e.setDescription(`${RESULT_TEXT[s.result]}${s.payout ? ` ${money(ctx, s.payout)} back.` : ''}\nWallet: ${money(ctx, balance)}`);
-  else e.setFooter({ text: 'Hit = another card · Stand = keep your hand · Double = double the bet, one card' });
+  if (s.done && dealerShown == null) {
+    const net = s.payout - s.bet;
+    e.addFields({ name: '\u200b', value: `${won ? EM('win') : push ? '🤝' : EM('lose')} \`${pv.total} vs ${dv.total} · ${RESULT_TEXT[s.result]}${net ? ` · ${net > 0 ? '+' : ''}${fmtNum(net)}` : ''}\`\n${EM('coins')} Wallet: ${money(ctx, balance)}` });
+  } else if (dealerShown != null) e.addFields({ name: '\u200b', value: `${EM('cardflip')} *Dealer's turn...*` });
+  e.setFooter({ text: `Tip: ${BJ_TIPS[(s.player.length + s.dealer.length + s.bet) % BJ_TIPS.length]}` });
   return e;
 }
 function bjButtons(i, id, s, bet) {
@@ -227,6 +238,13 @@ async function blackjackClick(ctx, i, id, action) {
     if (s.done) bjFinish(ctx, id, i.user.id, s); else saveSession(ctx, id, i.user.id, 'blackjack', s);
     balance = eco(ctx).wallet(ctx.guildId, i.user.id).coins;
   });
+  // The hand is already settled and paid; when the dealer played, show the cards turning over one by one.
+  if (s.done && s.result !== 'bust' && s.dealer.length >= 2 && frameMs() > 0) {
+    await i.update({ embeds: [bjEmbed(ctx, s, balance, { dealerShown: s.dealer.slice(0, 2) })], components: [] });
+    for (let k = 3; k <= s.dealer.length; k++) { await sleep(frameMs()); await i.editReply({ embeds: [bjEmbed(ctx, s, balance, { dealerShown: s.dealer.slice(0, k) })] }).catch(() => {}); }
+    await sleep(frameMs());
+    return i.editReply({ embeds: [bjEmbed(ctx, s, balance)], components: bjButtons(i, id, s, s.origBet ?? s.bet) }).catch(() => {});
+  }
   return i.update({ embeds: [bjEmbed(ctx, s, balance)], components: bjButtons(i, id, s, s.origBet ?? s.bet) });
 }
 
@@ -264,28 +282,46 @@ async function cast(ctx, i, setup, { update = false } = {}) {
     useBait(ctx, i.user.id, setup.bait);
     const seed = randomInt(2 ** 31);
     const fish = F.rollCatch(setup, F.seeded(seed ^ 0x5bd1e995));
-    s = F.startReel({ rod: setup.rod, tackle: setup.tackle, fish, seed });
+    s = F.startReel({ rod: setup.rod, tackle: setup.tackle, fish, seed, biteMs: globalThis[Symbol.for('goodboy.games.biteMs')], surges: globalThis[Symbol.for('goodboy.games.surges')] ?? true });
     s.biome = setup.biome; s.bait = setup.bait;
     ctx.sql.run('UPDATE games_fish_profile SET casts = casts + 1, last_biome = ?, last_rod = ?, last_bait = ?, last_tackle = ? WHERE guild_id = ? AND user_id = ?',
       setup.biome, setup.rod, setup.bait, setup.tackle, ctx.guildId, i.user.id);
     saveSession(ctx, id, i.user.id, 'fish', s);
   });
   const msg = { embeds: [reelEmbed(ctx, s)], components: reelButtons(id), allowedMentions: NOPING };
-  return update ? i.update(msg) : i.reply({ ...msg, flags: EPH }); // fishing menus were already private
+  await (update ? i.update(msg) : i.reply({ ...msg, flags: EPH })); // fishing menus were already private
+  scheduleBite(ctx, i, id, s);
+}
+/**
+ * Shows the bite when it happens (one edit). Only a nicety: if the bot restarts in between, the next press still
+ * works, because whether the fish has bitten is worked out from the time saved in the game.
+ */
+function scheduleBite(ctx, i, id, s) {
+  const wait = Math.max(0, (s.biteAt ?? 0) - Date.now());
+  setTimeout(() => {
+    let cur;
+    try { cur = loadSession(ctx, id, i.user.id, 'fish'); } catch { return; }
+    if (cur.status !== 'reeling' || cur.struck != null || cur.step > 0) return; // they already pressed something
+    i.editReply({ embeds: [reelEmbed(ctx, cur)], components: reelButtons(id) }).catch(() => {});
+  }, wait).unref?.();
 }
 
-const rarityHint = (r) => ({ legendary: '✨ Something **huge** is fighting back!', mythical: '🌟 The water is glowing... this is no ordinary fish.' }[r] ?? '🐟 Something bit!');
-function reelEmbed(ctx, s) {
+const rarityHint = (r) => ({ legendary: `${EM('shimmer')} Something **huge** is fighting back!`, mythical: `${EM('shimmer')} The water is glowing... this is no ordinary fish.` }[r] ?? `${EM('bite')} Something bit!`);
+function reelEmbed(ctx, s, now = Date.now()) {
   const b = F.biomeById(s.biome);
-  return new EmbedBuilder().setColor(COLORS.fish).setTitle(`${b.emoji} ${b.label} · reeling`)
-    .setDescription(`${rarityHint(s.fish.rarity)}\n${F.reelPanel(s)}`)
-    .setFooter({ text: `${F.rodById(s.rod).label} · ${F.baitById(s.bait).label} · ${F.tackleById(s.tackle).label} · keep the ◆ inside your ■ zone, then Reel` });
+  const waiting = !F.bitten(s, now);
+  const note = F.reelNote(s, now);
+  const top = waiting ? `${EM('bobber')} ${note}` : [s.surge ? `${EM('surge')} ${note}` : note, rarityHint(s.fish.rarity)].filter(Boolean).join('\n');
+  return new EmbedBuilder().setColor(s.surge ? 0xf1c40f : COLORS.fish).setTitle(`${b.emoji} ${b.label} · ${waiting ? 'waiting for a bite' : 'reeling'}`)
+    .setDescription(waiting ? top : `${top}\n${F.reelPanel(s)}`)
+    .setFooter({ text: `${F.rodById(s.rod).label} · ${F.baitById(s.bait).label} · ${F.tackleById(s.tackle).label} · keep the ◆ inside your ■ zone and Reel · Slack lets tension off` });
 }
 function reelButtons(id) {
   return [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`gm:fr:${id}:left`).setEmoji('◀️').setLabel('Pull').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`gm:fr:${id}:reel`).setEmoji('🎣').setLabel('Reel').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`gm:fr:${id}:reel`).setEmoji(emojiRef('reel')).setLabel('Reel').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`gm:fr:${id}:right`).setEmoji('▶️').setLabel('Pull').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`gm:fr:${id}:slack`).setEmoji('🪢').setLabel('Slack').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`gm:fr:${id}:cut`).setEmoji('✂️').setStyle(ButtonStyle.Danger))];
 }
 
@@ -394,7 +430,7 @@ async function reelClick(ctx, i, id, action) {
   ctx.sql.transaction(() => {
     s = loadSession(ctx, id, i.user.id, 'fish');
     if (action === 'cut') Object.assign(s, { status: 'escaped', reason: 'cut' });
-    else F.reelStep(s, action);
+    else if (['left', 'right', 'reel', 'slack'].includes(action)) F.reelStep(s, action);
     if (s.status === 'reeling') return saveSession(ctx, id, i.user.id, 'fish', s);
     if (s.status === 'caught') landed = landFish(ctx, i.user.id, s);
     dropSession(ctx, id);
@@ -410,12 +446,14 @@ async function reelClick(ctx, i, id, action) {
       shout(ctx, i, `🎣 ${nameOf(i)} caught a ${s.fish.mutation ? `${F.MUTATIONS[s.fish.mutation].label} ` : ''}**${F.FISH[s.fish.species].name}** (${r.label})!`, s.fish.rarity === 'mythical' ? 'mythical' : s.fish.rarity === 'legendary' ? 'legendary' : 'mutated');
     }
     ctx.live('data');
+    const big = ['legendary', 'mythical'].includes(s.fish.rarity) || s.fish.mutation;
+    const skill = [s.struck && '⚡ strike', s.surges?.won && `🙌 ${s.surges.won} surge${s.surges.won === 1 ? '' : 's'} nailed`].filter(Boolean).join(' · ');
     e.setColor(s.fish.mutation === 'corrupted' ? 0x2c2f33 : r.color)
-      .setDescription([`🎉 You caught a ${fishLine(s.fish)}!`, `Worth ${money(ctx, s.fish.value)} · +${landed.xp} XP`,
+      .setDescription([`# ${EM('splash')} ${EM(`fish_${s.fish.rarity}`)}${big ? ` ${EM('shimmer')}` : ''}`, `🎉 You caught a ${fishLine(s.fish)}!`, `Worth ${money(ctx, s.fish.value)} · +${landed.xp} XP${skill ? ` · ${skill}` : ''}`,
         ...landed.challenges,
         landed.after > landed.before ? `⬆️ **Fishing level ${landed.after}${landed.after >= F.MAX_LEVEL ? ' (max)' : ''}!**${unlockText(landed.before, landed.after)}` : null].filter(Boolean).join('\n'));
   } else {
-    const why = { snapped: '💥 **Snap!** The line broke. Watch the tension bar, or fit a Steel Leader.', cut: '✂️ You cut the line.', idle: '⌛ You waited too long and it swam off.', tired: '😮‍💨 It tired you out and got away.' };
+    const why = { snapped: `${EM('snap')} **Snap!** The line broke. Watch the tension bar, press Slack, or fit a Steel Leader.`, cut: '✂️ You cut the line.', idle: '⌛ You waited too long and it swam off.', tired: '😮‍💨 It tired you out and got away.' };
     e.setColor(COLORS.lose).setDescription(`${why[s.status === 'snapped' ? 'snapped' : s.reason] ?? '🐟 It got away!'}\nIt was a **${F.rarityById(s.fish.rarity).label}** fish.`);
   }
   return i.update({ embeds: [e], components: [afterCastRow(i)] });
@@ -463,10 +501,36 @@ function bagMessage(ctx, i, note) {
   const e = new EmbedBuilder().setColor(COLORS.fish).setTitle('🎒 Your bag')
     .setDescription([note, rows.length ? rows.map((c) => `${fishLine(c)} · ${money(ctx, c.value)}`).join('\n') : '*Empty. Go catch something!*'].filter(Boolean).join('\n\n'))
     .setFooter({ text: `${fmtNum(tot.n)} fish · worth ${fmtNum(tot.v)} in total${tot.n > 10 ? ' · showing the 10 most valuable' : ''}` });
-  return { embeds: [e], components: [new ActionRowBuilder().addComponents(
+  const pick = ctx.sql.all('SELECT * FROM games_fish_bag WHERE guild_id = ? AND user_id = ? AND sold = 0 ORDER BY value DESC LIMIT 25', ctx.guildId, i.user.id);
+  const chooser = pick.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`gm:fsel:${i.user.id}`)
+    .setPlaceholder('Choose fish to sell...').setMinValues(1).setMaxValues(pick.length)
+    .addOptions(pick.map((c) => ({ label: `${F.FISH[c.species]?.name ?? 'Fish'} · ${c.weight} kg`.slice(0, 100), value: String(c.id), emoji: emojiRef(`fish_${c.rarity}`),
+      description: `${F.rarityById(c.rarity).label}${c.mutation ? ` · ${F.MUTATIONS[c.mutation].label}` : ''}${c.giant ? ' · Giant' : ''} · ${fmtNum(c.value)} coins`.slice(0, 100) }))))] : [];
+  return { embeds: [e], components: [...chooser, new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:sellcommon`).setLabel(`Sell all but rare finds (${fmtNum(tot.cheap)})`).setEmoji('💰').setStyle(ButtonStyle.Success).setDisabled(!tot.cheap),
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:sellall`).setLabel(`Sell everything (${fmtNum(tot.v)})`).setEmoji('💰').setStyle(ButtonStyle.Danger).setDisabled(!tot.v),
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary))], allowedMentions: NOPING };
+}
+/** Sells the chosen fish (by bag row). Fish already sold, or someone else's, are skipped. */
+function sellChosen(ctx, userId, ids) {
+  let total = 0, count = 0, lines = [];
+  const clean = [...new Set(ids.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))].slice(0, 25);
+  ctx.sql.transaction(() => {
+    for (const id of clean) {
+      const row = ctx.sql.get('SELECT value FROM games_fish_bag WHERE id = ? AND guild_id = ? AND user_id = ? AND sold = 0', id, ctx.guildId, userId);
+      if (!row) continue;
+      ctx.sql.run('UPDATE games_fish_bag SET sold = 1 WHERE id = ?', id);
+      total += row.value; count++;
+    }
+    if (total) eco(ctx).credit(ctx.guildId, userId, total, 'sold fish');
+    if (total) lines = progressChallenges(ctx, userId, { type: 'sell', coins: total });
+  });
+  return { total, count, lines };
+}
+async function sellSelect(ctx, i, owner) {
+  if (owner !== i.user.id) throw new UserError('That bag belongs to someone else. Run `/fish` for your own.');
+  const got = sellChosen(ctx, i.user.id, i.values ?? []);
+  return i.update(bagMessage(ctx, i, got.total ? [`${EM('coins')} Sold ${got.count} fish for ${money(ctx, got.total)}.`, ...got.lines].join('\n') : 'Those fish were already sold.'));
 }
 function sellFish(ctx, userId, all) {
   let total = 0, lines = [];
@@ -485,7 +549,10 @@ function shopMessage(ctx, i, note) {
   const lv = F.levelFromXp(p.xp).level;
   const stock = baitStock(ctx, i.user.id);
   const coins = eco(ctx).wallet(ctx.guildId, i.user.id).coins;
-  const rodLines = F.RODS.filter((r) => r.price).map((r) => `${p.rods.includes(r.id) ? '✅' : r.level > lv ? '🔒' : '▫️'} **${r.label}** · ${fmtNum(r.price)} · lv ${r.level} · luck +${Math.round(r.luck * 100)}% · zone ${r.control}`);
+  // Only the rods that matter now: the best one owned, the ones for sale, and the next two to unlock.
+  const best = Math.max(...F.RODS.map((r, k) => (p.rods.includes(r.id) ? k : 0)));
+  const locked = F.RODS.filter((r) => r.level > lv).slice(0, 2).map((r) => r.id);
+  const rodLines = F.RODS.filter((r, k) => r.price && (k === best || (!p.rods.includes(r.id) && r.level <= lv) || locked.includes(r.id))).slice(-8).map((r) => `${p.rods.includes(r.id) ? '✅' : r.level > lv ? '🔒' : '▫️'} **${r.label}** · ${fmtNum(r.price)} · lv ${r.level} · luck +${Math.round(r.luck * 100)}% · zone ${r.control}`);
   const tackleLines = F.TACKLE.filter((t) => t.price).map((t) => `${p.tackle.includes(t.id) ? '✅' : '▫️'} **${t.label}** · ${fmtNum(t.price)} · ${t.desc}`);
   const baitLines = F.BAITS.filter((b) => b.price).map((b) => `🪱 **${b.label}** · ${fmtNum(b.price)} each · luck +${Math.round(b.luck * 100)}%${b.corruption ? ' · draws corruption' : ''} · you have ${stock[b.id] ?? 0}`);
   const e = new EmbedBuilder().setColor(COLORS.fish).setTitle('🛒 Tackle shop').setDescription([note, `You have ${money(ctx, coins)}`].filter(Boolean).join('\n'))
@@ -494,7 +561,7 @@ function shopMessage(ctx, i, note) {
     ...F.RODS.filter((r) => r.price && !p.rods.includes(r.id) && r.level <= lv).map((r) => ({ label: `${r.label} (${fmtNum(r.price)})`, value: `rod-${r.id}`, emoji: '🎣' })),
     ...F.TACKLE.filter((t) => t.price && !p.tackle.includes(t.id)).map((t) => ({ label: `${t.label} (${fmtNum(t.price)})`, value: `tackle-${t.id}`, emoji: '🧰' })),
     ...F.BAITS.filter((b) => b.price).map((b) => ({ label: `${b.label} (${fmtNum(b.price)} each)`, value: `bait-${b.id}`, emoji: '🪱', description: 'Choose how many in a form' })),
-  ];
+  ].slice(-25);
   const rows = [];
   if (options.length) {
     rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`gm:fs:${i.user.id}`).setPlaceholder('Buy something...')
@@ -535,32 +602,39 @@ function buyItem(ctx, userId, value, qty = 1) {
 }
 
 /** Collection: an overview of every place, or one place's fish (`biome`). A button per place switches between them. */
-function dexMessage(ctx, i, biome = null) {
+const DEX_PAGE = 21;
+function dexMessage(ctx, i, view = null) {
   const seen = Object.fromEntries(ctx.sql.all('SELECT species, count, best_weight FROM games_fish_dex WHERE guild_id = ? AND user_id = ?', ctx.guildId, i.user.id).map((r) => [r.species, r]));
   const total = Object.keys(F.FISH).length, found = Object.keys(seen).filter((id) => F.FISH[id]).length;
   const lv = F.levelFromXp(profile(ctx, i.user.id).xp).level;
   const e = new EmbedBuilder().setColor(COLORS.fish);
+  const [biome, pageRaw] = String(view ?? '').split('.');
   const place = biome && F.BIOMES.find((b) => b.id === biome);
+  const rows = [];
   if (place) {
     const list = F.fishIn(place.id), have = list.filter((f) => seen[f.id]).length;
+    const pages = Math.ceil(list.length / DEX_PAGE), page = Math.min(Math.max(Number(pageRaw) || 0, 0), pages - 1);
     e.setTitle(`📖 ${place.emoji} ${place.label} · ${have}/${list.length}`)
-      .setDescription([place.level > lv ? `🔒 Unlocks at fishing level ${place.level}.` : place.blurb, '',
-        ...list.map((f) => (seen[f.id] ? `✅ **${f.name}** · ${F.rarityById(f.rarity).label} · best ${seen[f.id].best_weight} kg · caught ${fmtNum(seen[f.id].count)}` : `❔ ${F.rarityById(f.rarity).label} fish`))].join('\n'));
+      .setDescription([place.level > lv ? `🔒 Unlocks at fishing level ${fmtNum(place.level)}.` : place.blurb, '',
+        ...list.slice(page * DEX_PAGE, (page + 1) * DEX_PAGE).map((f) => (seen[f.id] ? `✅ **${f.name}** · ${F.rarityById(f.rarity).label} · best ${seen[f.id].best_weight} kg · caught ${fmtNum(seen[f.id].count)}` : `❔ ${F.rarityById(f.rarity).label} fish`))].join('\n'))
+      .setFooter({ text: `Page ${page + 1} of ${pages}` });
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex-${place.id}.${page - 1}`).setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex-${place.id}.${page + 1}`).setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1)));
   } else {
-    e.setTitle(`📖 Collection · ${found}/${total}`)
+    e.setTitle(`📖 Collection · ${fmtNum(found)}/${fmtNum(total)}`)
       .setDescription(`${F.meter((found / total) * 100, 15)} Catch every fish in every place. Pick a place below to see its fish.`);
     for (const b of F.BIOMES) {
       const list = F.fishIn(b.id), have = list.filter((f) => seen[f.id]).length;
-      e.addFields({ name: `${b.emoji} ${b.label}`, value: b.level > lv ? `🔒 Level ${b.level}` : `${have === list.length ? '🏆' : F.meter((have / list.length) * 100, 6)} ${have}/${list.length}`, inline: true });
+      e.addFields({ name: `${b.emoji} ${b.label}`, value: b.level > lv ? `🔒 Level ${fmtNum(b.level)}` : `${have === list.length ? '🏆' : F.meter((have / list.length) * 100, 6)} ${have}/${list.length}`, inline: true });
     }
   }
-  const btn = (b) => new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex-${b.id}`).setEmoji(b.emoji).setLabel(b.label.replace(/^The /, '')).setStyle(b.id === biome ? ButtonStyle.Primary : ButtonStyle.Secondary);
-  return { embeds: [e], components: [
-    new ActionRowBuilder().addComponents(F.BIOMES.slice(0, 5).map(btn)),
-    new ActionRowBuilder().addComponents(F.BIOMES.slice(5, 10).map(btn)),
-    new ActionRowBuilder().addComponents(
-      ...(place ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('All places').setStyle(ButtonStyle.Secondary)] : []),
-      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary))], allowedMentions: NOPING };
+  rows.unshift(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`gm:fdx:${i.user.id}`).setPlaceholder('Pick a place...')
+    .addOptions(F.BIOMES.map((b) => ({ label: b.label, value: b.id, emoji: b.emoji, default: b.id === biome, description: b.level > lv ? `Unlocks at level ${fmtNum(b.level)}` : `${F.fishIn(b.id).filter((f) => seen[f.id]).length}/${F.fishIn(b.id).length} found` })))));
+  rows.push(new ActionRowBuilder().addComponents(
+    ...(place ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('All places').setStyle(ButtonStyle.Secondary)] : []),
+    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary)));
+  return { embeds: [e], components: rows, allowedMentions: NOPING };
 }
 
 async function hubClick(ctx, i, owner, view) {
@@ -663,7 +737,10 @@ async function gameClick(ctx, i) {
   if (kind === 'fr') return reelClick(ctx, i, a, b);
   if (kind === 'fh') return hubClick(ctx, i, a, b);
   if (kind === 'fs') return shopSelect(ctx, i, a);
+  if (kind === 'fsel') return sellSelect(ctx, i, a);
+  if (kind === 'fdx') { if (a !== i.user.id) throw new UserError('That collection belongs to someone else. Run `/fish` for your own.'); return i.update(dexMessage(ctx, i, i.values?.[0] ?? null)); }
   if (kind === 'ar') return arcadeClick(ctx, i, a);
+  if (kind === 'pg') return pongClick(ctx, i, a, b);
   throw new UserError('That button is no longer active.');
 }
 /** Signed "again" buttons: same game, same bet, one click. */
@@ -677,10 +754,77 @@ async function againClick(ctx, i) {
   throw new UserError('That button is no longer active.');
 }
 
+// ------------------------------------------------------------------ pong (turn-based)
+function pongEmbed(ctx, s) {
+  const name = (id) => (id === 'bot' ? 'Good Boy' : `<@${id}>`);
+  const e = new EmbedBuilder().setColor(0x6b93ff).setTitle(`${EM('paddle')} Pong · first to ${s.to}`)
+    .setDescription(`🟦 ${name(s.left.id)} **${s.score[0]}** : **${s.score[1]}** ${name(s.right.id)} 🟥\n\n${PONG.court(s, EM('ball'))}`);
+  if (s.status === 'over') e.addFields({ name: '\u200b', value: `${EM('win')} ${name(PONG.winner(s))} wins!` });
+  else e.addFields({ name: '\u200b', value: `${s.last ? `${name(s[s.last].id)} scored! ` : ''}Your move, ${name(PONG.turnId(s))}: the ball is coming to you.` });
+  return e.setFooter({ text: 'Move your paddle so the ball hits it. Up, stay or down; then the ball flies two squares.' });
+}
+function pongButtons(id, s) {
+  if (s.status === 'over') return [];
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`gm:pg:${id}:up`).setEmoji('⬆️').setLabel('Up').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`gm:pg:${id}:stay`).setEmoji('⏺️').setLabel('Stay').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`gm:pg:${id}:down`).setEmoji('⬇️').setLabel('Down').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`gm:pg:${id}:quit`).setLabel('Give up').setStyle(ButtonStyle.Danger))];
+}
+/** Pong sessions are shared by two people, so they are loaded without the owner check. */
+function loadPong(ctx, id) {
+  const row = ctx.sql.get("SELECT * FROM games_sessions WHERE id = ? AND guild_id = ? AND kind = 'pong'", id, ctx.guildId);
+  if (!row) throw new UserError('That game of Pong has finished. Start a new one with /pong!');
+  return JSON.parse(row.state);
+}
+async function startPong(ctx, i) {
+  enabled(ctx, 'pong');
+  const rival = i.options?.getUser?.('opponent');
+  if (rival && (rival.bot || rival.id === i.user.id)) throw new UserError(rival.bot ? 'Bots can\'t play. Leave the opponent empty to play Good Boy.' : 'Pick someone else, or leave it empty to play Good Boy.');
+  const id = sid();
+  if (rival) {
+    saveSession(ctx, id, i.user.id, 'pong-invite', { from: i.user.id, to: rival.id });
+    return i.reply({ content: `${EM('paddle')} <@${rival.id}>, <@${i.user.id}> challenges you to Pong!`, allowedMentions: { users: [rival.id] },
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`gm:pg:${id}:accept`).setLabel('Play').setEmoji('🏓').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`gm:pg:${id}:decline`).setLabel('No thanks').setStyle(ButtonStyle.Secondary))] });
+  }
+  const s = PONG.newGame({ left: i.user.id, right: 'bot', seed: randomInt(2 ** 31) });
+  saveSession(ctx, id, i.user.id, 'pong', s);
+  return i.reply({ embeds: [pongEmbed(ctx, s)], components: pongButtons(id, s), allowedMentions: NOPING, ...vis(ctx) });
+}
+async function pongClick(ctx, i, id, action) {
+  if (action === 'accept' || action === 'decline') {
+    const row = ctx.sql.get("SELECT * FROM games_sessions WHERE id = ? AND guild_id = ? AND kind = 'pong-invite'", id, ctx.guildId);
+    if (!row) throw new UserError('That challenge has expired.');
+    const inv = JSON.parse(row.state);
+    if (i.user.id !== inv.to) throw new UserError('That challenge is for someone else.');
+    dropSession(ctx, id);
+    if (action === 'decline') return i.update({ content: `<@${inv.to}> passed on Pong this time.`, components: [], allowedMentions: NOPING });
+    const s = PONG.newGame({ left: inv.from, right: inv.to, seed: randomInt(2 ** 31) });
+    saveSession(ctx, id, inv.from, 'pong', s);
+    return i.update({ content: '', embeds: [pongEmbed(ctx, s)], components: pongButtons(id, s), allowedMentions: NOPING });
+  }
+  const s = loadPong(ctx, id);
+  if (![s.left.id, s.right.id].includes(i.user.id)) throw new UserError('This is not your game. Start your own with /pong!');
+  if (action === 'quit') {
+    s.status = 'over'; s.score = s.left.id === i.user.id ? [0, s.to] : [s.to, 0];
+    dropSession(ctx, id);
+    return i.update({ embeds: [pongEmbed(ctx, s)], components: [] });
+  }
+  try { PONG.play(s, i.user.id, action); } catch (e) { throw new UserError(e.message); }
+  if (s.status === 'over') {
+    dropSession(ctx, id);
+    record(ctx, i.user.id, 'pong', 0, PONG.winner(s) === i.user.id ? 1 : 0);
+  } else saveSession(ctx, id, s.left.id, 'pong', s);
+  return i.update({ embeds: [pongEmbed(ctx, s)], components: pongButtons(id, s) });
+}
+
 // One public panel for everyone: each button opens that game's popup for whoever clicked (the click is the trigger).
-const ARCADE = [['slots', '🎰', 'Slots'], ['blackjack', '🃏', 'Blackjack'], ['coinflip', '🪙', 'Coin flip'], ['fish', '🎣', 'Fishing']];
+const ARCADE = [['slots', '🎰', 'Slots'], ['blackjack', '🃏', 'Blackjack'], ['coinflip', '🪙', 'Coin flip'], ['fish', '🎣', 'Fishing'], ['pong', '🏓', 'Pong']];
 async function arcadeClick(ctx, i, game) {
   if (game === 'fish') { enabled(ctx, 'fishing'); return i.reply(hubMessage(ctx, i)); }
+  if (game === 'pong') return startPong(ctx, i);
   if (!ARCADE.some(([g]) => g === game)) throw new UserError('That game is not available.');
   return pipe.open(ctx, i, game);
 }
@@ -714,6 +858,7 @@ export default {
     { key: 'blackjackEnabled', type: 'toggle', label: 'Blackjack', default: true },
     { key: 'coinflipEnabled', type: 'toggle', label: 'Coin flip', default: true },
     { key: 'fishingEnabled', type: 'toggle', label: 'Fishing', default: true },
+    { key: 'pongEnabled', type: 'toggle', label: 'Pong', default: true },
     { key: 'fishChallenges', type: 'toggle', label: 'Fishing challenges (3 daily and 1 weekly, with coin and XP rewards)', default: true },
     { key: 'minBet', type: 'number', label: 'Smallest bet', default: 10, min: 1, max: 1000000 },
     { key: 'maxBet', type: 'number', label: 'Biggest bet', default: 50000, min: 1, max: 100000000 },
@@ -759,6 +904,12 @@ export default {
       permission: 'games.play',
       data: new SlashCommandBuilder().setName('fish').setDescription('Go fishing: cast, reel, collect and upgrade your gear'),
       async execute(ctx, i) { enabled(ctx, 'fishing'); return i.reply(hubMessage(ctx, i)); },
+    },
+    {
+      permission: 'games.play',
+      data: new SlashCommandBuilder().setName('pong').setDescription('Play turn-based Pong against Good Boy or another member')
+        .addUserOption((o) => o.setName('opponent').setDescription('Who to challenge (leave empty to play Good Boy)')),
+      execute: startPong,
     },
     {
       permission: 'games.admin',

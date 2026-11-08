@@ -369,19 +369,17 @@ export default async function runV23bTests({ test }) {
   });
 
   console.log('\n2.3.3 fishing expansion and voice XP');
-  await test('fishing expansion: 9 places up to level 85, cap at level 100, old levels unchanged, steeper past 32, late places pay more XP and fight harder', async () => {
+  await test('fishing expansion: the 2.3.3 places up to level 85 are unchanged, old levels unchanged, steeper past 32, late places pay more XP and fight harder', async () => {
     const F = await import('../src/fishing.js');
-    assert.equal(F.BIOMES.length, 9);
-    assert.deepEqual(F.BIOMES.slice(5).map((b) => b.level), [40, 55, 70, 85]);
+    assert.deepEqual(F.BIOMES.slice(5, 9).map((b) => b.level), [40, 55, 70, 85]);
     for (const b of F.BIOMES) for (const r of F.RARITIES) assert.ok(Object.values(F.FISH).some((f) => f.biome === b.id && f.rarity === r.id), `${b.id} ${r.id}`);
-    assert.equal(Object.keys(F.FISH).length, 108);
     // Old curve kept up to 32, so nobody's level moved.
     for (const l of [2, 12, 30, 32]) assert.equal(F.xpForLevel(l), Math.round(100 * (l - 1) ** 1.5), `level ${l}`);
     let prev = 0;
     for (let l = 2; l <= 100; l++) { const step = F.xpForLevel(l) - F.xpForLevel(l - 1); assert.ok(step > prev, `level ${l} costs more than the one before`); prev = step; }
     assert.ok(F.xpForLevel(60) - F.xpForLevel(59) > 3 * (F.xpForLevel(33) - F.xpForLevel(32)), 'much steeper later');
-    const top = F.levelFromXp(1e9);
-    assert.equal(top.level, 100); assert.equal(top.max, true); assert.equal(top.needed, 0);
+    const top = F.levelFromXp(1e12);
+    assert.equal(top.level, F.MAX_LEVEL); assert.equal(top.max, true); assert.equal(top.needed, 0);
     assert.equal(F.levelFromXp(F.xpForLevel(100) - 1).level, 99);
     assert.equal(F.levelFromXp(F.xpForLevel(70)).level, 70);
     // Rods unlock in order and each new one is better.
@@ -391,7 +389,7 @@ export default async function runV23bTests({ test }) {
     const c = { rarity: 'epic', mutation: null, giant: false };
     assert.equal(F.catchXp(c), 100); assert.equal(F.catchXp(c, 'bay'), 100); assert.equal(F.catchXp(c, 'abyss'), 300);
     // Harder fish: the same fish, rod and presses lose more ground in the Abyss than in the Deep.
-    const play = (biome) => { const s = F.startReel({ rod: 'voidreach', tackle: 'none', fish: { rarity: 'rare' }, seed: 9, now: 0 }); s.biome = biome; s.zone = 0; s.pos = 19; F.reelStep(s, 'reel', 1); return s; };
+    const play = (biome) => { const s = F.startReel({ rod: 'voidreach', tackle: 'none', fish: { rarity: 'rare' }, seed: 9, now: 0, biteMs: 0, surges: false }); s.biome = biome; s.zone = 0; s.pos = 19; s.struck = false; F.reelStep(s, 'reel', 1); return s; };
     const easy = play('deep'), hard = play('abyss');
     assert.ok(hard.progress < easy.progress && hard.tension > easy.tension, 'late places fight harder');
   });
@@ -454,13 +452,12 @@ export default async function runV23bTests({ test }) {
     assert.ok(w.people.get('b').roles.cache.has('lvl1'), 'level role given');
   });
 
-  await test('more fish: a second fish of every rarity in every place (108), old catches keep their ids, both kinds bite', async () => {
+  await test('more fish: the 2.3.3 fish keep their ids and names, both kinds bite', async () => {
     const F = await import('../src/fishing.js');
-    assert.equal(Object.keys(F.FISH).length, 108);
     assert.equal(F.FISH['bay-0'].name, 'Pier Minnow', 'saved catches keep pointing at the same fish');
     assert.equal(F.FISH['bay-6'].name, 'Dock Sprat');
-    for (const b of F.BIOMES) for (const r of F.RARITIES) assert.equal(F.fishIn(b.id).filter((f) => f.rarity === r.id).length, 2, `${b.id} ${r.id}`);
-    assert.equal(new Set(Object.values(F.FISH).map((f) => f.name)).size, 108, 'every name is different');
+    for (const b of F.BIOMES.slice(0, 9)) for (const r of F.RARITIES) assert.ok(F.fishIn(b.id).filter((f) => f.rarity === r.id).length >= 2, `${b.id} ${r.id}`);
+    assert.equal(new Set(Object.values(F.FISH).map((f) => f.name)).size, Object.keys(F.FISH).length, 'every name is different');
     const got = new Set(Array.from({ length: 400 }, (_, k) => F.rollCatch({ biome: 'bay' }, F.seeded(k)).species));
     assert.ok(got.has('bay-0') && got.has('bay-6'), 'both commons bite');
   });
@@ -494,7 +491,7 @@ export default async function runV23bTests({ test }) {
     assert.equal(step({ kind: 'giant', goal: 1 }, [fish('bay-0', { giant: true })]).progress, 1);
     assert.equal(CH.advance({ kind: 'catch', goal: 1 }, 1, [], fish('bay-0')).progress, 1, 'a finished challenge stays finished');
     assert.ok(CH.rewards(60).daily.coins > CH.rewards(10).daily.coins && CH.rewards(10).daily.coins > CH.rewards(1).daily.coins);
-    assert.equal(CH.rewards(100).daily.xp, 0, 'no XP at the max level, coins still');
+    assert.equal(CH.rewards(F.MAX_LEVEL).daily.xp, 0, 'no XP at the max level, coins still');
     assert.equal(CH.streakBonus(30, 7).coins, CH.streakBonus(30, 50).coins, 'streak bonus stops growing after a week');
     assert.ok(CH.streakBonus(30, 3).coins > CH.streakBonus(30, 1).coins);
     assert.equal(CH.weekKey(Date.parse('2026-11-04T12:00:00Z')), '2026-11-02', 'weeks start on Monday');
@@ -506,7 +503,7 @@ export default async function runV23bTests({ test }) {
   await test('challenges in the game: Challenges page; a catch and a sale finish challenges and pay; all 3 dailies pay a streak bonus with bait; the streak grows day to day; admins can turn them off', async () => {
     const { gameWorld, btn, embedText } = await import('./v22.js');
     const CH = await import('../src/fishchallenges.js');
-    globalThis[Symbol.for('goodboy.games.frameMs')] = 0;
+    globalThis[Symbol.for('goodboy.games.frameMs')] = 0; globalThis[Symbol.for('goodboy.games.biteMs')] = 0; globalThis[Symbol.for('goodboy.games.surges')] = false;
     const w = await gameWorld();
     const g = w.mm.ctx('1', 'games');
     const hub = await w.cmd('fish', w.alice);
@@ -551,11 +548,13 @@ export default async function runV23bTests({ test }) {
 
     // Collection pages: an overview plus a page per place.
     const dex = await w.press('gm:fh:alice:dex', w.alice);
-    assert.match(embedText(dex.updated), /Collection · 1\/108/);
-    assert.equal(dex.updated.components.length, 3, 'two rows of places and a back row');
+    assert.match(embedText(dex.updated), /Collection · 1\/2,000/);
+    assert.equal(dex.updated.components.length, 2, 'a place picker and a back row');
+    assert.equal(dex.updated.components[0].components[0].options.length, 24, 'every place is in the picker');
     const reef = await w.press('gm:fh:alice:dex-reef', w.alice);
     assert.match(embedText(reef.updated), /Unlocks at fishing level 40/);
-    assert.match(embedText((await w.press('gm:fh:alice:dex-bay', w.alice)).updated), /✅ \*\*[A-Z]/);
+    const bayPages = await Promise.all([0, 1, 2, 3].map(async (n) => embedText((await w.press(`gm:fh:alice:dex-bay.${n}`, w.alice)).updated)));
+    assert.ok(bayPages.some((t) => /✅ \*\*[A-Z]/.test(t)), 'the caught fish is on one of the place pages');
 
     w.mm.setSetting('1', 'games', 'fishChallenges', false);
     assert.ok(!btn((await w.cmd('fish', w.alice)).replies[0], (c) => c.label === 'Challenges'), 'no button when turned off');

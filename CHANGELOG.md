@@ -1,5 +1,75 @@
 # Changelog
 
+## 3.0.0
+**Good Boy 3.0: a new dashboard with full control of every module, rebuilt tickets with a searchable archive, animated games and Pong, a huge fishing expansion, music, pictures in welcome messages, the phone app for everyone with access, and licences.**
+
+<!-- members -->
+3.0 is out and it's a big one
+
+fishing got massive. 15 new places, 2,000 fish, and the level cap is 4,000 now. you have to wait for the bite and hit reel fast to strike, and sometimes the fish freaks out and you get a few seconds to press the right button. there's a slack button for when the line's about to snap, and you can pick exactly which fish to sell
+
+all the games are animated now with our own emojis. blackjack shows both hands side by side and the dealer flips their cards one at a time. there's pong too, play good boy or challenge someone with /pong
+
+tickets are way easier. pick what it's about, pick the person from the member list (or type their name if they're not in the server), and drop your screenshots right in the form
+
+there's music now too. /music puts a player in the channel, then add songs you upload, radio stations, or free music
+
+if something's broken let us know
+<!-- /members -->
+
+**Dashboard and Windows app**
+- **Server switcher** at the top of the sidebar: every server where you're an admin, or where your role gives you dashboard tools. With the hub set up, it also lists servers run by other people's Good Boy bots and links to their dashboards.
+- **Every module page** has new tabs: **Where it works** (switch the module off in chosen channels or whole categories; the bot enforces it, admins can still use commands), **Who can use it** (that module's permissions with role pickers) and **History**. Moderation, logs and tickets always work everywhere.
+- **New channel and role pickers** replace the old dropdowns: search, channels grouped by category, recent picks first, only the kind of channel that fits the setting, and a warning on channels Good Boy can't post in. Keyboard works too.
+- **Right-click** works in the Windows app (cut, copy, paste, copy link) and the dashboard has right-click menus on channels, roles, members, tickets and messages.
+- **Ticket archive** (Support tools): every ticket reads like the Discord chat it came from, with screenshots and files, search across every message with highlights, filters by status and type, and a panel with who's involved and their history.
+- **Signed in:** the bot owner sees everyone using the dashboard or phone app (device, last active) and can sign anyone out at once.
+- The Windows app runs on **Electron 45** (37 stopped getting security fixes in January).
+
+**Phone app**
+- Lists every server you can use, not only ones you admin. People with dashboard tools get Home, Tickets and their tools; admins get Home, Tickets, Levels, Announce and Modules.
+- Restart, updates, the bot token, backups and licences stay in the Windows app.
+
+**Tickets**
+- Report forms use **Discord's member picker** (it searches everyone in the server), with a box for people who aren't in the server.
+- Every form takes up to **10 screenshots or files**. Good Boy downloads them straight away (Discord's links expire after a day), posts them in the ticket and keeps them in the archive.
+- Each ticket opens with **who's involved**: name, ID, account age and join date. Staff get the background privately in the staff channel: warnings, timeouts, kicks, bans, earlier reports and earlier tickets.
+- Every ticket message and file is **kept on the bot's computer**, edits and deletes included, and is searchable. A new setting can turn that off.
+
+**Message logs**
+- Deleted and edited messages now show **what they said**, even after a restart, instead of "content unavailable". While message logging is on, Good Boy keeps a copy of each message for 7 days only for this. Bulk deletes are listed too. The privacy page says so.
+
+**Games**
+- Good Boy's own **animated emojis** (23 of them, original art), uploaded as application emojis so they work in every server without Nitro. Normal emojis are used until they're uploaded.
+- **Blackjack:** both hands side by side, the bet by an animated coin, the dealer's hidden card as an animated card back that turns over card by card, a one-line result and a tip.
+- **Slots** and **coin flip** use the animated slot, coin, win and lose emojis.
+- **Pong:** `/pong` to play Good Boy, or challenge a member. The ball moves in turns, so it stays within what Discord allows. It's on the arcade panel and can be switched off.
+
+**Fishing** (see the Fishing Wiki)
+- **15 new places** from level 100 (Tanglewood Mangroves) to level 2,500 (The Eclipse Sea), **2,000 fish**, **8 new rods** and **2 new baits**. Level cap **4,000**; levels up to 100 cost what they did.
+- **Strike:** wait for the bite, then reel within 3 seconds for a head start. **Surges:** quick-time moments that need the right button within 5 seconds. **Slack:** a new button that lets tension off.
+- **Choose which fish to sell** from a menu in the bag.
+- Animated cast, bite, splash and catch. The collection has a place picker and pages.
+
+**Welcome and goodbye pictures**
+- `/greeting` opens a form with a file upload. The picture is kept on the bot's computer and sent as a card with the member's avatar.
+
+**Music** (new module)
+- `/music` posts a shared player. Add songs with one form: an upload, a radio station your admins added, or free Creative Commons music from Jamendo (with the artist and licence shown; the bot owner adds a free `JAMENDO_CLIENT_ID`).
+- Pause, skip and stop are for whoever added the song, the DJ role or staff (anyone, when they're alone with the bot). Queue limits per server and per member. No YouTube, Spotify or SoundCloud: their terms don't allow it.
+
+**Moving from other bots**
+- `/migrate` recognises **Lawliet, MEE6, Dyno, Arcane, Tatsu and ProBot** too.
+- Role menus built from **buttons or dropdowns** (Lawliet, Arcane, newer Carl-bot) are read and replaced by Good Boy menus.
+- **MEE6 levels** come over exactly from its public leaderboard (same XP formula), and nobody goes down.
+
+**Licences**
+- Licences are made in **Licence Studio**, a separate app for the owner only. The Good Boy app checks a signed list of cancelled licences twice a day.
+- A white-label licence lets a bot use its own **name, picture, banner and description**, changed from Settings in the Good Boy app. The **Good Boy credit line stays** at the end of every bot's description.
+
+**The Good Boy hub** (optional)
+- A small service (in `hub/`, for Cloudflare's free plan) lets Good Boy bots find each other for the server switcher. It keeps only each bot's application ID, server IDs, dashboard link and a public key. A bot proves itself once with a short code in its Discord description, then signs every update. Set `GOODBOY_HUB_URL` to join; `GOODBOY_HUB=off` leaves.
+
 ## 2.3.3
 **A big fishing expansion (level cap 100, four new places, twice as many fish, daily and weekly challenges, new rods and bait) and voice XP for Levels.**
 

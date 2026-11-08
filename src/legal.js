@@ -39,10 +39,11 @@ function privacy(c) {
       'Member activity, only for features a server turns on: message counts and experience points, reputation and its history, birthdays you set yourself, AFK notes, reminders you create, suggestion and poll votes, notification choices, and voice preferences.',
       'Support: ticket details you typed, the staff who handled it, how it was closed, and a transcript of the ticket channel. Staff also keep private notes, and a staff-only watch log of reports about members.',
       'Moderation: warnings, timeouts, kicks and bans with the reason and moderator. AutoMod keeps up to 200 recent actions, each with a preview of at most 80 characters of the removed message (a server can turn the preview off).',
+      'Message logs, if a server keeps them on: a copy of each message (its text and attachment names) for up to 7 days, only so the log can show what a message said after it is edited or deleted. Turning message logging off keeps nothing new.',
       'Eclipse ID and statistics, if a server enables them: the profile details you choose to share, achievements, and activity totals. These are counts; message text is not kept for statistics.',
       'Technical logs: errors, and changes to settings and permissions, without passwords or tokens.',
     ]],
-    ['What is not stored', ['Message text in general is not stored. It is read to run features (commands, AutoMod, XP) and discarded, except where a feature exists to keep it: tickets, suggestions, announcements and reminders you write, and the AutoMod preview above.', 'The dashboard never stores your Discord login token: it is used once to learn who you are and which servers you can manage, and revoked straight away.']],
+    ['What is not stored', ['Message text in general is not stored. It is read to run features (commands, AutoMod, XP) and discarded, except where a feature exists to keep it: tickets, suggestions, announcements and reminders you write, the AutoMod preview, and the 7-day message log copy above.', 'The dashboard never stores your Discord login token: it is used once to learn who you are and which servers you can manage, and revoked straight away.']],
     ['Who else receives data', [
       'Discord, which delivers everything the bot sends and receives.',
       'Text-to-speech: when the voice feature reads text aloud, that text can be sent to Google\'s text-to-speech service to produce audio, unless the operator uses offline voices.',

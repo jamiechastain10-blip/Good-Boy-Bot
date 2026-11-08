@@ -73,3 +73,9 @@ h1{font:700 30px/1.15 'Inter Display',Inter,sans-serif;margin:6px 0 4px;letter-s
 .pair p{margin:0 0 10px;opacity:.75;font-size:14px}
 .pair .btn{display:inline-block}
 .pair-x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:22px;line-height:1;color:inherit;opacity:.5;padding:6px}
+
+/* 3.0: phone tickets and the critical-controls note */
+.lock{margin:14px 0 4px;padding:12px 14px;border-radius:14px;border:1px dashed rgba(140,160,200,.35);color:var(--muted,#8d97ae);font-size:13px}
+.tk-files{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tk-files img{max-width:140px;max-height:120px;border-radius:10px;object-fit:cover}
+.tk-msg{align-items:flex-start}.tk-msg .two span{white-space:pre-wrap;word-break:break-word}

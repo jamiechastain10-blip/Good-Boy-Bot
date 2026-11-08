@@ -60,3 +60,7 @@ tr.enter,.feed li.enter{animation:enter .45s cubic-bezier(.2,.8,.2,1)}
 .fab{transition:transform .2s,box-shadow .2s}
 .fab:hover{transform:translateY(-2px)}
 .motion-off tr.flash td,.motion-off tr.enter,.motion-off .feed li.enter,.motion-off .bump,.motion-off .live-chip.on{animation:none!important}
+
+/* 3.0: pickers and the right-click menu open with a short drop. */
+.gbpop{animation:gbpop .14s ease-out}
+@keyframes gbpop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}

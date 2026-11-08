@@ -3,7 +3,7 @@
 Everything about `/fish`: how to play, every place and fish, the shop, and tips for landing the big ones.
 Fishing is part of the **games** module and uses **economy** coins. Coins are play money: they can't be bought or cashed out.
 
-**Contents:** [Quick start](#quick-start) · [Reeling](#reeling-the-mini-game) · [Places](#places) · [All 108 fish](#all-108-fish) ·
+**Contents:** [Quick start](#quick-start) · [New in 3.0](#new-in-30) · [Reeling](#reeling-the-mini-game) · [Places](#places) · [The first 108 fish](#all-108-fish) ·
 [Rarity](#rarity) · [Giants, Mutated and Corrupted](#giants-mutated-and-corrupted) · [Rods](#rods) · [Bait](#bait) ·
 [Tackle](#tackle) · [Levels](#fishing-levels) · [Challenges](#challenges) · [Selling](#selling-your-catch) · [Collection and leaderboards](#collection-and-leaderboards) ·
 [Tips](#tips) · [FAQ](#faq)
@@ -16,9 +16,84 @@ Fishing is part of the **games** module and uses **economy** coins. Coins are pl
 2. Press **🎣 Cast**. A form asks where to fish and which rod, bait and tackle to use. It remembers your last setup.
 3. Something bites: play the [reeling mini-game](#reeling-the-mini-game) with the buttons.
 4. Caught it? It goes in your **🎒 Bag**. Sell fish for coins, then buy better gear in the **🛒 Shop**.
-5. Fill your **📖 Collection** with all 108 fish, and do your **📜 Challenges** every day for extra coins and XP.
+5. Fill your **📖 Collection** with all 2,000 fish, and do your **📜 Challenges** every day for extra coins and XP.
 
 Your menu has five buttons: **Cast**, **Bag**, **Shop**, **Collection** and **Challenges**.
+
+---
+
+## New in 3.0
+
+- **2,000 fish** in **24 places**. Fifteen new places unlock from level 100 to level 2,500, and every place now has 82 to 84 fish. The fish you already caught keep their names.
+- **Level cap 4,000.** Levels up to 100 cost exactly what they did. Past 100, each level costs a little more than the last.
+- **Wait for the bite, then strike.** After you cast, the float bobs for a few seconds. When the fish bites, press **Reel** within 3 seconds for a **strike**: a head start of 15% catch. Pulling the line before it bites spooks the fish and costs you the strike.
+- **Surges** (quick-time moments). Now and then the fish does something sudden and the message tells you what to press. Answer within **5 seconds**:
+
+  | The fish... | Press | Get it right | Get it wrong or too slow |
+  |---|---|---|---|
+  | bolts **left** | ◀️ Pull | big catch gain, less tension | loses catch |
+  | bolts **right** | ▶️ Pull | big catch gain, less tension | loses catch |
+  | **leaps** out of the water | 🪢 Slack | big catch gain, less tension | tension jumps |
+  | is **tiring** | 🎣 Reel | big catch gain, less tension | loses catch |
+
+  Rarer fish surge more often. There are always at least four presses between surges.
+- **🪢 Slack** is a new button: it lets a lot of tension off, but the fish takes back a little ground.
+- **Choose what to sell.** The bag has a menu to pick exactly which fish to sell, alongside the old "sell all but rare finds" and "sell everything".
+- **Animated.** Good Boy's own animated emojis: the bobbing float, the bite, the splash, a fish in its rarity colour, and a shimmer for Legendary and Mythical catches.
+- **Collection** has a place picker and pages, so all 24 places fit.
+
+### The new places
+
+| Place | Unlocks at | XP bonus | Fights harder | Fish |
+|---|---|---|---|---|
+| 🌳 **Tanglewood Mangroves** | level 100 | 4× | +5 | 83 |
+| 🏜️ **Mirage Oasis** | level 140 | 5× | +5 | 83 |
+| 🪸 **Kelpwood Cathedral** | level 190 | 6× | +5 | 83 |
+| 💎 **Crystal Caverns** | level 250 | 7.5× | +6 | 83 |
+| 🪷 **Lotus Bloom Lake** | level 320 | 9× | +6 | 83 |
+| ⚓ **Ironwreck Graveyard** | level 400 | 11× | +6 | 83 |
+| ☁️ **Skyfall Lagoon** | level 500 | 13× | +7 | 83 |
+| ⚙️ **Clockwork Canals** | level 620 | 16× | +7 | 83 |
+| 🔥 **Emberfall Caldera** | level 760 | 19× | +7 | 83 |
+| 👻 **Ghostlight Fjord** | level 920 | 23× | +8 | 83 |
+| 🍬 **Sugartide Shoals** | level 1,100 | 28× | +8 | 83 |
+| 🪞 **The Mirror Sea** | level 1,350 | 34× | +8 | 83 |
+| 🐉 **Dragonbone Rift** | level 1,650 | 41× | +9 | 83 |
+| 🌙 **Dreamtide Expanse** | level 2,000 | 50× | +9 | 83 |
+| 🌑 **The Eclipse Sea** | level 2,500 | 62× | +10 | 82 |
+Every new place pays more coins for the same rarity than the one before it.
+
+### The new rods
+
+| Rod | Price | Level | Luck | Zone | Power | Line |
+|---|---|---|---|---|---|---|
+| **Rootbinder Rod** | 9,000,000 | 100 | +180% | 10 | 38 | 230 |
+| **Geode Rod** | 20,000,000 | 240 | +200% | 10 | 42 | 250 |
+| **Anchorchain Rod** | 45,000,000 | 390 | +220% | 11 | 46 | 270 |
+| **Mainspring Rod** | 100,000,000 | 600 | +245% | 11 | 50 | 290 |
+| **Wisplight Rod** | 220,000,000 | 900 | +270% | 11 | 54 | 310 |
+| **Quicksilver Rod** | 500,000,000 | 1,300 | +300% | 12 | 58 | 335 |
+| **Wyrmspine Rod** | 1,100,000,000 | 1,650 | +330% | 12 | 62 | 360 |
+| **Umbral Rod** | 2,500,000,000 | 2,450 | +370% | 13 | 68 | 400 |
+New baits: **Dreamworm** (12,000 each, luck +80%) and **Umbral Lure** (40,000 each, luck +100%, draws corruption).
+
+### Levels past 100
+
+| Level | Total XP | XP for the next level |
+|---|---|---|
+| 100 | 528,614 | 15,374 |
+| 150 | 1,402,879 | 19,569 |
+| 200 | 2,472,828 | 23,233 |
+| 300 | 5,119,912 | 29,602 |
+| 500 | 12,129,225 | 40,187 |
+| 750 | 23,588,514 | 51,235 |
+| 1,000 | 37,620,477 | 60,875 |
+| 1,500 | 72,350,164 | 77,626 |
+| 2,000 | 114,879,812 | 92,242 |
+| 2,500 | 164,345,346 | 105,450 |
+| 3,000 | 220,147,824 | 117,636 |
+| 3,500 | 281,838,201 | 129,031 |
+| 4,000 | 349,062,534 | max |
 
 ---
 
@@ -70,6 +145,8 @@ The four late places (added in 2.3.3) make every catch worth more XP, but their 
 ---
 
 ## All 108 fish
+
+These are the first nine places' hand-made fish. The other fish (2,000 in all) are listed in the game: open **📖 Collection**, pick a place, and page through it.
 
 **Weight** is the normal range. Most catches are on the lighter side. **Value** is roughly what a fish at the top of its weight range sells for. Lighter fish are worth less, and [Giants, Mutated and Corrupted](#giants-mutated-and-corrupted) fish are worth much more.
 

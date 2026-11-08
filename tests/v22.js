@@ -19,7 +19,7 @@ import { clampPage, pageCount, unpackNav } from '../src/leaderboard.js';
 import { makeWorld } from './features.js';
 import { customIds, firstButtonId, modalInfo, fakeFields } from './pipe-helpers.js';
 
-globalThis[Symbol.for('goodboy.games.frameMs')] = 0; // no animation pauses in tests
+globalThis[Symbol.for('goodboy.games.frameMs')] = 0; globalThis[Symbol.for('goodboy.games.biteMs')] = 0; globalThis[Symbol.for('goodboy.games.surges')] = false; // no animation pauses in tests
 
 const H = 3600000;
 const json = (x) => (typeof x?.toJSON === 'function' ? x.toJSON() : x);
@@ -367,7 +367,7 @@ export default async function runV22Tests({ test }) {
 
   await test('reeling: pulls move the zone, reeling inside the zone lands the fish, tension snaps lines, idling loses it', () => {
     const fish = { rarity: 'common' };
-    const s = F.startReel({ rod: 'driftwood', tackle: 'none', fish, seed: 1, now: 0 });
+    const s = F.startReel({ rod: 'driftwood', tackle: 'none', fish, seed: 1, now: 0, biteMs: 0, surges: false });
     assert.match(F.trackLine(s), /^\[[░■◆◈]{20}\]$/);
     const z = s.zone; F.reelStep(s, 'right', 1000); assert.equal(s.zone, z + 2);
     let t = 1000;
@@ -377,7 +377,7 @@ export default async function runV22Tests({ test }) {
     snap.pos = 0; snap.zone = 15; // reel blindly while the fish is far away
     let u = 0; while (snap.status === 'reeling') F.reelStep(snap, 'reel', (u += 100));
     assert.ok(['snapped', 'escaped'].includes(snap.status));
-    const idle = F.startReel({ rod: 'driftwood', tackle: 'none', fish, seed: 5, now: 0 });
+    const idle = F.startReel({ rod: 'driftwood', tackle: 'none', fish, seed: 5, now: 0, biteMs: 0, surges: false });
     F.reelStep(idle, 'reel', F.IDLE_MS + 1);
     assert.equal(idle.status, 'escaped');
   });

@@ -280,6 +280,7 @@ function remember(ctx, message, v, action, c) {
 
 async function onMessage(ctx, message) {
   if (!message.guild || message.author.bot || message.system || !message.member) return;
+  keepCopy(ctx, message);
   if (ctx.perms.check(message.member, 'moderation.bypass')) return;
   const ch = message.channel;
   const v = detect(ctx, message, {
@@ -377,20 +378,79 @@ async function onAudit(ctx, entry, guild) {
   await owner?.send({ embeds: [embed] }).catch(() => {});
 }
 
+const modCtxs = (globalThis[Symbol.for('goodboy.moderation.ctxs')] ??= new Map());
+
 // ------------------------------------------------------------------ message logging
+// Discord does not say what a deleted message said unless the bot still has it in memory, which is lost on every
+// restart. So while message logging is on, Good Boy keeps a copy of recent messages (text and attachment names) for
+// KEEP_DAYS days, only to show it in the log when the message is edited or deleted. Off = nothing is kept.
+const KEEP_DAYS = 7;
+const MAX_PER_GUILD = 50000;
+const sinceCleanup = new Map(); // guild -> inserts since the last clean-up
+const attachList = (m) => [...(m.attachments?.values?.() ?? [])].map((a) => ({ name: String(a.name ?? 'file').slice(0, 100), url: String(a.url ?? ''), size: a.size ?? 0 })).slice(0, 10);
+function keepCopy(ctx, message) {
+  if (!ctx.config.get('logMessages') || !message.guild || message.author?.bot || message.system) return;
+  const files = attachList(message);
+  if (!message.content && !files.length) return;
+  ctx.sql.run(`INSERT OR REPLACE INTO moderation_message_cache (guild_id, message_id, channel_id, author_id, content, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ctx.guildId, message.id, message.channelId, message.author?.id ?? null, String(message.content ?? '').slice(0, 4000), JSON.stringify(files), message.createdTimestamp ?? Date.now());
+  const n = (sinceCleanup.get(ctx.guildId) ?? 0) + 1;
+  sinceCleanup.set(ctx.guildId, n);
+  if (n >= 500) { sinceCleanup.set(ctx.guildId, 0); forgetOld(ctx); }
+}
+function forgetOld(ctx, now = Date.now()) {
+  ctx.sql.run('DELETE FROM moderation_message_cache WHERE guild_id = ? AND created_at < ?', ctx.guildId, now - KEEP_DAYS * 86400000);
+  ctx.sql.run(`DELETE FROM moderation_message_cache WHERE guild_id = ? AND message_id IN (SELECT message_id FROM moderation_message_cache WHERE guild_id = ? ORDER BY created_at DESC LIMIT -1 OFFSET ?)`, ctx.guildId, ctx.guildId, MAX_PER_GUILD);
+}
+const cached = (ctx, id) => ctx.sql.get('SELECT * FROM moderation_message_cache WHERE guild_id = ? AND message_id = ?', ctx.guildId, id);
+const filesText = (files) => (files.length ? `\n**Attachments:** ${files.map((f) => (f.url ? `[${f.name}](${f.url})` : f.name)).join(', ')}` : '');
+
+/** What a deleted message said: from Discord's copy if it has one, otherwise from Good Boy's. */
+export function deletedText(message, row) {
+  const content = message.content || row?.content || '';
+  const files = attachList(message).length ? attachList(message) : JSON.parse(row?.attachments ?? '[]');
+  if (!content && !files.length) return '*Good Boy had not seen this message (it was sent before message logging was on, or more than a week ago).*';
+  return `${content ? truncate(content, 1500) : '*no text*'}${filesText(files)}`;
+}
+
 async function onDelete(ctx, message) {
-  if (!ctx.config.get('logMessages') || message.author?.bot) return;
+  if (!ctx.config.get('logMessages')) return;
+  const row = cached(ctx, message.id);
+  ctx.sql.run('DELETE FROM moderation_message_cache WHERE guild_id = ? AND message_id = ?', ctx.guildId, message.id);
+  const authorId = message.author?.id ?? row?.author_id;
+  if (message.author?.bot) return;
   if (message.channelId === ctx.config.get('logChannel')) return;
+  const sent = message.createdTimestamp ?? row?.created_at;
   await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle('Message deleted')
-    .setDescription(`In <#${message.channelId}>${message.author ? ` by <@${message.author.id}>` : ''}\n${message.content ? truncate(message.content, 1500) : '*content unavailable*'}`).setTimestamp());
+    .setDescription(`In <#${message.channelId}>${authorId ? ` by <@${authorId}>` : ''}${sent ? ` · sent <t:${Math.floor(sent / 1000)}:R>` : ''}\n${deletedText(message, row)}`)
+    .setFooter(authorId ? { text: `Author ID ${authorId} · message ID ${message.id}` } : { text: `Message ID ${message.id}` }).setTimestamp());
+}
+
+async function onBulkDelete(ctx, messages, channel) {
+  if (!ctx.config.get('logMessages') || channel?.id === ctx.config.get('logChannel')) return;
+  const lines = [];
+  const items = [...messages.values()].map((m) => ({ m, row: cached(ctx, m.id) }))
+    .sort((a, b) => (a.m.createdTimestamp ?? a.row?.created_at ?? 0) - (b.m.createdTimestamp ?? b.row?.created_at ?? 0));
+  for (const { m, row } of items) {
+    const who = m.author?.id ?? row?.author_id;
+    const text = m.content || row?.content;
+    if (text || who) lines.push(`${who ? `<@${who}>` : 'Someone'}: ${text ? truncate(text, 120) : '*not seen*'}`);
+    ctx.sql.run('DELETE FROM moderation_message_cache WHERE guild_id = ? AND message_id = ?', ctx.guildId, m.id);
+  }
+  await modLog(ctx, new EmbedBuilder().setColor(COLOR.purge).setTitle(`${messages.size} messages deleted at once`)
+    .setDescription(`In <#${channel?.id ?? '0'}>\n${truncate(lines.join('\n') || '*Good Boy had not seen these messages.*', 3800)}`).setTimestamp());
 }
 
 async function onEdit(ctx, oldM, newM) {
-  if (!ctx.config.get('logMessages') || newM.author?.bot || !oldM.content || !newM.content || oldM.content === newM.content) return;
+  if (!ctx.config.get('logMessages') || newM.author?.bot) return;
+  const row = cached(ctx, newM.id);
+  const before = oldM.content || row?.content || '';
+  keepCopy(ctx, newM);
+  if (!newM.content || before === newM.content) return;
   if (newM.channelId === ctx.config.get('logChannel')) return;
   await modLog(ctx, new EmbedBuilder().setColor(COLOR.info).setTitle('Message edited')
     .setDescription(`In <#${newM.channelId}> by <@${newM.author.id}> - [jump](${newM.url})`)
-    .addFields({ name: 'Before', value: truncate(oldM.content, 1000) }, { name: 'After', value: truncate(newM.content, 1000) }).setTimestamp());
+    .addFields({ name: 'Before', value: before ? truncate(before, 1000) : '*Good Boy had not seen the old version.*' }, { name: 'After', value: truncate(newM.content, 1000) }).setTimestamp());
 }
 
 // ------------------------------------------------------------------ popups
@@ -882,7 +942,13 @@ const commands = [
 
 export default {
   name: 'moderation',
-  version: '1.3.0',
+  version: '1.4.0',
+  migrations: [{
+    id: 1,
+    sql: `CREATE TABLE moderation_message_cache (guild_id TEXT NOT NULL, message_id TEXT NOT NULL, channel_id TEXT NOT NULL, author_id TEXT, content TEXT NOT NULL DEFAULT '',
+            attachments TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, PRIMARY KEY (guild_id, message_id));
+          CREATE INDEX moderation_message_cache_age ON moderation_message_cache (guild_id, created_at);`,
+  }],
   description: 'Warn, timeout, kick, ban, purge, history, AutoMod (spam, words, links, mentions, repeats, caps, emoji), raid protection and anti-nuke.',
   settings: [
     { key: 'logChannel', type: 'channel', label: 'Mod log channel' },
@@ -1030,12 +1096,19 @@ export default {
   events: {
     messageCreate: onMessage,
     messageDelete: onDelete,
+    messageDeleteBulk: onBulkDelete,
     messageUpdate: onEdit,
     guildMemberAdd: async (ctx, m) => { await onJoin(ctx, m); await logJoin(ctx, m); },
     guildMemberRemove: logLeave,
     guildMemberUpdate: logMemberUpdate,
     voiceStateUpdate: logVoice,
     guildAuditLogEntryCreate: onAudit,
+  },
+  async init(ctx) { modCtxs.set(ctx.guildId, ctx); },
+  async destroy(ctx) { modCtxs.delete(ctx.guildId); },
+  api: {
+    /** A member's warnings, timeouts, kicks and bans here, newest first: [{ type, reason, by, at }]. */
+    history: (guildId, userId) => { const c = modCtxs.get(guildId); return c ? [...(c.data.get(`hist:${userId}`) ?? [])] : []; },
   },
   tasks: [{
     name: 'cleanup', everyMs: 60000,

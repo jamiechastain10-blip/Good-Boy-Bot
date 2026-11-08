@@ -28,8 +28,52 @@ const NOPING = { parse: [] };
 const NS = 'mig';
 
 // Bots this replaces (by their public ids, with a name fallback). Medal is left alone on purpose.
-export const KNOWN_BOTS = { '235148962103951360': 'Carl-bot', '204255221017214977': 'YAGPDB', '491769129318088714': 'Statbot', '513423712582762502': 'TTS Bot' };
-const NAME_RE = /carl|yagpdb|statbot|tts/i;
+export const KNOWN_BOTS = {
+  '235148962103951360': 'Carl-bot', '204255221017214977': 'YAGPDB', '491769129318088714': 'Statbot', '513423712582762502': 'TTS Bot',
+  // 3.0
+  '368521195940741122': 'Lawliet', '159985870458322944': 'MEE6', '155149108183695360': 'Dyno', '437808476106784770': 'Arcane', '172002275412279296': 'Tatsu', '282859044593598464': 'ProBot',
+};
+export const MEE6_ID = '159985870458322944';
+const NAME_RE = /carl|yagpdb|statbot|tts|lawliet|mee6|dyno|arcane|tatsu|probot/i;
+
+// ------------------------------------------------------------------ role menus made of buttons or dropdowns (3.0)
+const emojiText = (e) => (!e ? null : e.id ? `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` : e.name ?? null);
+/** The role a button or dropdown option stands for: a role ID inside its custom id or value, or a role with the same name as its label. */
+export function roleFromComponent(guild, id, label) {
+  for (const x of String(id ?? '').match(/\d{17,20}/g) ?? []) { const r = guild.roles?.cache?.get(x); if (r) return r; }
+  const byName = label ? findRoleByName(guild, label) : null;
+  return byName ? guild.roles?.cache?.get(byName) ?? { id: byName } : null;
+}
+/** Pairs from a message's buttons and dropdowns (Lawliet, Arcane and newer Carl-bot menus are built this way). */
+export function componentRolePairs(msg, guild) {
+  const pairs = [];
+  for (const row of msg.components ?? []) for (const c of row.components ?? []) {
+    const type = c.type ?? c.data?.type;
+    if (type === 2) { const r = roleFromComponent(guild, c.customId ?? c.custom_id, c.label); if (r) pairs.push({ roleId: r.id, emoji: emojiText(c.emoji), emojiKey: c.emoji?.id ?? c.emoji?.name ?? r.id }); }
+    if (type === 3) for (const o of c.options ?? []) { const r = roleFromComponent(guild, o.value, o.label); if (r) pairs.push({ roleId: r.id, emoji: emojiText(o.emoji), emojiKey: o.emoji?.id ?? o.emoji?.name ?? r.id }); }
+  }
+  return pairs.filter((p, i, all) => all.findIndex((x) => x.roleId === p.roleId) === i && p.roleId !== guild.id);
+}
+
+/**
+ * MEE6 levels, from its public leaderboard (only works when the server's leaderboard is public). MEE6 and Good Boy
+ * use the same XP formula, so levels carry over exactly. fetchFn is for tests.
+ */
+export async function mee6Levels(guildId, { fetchFn = globalThis.fetch, pages = 10 } = {}) {
+  const players = [];
+  for (let page = 0; page < pages; page++) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const r = await fetchFn(`https://mee6.xyz/api/plugins/levels/leaderboard/${guildId}?limit=1000&page=${page}`, { signal: ctl.signal, headers: { Accept: 'application/json' } });
+      if (!r.ok) return { players, error: r.status === 401 || r.status === 403 || r.status === 404 ? 'private' : `HTTP ${r.status}` };
+      const d = await r.json();
+      const list = Array.isArray(d.players) ? d.players : [];
+      for (const p of list) if (/^\d{17,20}$/.test(String(p.id)) && Number.isFinite(Number(p.xp))) players.push({ id: String(p.id), name: String(p.username ?? '').slice(0, 40), xp: Math.max(0, Math.floor(Number(p.xp))), level: Number(p.level) || 0, messages: Number(p.message_count) || 0 });
+      if (list.length < 1000) break;
+    } catch (e) { return { players, error: e.name === 'AbortError' ? 'timeout' : e.message }; } finally { clearTimeout(t); }
+  }
+  return { players };
+}
 
 export function oldBots(guild) {
   return [...(guild.members?.cache?.values?.() ?? [])].filter((m) => m.user?.bot && m.id !== guild.members?.me?.id && (KNOWN_BOTS[m.id] || (NAME_RE.test(m.user.username ?? '') && !/medal/i.test(m.user.username ?? ''))))
@@ -166,6 +210,12 @@ export async function scanServer(guild, { perChannel = 1000, timeBudgetMs = 12 *
           const head = headerOf(msg);
           add({ kind: 'reactionroles', title: `Role menu in #${ch.name} (${pairs.length} role${pairs.length === 1 ? '' : 's'})`, detail: `${pairs.map((p) => `${p.emoji} <@&${p.roleId}>`).join(' ')} → replaced by a Good Boy role menu in the same place`, data: { messageId: msg.id, channelId: ch.id, pairs, from: botName.get(msg.author.id), ...head } });
         }
+      } else if (msg.components?.length) {
+        const pairs = componentRolePairs(msg, guild);
+        if (pairs.length) {
+          const head = headerOf(msg);
+          add({ kind: 'reactionroles', title: `Button role menu in #${ch.name} (${pairs.length} role${pairs.length === 1 ? '' : 's'})`, detail: `${pairs.map((p) => `${p.emoji ?? '•'} <@&${p.roleId}>`).join(' ')} → replaced by a Good Boy role menu in the same place`, data: { messageId: msg.id, channelId: ch.id, pairs, from: botName.get(msg.author.id), ...head } });
+        }
       }
       // Logs are boxes (embeds) from a moderation bot; TTS Bot's voice messages are not logs.
       const box = embedText(msg);
@@ -232,6 +282,12 @@ export async function scanServer(guild, { perChannel = 1000, timeBudgetMs = 12 *
   const banList = [...(bans?.values?.() ?? [])].map((b) => ({ id: b.user.id, tag: b.user.tag ?? b.user.username, reason: b.reason ?? null }));
   if (banList.length) add({ kind: 'bans', title: 'Ban list', detail: `${banList.length} ban${banList.length === 1 ? '' : 's'}${banList.filter((b) => b.reason).length ? `, ${banList.filter((b) => b.reason).length} with reasons` : ''} → copied into /modhistory`, data: { bans: banList.slice(0, 1000) } });
 
+  // MEE6 levels (its public leaderboard), if MEE6 is here.
+  if (botIds.has(MEE6_ID)) {
+    const got = await mee6Levels(guild.id).catch((e) => ({ players: [], error: e.message }));
+    if (got.players.length) add({ kind: 'levels', title: `Levels from MEE6 (${got.players.length} members)`, detail: `Top: ${got.players.slice(0, 3).map((p) => `${p.name || p.id} level ${p.level}`).join(', ')} → the same levels in Good Boy (nobody goes down)`, data: { from: 'MEE6', players: got.players.slice(0, 10000) } });
+    else if (got.error === 'private') add({ kind: 'levels-private', info: true, title: 'MEE6 levels', detail: 'MEE6\'s leaderboard for this server is private, so its levels can\'t be read. Make it public in MEE6\'s dashboard (Leaderboard, public), scan again, then make it private again.', data: {} });
+  }
   const automod = await guild.autoModerationRules?.fetch?.().catch(() => null);
   const autoModCount = automod?.size ?? 0;
   return { bots, findings, autoModCount, scannedChannels: done, totalChannels: channels.length, scannedMessages, stoppedEarly, unreadable };
@@ -307,6 +363,18 @@ export async function applyFinding(m, guildId, f) {
         n++;
       }
       return `Bans copied: ${n}`;
+    }
+    case 'levels': {
+      // Same XP formula as MEE6, so the XP is copied as it is. Nobody loses XP: the higher number is kept.
+      await enable('community');
+      const ctx = m.ctx(guildId, 'community');
+      let raised = 0;
+      for (const p of f.data.players ?? []) {
+        let up = false;
+        ctx.data.update(`user:${p.id}`, (u) => { if ((u.xp ?? 0) >= p.xp) return u; up = true; return { ...u, xp: p.xp, messages: Math.max(u.messages ?? 0, p.messages ?? 0) }; }, { xp: 0, messages: 0, rep: 0, lastXp: 0, lastRep: 0 });
+        if (up) raised++;
+      }
+      return `Levels from ${f.data.from ?? 'the old bot'}: ${raised} member${raised === 1 ? '' : 's'} moved up to their old level (${(f.data.players ?? []).length - raised} were already level with it or higher)`;
     }
     default: throw new UserError('Unknown item.');
   }

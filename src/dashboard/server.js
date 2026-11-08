@@ -23,6 +23,7 @@ const PUBLIC = path.join(here, 'public');
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/v3.js': ['v3.js', 'text/javascript; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
   '/glass.css': ['glass.css', 'text/css; charset=utf-8'],
   '/liquid.css': ['liquid.css', 'text/css; charset=utf-8'],
@@ -72,7 +73,7 @@ export function explainTokenError(status, code, redirectUri) {
   return { title: 'Discord could not complete the login', hint: `Discord answered with status ${status}${code ? ` (${code})` : ''}. Try again; if it keeps happening, open /auth/diagnose.` };
 }
 
-export async function startDashboard({ manager, client, db, logger, perms, dataDir = null, updates = null, port: portOverride, host: hostOverride, fetchImpl = fetch, version = '0.0.0' }) {
+export async function startDashboard({ manager, client, db, logger, perms, dataDir = null, updates = null, hub = null, port: portOverride, host: hostOverride, fetchImpl = fetch, version = '0.0.0' }) {
   const port = portOverride ?? Number(process.env.DASHBOARD_PORT || 3000);
   const host = hostOverride ?? process.env.DASHBOARD_HOST ?? '127.0.0.1';
   // Only when the dashboard sits behind a tunnel or proxy you run yourself: believe the host it reports for the browser.
@@ -125,11 +126,22 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new UserError('Invalid JSON.'); }
   }
 
+  /** Phone or browser, from the user agent (shown in the signed-in list so the owner can tell sessions apart). */
+  const deviceOf = (req) => {
+    const ua = String(req.headers['user-agent'] ?? '');
+    const kind = /GoodBoyAndroid|; wv\)/i.test(ua) ? 'Good Boy phone app' : /Electron/i.test(ua) ? 'Windows app' : /Android/i.test(ua) ? 'Android browser' : /iPhone|iPad/i.test(ua) ? 'iPhone' : /Windows/i.test(ua) ? 'Windows browser' : /Mac OS/i.test(ua) ? 'Mac browser' : 'Browser';
+    return kind;
+  };
   const session = (req) => {
     const sid = parseCookies(req.headers.cookie).gb_sid;
     const s = sid && sessions.get(sid);
-    return s && s.expires > Date.now() ? s : null;
+    if (!s || s.expires <= Date.now()) return null;
+    const now = Date.now();
+    if (!s.lastSeen || now - s.lastSeen > 30000) { s.lastSeen = now; s.device ??= deviceOf(req); }
+    return s;
   };
+  /** Sessions without their secret: a short public id for each, so they can be signed out. */
+  const sessionId = (sid) => crypto.createHash('sha256').update(sid).digest('hex').slice(0, 12);
 
   /**
    * What this person may do in this server, decided live from Discord every time:
@@ -301,7 +313,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       sessions.set(sid, {
         user: { id: user.id, username: String(user.global_name || user.username || 'unknown').slice(0, 64), avatar: user.avatar ?? null },
         guilds: guilds.filter((g) => SNOWFLAKE.test(String(g?.id))).map((g) => ({ id: g.id, name: String(g.name).slice(0, 100), icon: g.icon ?? null, owner: !!g.owner, permissions: String(g.permissions ?? 0) })),
-        expires: Date.now() + SESSION_MS,
+        expires: Date.now() + SESSION_MS, created: Date.now(), lastSeen: Date.now(), device: deviceOf(req),
       });
       logger.info(`Dashboard login ok for user ${user.id}`);
       const attrs = `HttpOnly; SameSite=Lax; Path=/${secure() ? '; Secure' : ''}`;
@@ -361,7 +373,34 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         const access = member ? accessOf(member) : null;
         return access ? { id: g.id, name: g.name, icon: g.icon, access } : null;
       }));
-      return json(res, 200, { user: s.user, guilds: checked.filter(Boolean), version, botOwner: manager.isBotOwner(s.user.id), dashboardUrl: base, local: !!s.local });
+      // Servers run by other people's Good Boy bots (from the hub), so the switcher can link to their dashboards.
+      let others = [];
+      if (hub && !s.local) {
+        const elsewhere = s.guilds.filter((g) => !client.guilds.cache.has(g.id));
+        const found = await hub.lookup(elsewhere.map((g) => g.id)).catch(() => []);
+        others = found.map((x) => { const g = elsewhere.find((y) => y.id === x.guildId); return { id: x.guildId, name: g?.name ?? 'Server', icon: g?.icon ?? null, bot: x.name, url: x.url }; });
+      }
+      return json(res, 200, { user: s.user, guilds: checked.filter(Boolean), others, version, botOwner: manager.isBotOwner(s.user.id), dashboardUrl: base, local: !!s.local });
+    }
+
+    // Who is signed in (phones and browsers), and signing someone out. Bot owner only.
+    if (p === '/api/sessions' || p === '/api/sessions/signout') {
+      const s = session(req);
+      if (!s) return json(res, 401, { error: 'Not logged in.' });
+      if (!manager.isBotOwner(s.user.id)) return json(res, 403, { error: 'Only the bot owner can see who is signed in.' });
+      if (p === '/api/sessions' && req.method === 'GET') {
+        const list = [...sessions.entries()].filter(([, v]) => v.expires > Date.now()).map(([k, v]) => ({ id: sessionId(k), user: v.user, device: v.local ? 'Windows app (you)' : v.device ?? 'Browser', lastSeen: v.lastSeen ?? null, created: v.created ?? null, you: v === s }));
+        return json(res, 200, { sessions: list.sort((a, b) => (b.lastSeen ?? 0) - (a.lastSeen ?? 0)) });
+      }
+      if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });
+      const body = await readJson(req);
+      let n = 0;
+      for (const [k, v] of sessions) {
+        if (v === s) continue; // never your own
+        if ((body.id && sessionId(k) === String(body.id)) || (body.userId && v.user.id === String(body.userId))) { sessions.delete(k); n++; }
+      }
+      logger.info(`Dashboard: the owner signed out ${n} session(s)`);
+      return json(res, 200, { ok: true, signedOut: n });
     }
 
     // Updating changes the bot for every server, so only the bot's owner may see or do this.
@@ -442,8 +481,10 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
           .filter((d) => d.panels.length);
         return json(res, 200, { access: 'panel', guild: guildInfo, modules });
       }
-      const channels = [...a.guild.channels.cache.values()].filter((c) => [0, 2, 4, 5].includes(c.type))
-        .sort((x, y) => x.rawPosition - y.rawPosition).map((c) => ({ id: c.id, name: c.name, type: c.type }));
+      const me = a.guild.members.me;
+      const channels = [...a.guild.channels.cache.values()].filter((c) => [0, 2, 4, 5, 13, 15].includes(c.type))
+        .sort((x, y) => x.rawPosition - y.rawPosition).map((c) => ({ id: c.id, name: c.name, type: c.type, parent: c.parentId ?? null,
+          canSend: (() => { try { const pm = me && c.permissionsFor?.(me); return pm ? pm.has(['ViewChannel', 'SendMessages']) : true; } catch { return true; } })() }));
       const roles = [...a.guild.roles.cache.values()].filter((r) => r.id !== a.guild.id && !r.managed)
         .sort((x, y) => y.position - x.position).map((r) => ({ id: r.id, name: r.name, color: r.hexColor }));
       const stats = { members: a.guild.memberCount ?? null, channels: a.guild.channels.cache.size, roles: a.guild.roles.cache.size, uptimeSeconds: Math.round(process.uptime()), version };
@@ -458,6 +499,17 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       if (m[3] === 'enable') await manager.enable(a.guild.id, m[2]); else await manager.disable(a.guild.id, m[2], { cascade: body.cascade === true });
       db.addLog(a.guild.id, 'dashboard', 'security', `${a.s.user.username} ${m[3]}d module ${m[2]}`);
       return json(res, 200, { ok: true });
+    }
+
+    m = p.match(/^\/api\/guilds\/(\d+)\/modules\/([a-z0-9-]+)\/off-channels$/);
+    if (m && req.method === 'POST') {
+      const a = await authorize(req, res, m[1]);
+      if (!a) return;
+      const body = await readJson(req);
+      const saved = manager.setOffIn(a.guild.id, m[2], body.channels);
+      db.addLog(a.guild.id, 'dashboard', 'security', `${a.s.user.username} set the channels where ${m[2]} is off (${saved.length})`);
+      publish(a.guild.id, 'settings', { module: m[2], key: 'offChannels' });
+      return json(res, 200, { ok: true, channels: saved });
     }
 
     m = p.match(/^\/api\/guilds\/(\d+)\/modules\/([a-z0-9-]+)\/settings$/);
@@ -512,6 +564,25 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       db.addLog(a.guild.id, 'dashboard', 'security', `${a.s.user.username} gave @${role.name} tester access${everything ? ' with every read-only box' : ''}`);
       publish(a.guild.id, 'settings', { module: 'core', key: 'dashboard.access' });
       return json(res, 200, { ok: true, message: everything ? `@${role.name} can now open the dashboard and see every read-only box. Boxes with buttons or private information are only given out on the Permissions page.` : `@${role.name} can now open the dashboard.` });
+    }
+
+    // Ticket archive files (screenshots and uploads kept on this computer). Same permission as the archive panel.
+    m = p.match(/^\/api\/guilds\/(\d+)\/modules\/support\/files\/(\d+)\/([^/]+)$/);
+    if (m && req.method === 'GET') {
+      const a = await authorize(req, res, m[1], { level: 'panel' });
+      if (!a) return;
+      if (!panelAllows(a, 'support', 'view', 'archive')) return json(res, 403, { error: "You don't have permission for the ticket archive." });
+      const name = decodeURIComponent(m[3]);
+      if (!/^[\w.-]+$/.test(name) || name.startsWith('.')) return json(res, 400, { error: 'Bad file name.' });
+      const dir = manager.ctx(a.guild.id, 'support').fileDir('tickets', m[2]);
+      const file = path.join(dir, name);
+      if (path.dirname(file) !== dir || !fs.existsSync(file)) return json(res, 404, { error: 'That file is not in the archive.' });
+      const ext = path.extname(name).toLowerCase();
+      const type = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.txt': 'text/plain; charset=utf-8' }[ext] ?? 'application/octet-stream';
+      const inline = type.startsWith('image/') || type.startsWith('video/');
+      res.writeHead(200, { 'Content-Type': type, 'Content-Length': fs.statSync(file).size, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; img-src 'self'; media-src 'self'; sandbox",
+        'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${name.replace(/"/g, '')}"`, 'Cache-Control': 'private, max-age=3600' });
+      return fs.createReadStream(file).pipe(res);
     }
 
     m = p.match(/^\/api\/guilds\/(\d+)\/modules\/([a-z0-9-]+)\/views\/([A-Za-z0-9_-]+)$/);

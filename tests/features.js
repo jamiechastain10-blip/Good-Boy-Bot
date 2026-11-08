@@ -1680,12 +1680,12 @@ export default async function runFeatureTests({ test, rejectsWith }) {
 
   await test('report popups ask who was reported (name + ID), what happened and evidence; other popups do not', () => {
     const ids = (id) => T.questionsFor(T.findCategory(id)).map((q) => q.id);
-    for (const c of ['scam', 'safety', 'report']) assert.deepEqual(ids(c), ['username', 'userid', 'details', 'evidence']);
-    assert.deepEqual(ids('bot'), ['details', 'extra']);
-    assert.deepEqual(ids('appeal'), ['what', 'why', 'extra']);
+    for (const c of ['scam', 'safety', 'report']) assert.deepEqual(ids(c), ['who', 'outside', 'details', 'evidence', 'files']);
+    assert.deepEqual(ids('bot'), ['details', 'extra', 'files']);
+    assert.deepEqual(ids('appeal'), ['what', 'why', 'extra', 'files']);
     assert.ok(T.questionsFor(T.findCategory('report')).find((q) => q.id === 'details').required);
     const legacy = T.findCategory('old', [{ id: 'old', label: 'Old type', questions: ['One?', 'Two?'] }]);
-    assert.equal(legacy.urgency, 'normal'); assert.deepEqual(T.questionsFor(legacy).map((q) => q.id), ['q0', 'q1']);
+    assert.equal(legacy.urgency, 'normal'); assert.deepEqual(T.questionsFor(legacy).map((q) => q.id), ['q0', 'q1', 'files']);
     assert.equal(T.findCategory('nope'), null);
   });
 
@@ -1695,7 +1695,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.deepEqual(T.parseReported({ username: '', userid: '' }), { id: null, name: null });
     assert.throws(() => T.parseReported({ userid: '12345' }), /user ID/);
     assert.throws(() => T.parseReported({ userid: 'abc' }), /Developer Mode/);
-    assert.throws(() => T.parseReported({}, { required: true }), /who you are reporting/);
+    assert.throws(() => T.parseReported({}, { required: true }), /who it is about/);
     assert.doesNotThrow(() => T.parseReported({ username: 'x' }, { required: true }));
   });
 
@@ -1758,7 +1758,8 @@ export default async function runFeatureTests({ test, rejectsWith }) {
   console.log('\nTickets: categories, reports, watch log, close notes');
   const embedText = (p) => (p?.embeds ?? []).map((e) => { const d = e.data ?? e; return [d.title, d.description, ...(d.fields ?? []).flatMap((f) => [f.name, f.value])].filter(Boolean).join('\n'); }).join('\n---\n');
   const everything = (ch) => ch.sent.map((p) => `${p.content ?? ''}\n${embedText(p)}`).join('\n===\n');
-  const modalIds = (m) => m.components.map((r) => r.components[0].data.custom_id);
+  const modalIds = (m) => (m.toJSON?.() ?? m).components.map((r) => r.component?.custom_id ?? r.components?.[0]?.custom_id);
+  const flagsIn = (ch) => ch.sent.filter((p) => /Watch-log match/.test(embedText(p)));
   const REPORTED = '300000000000000001', REPORTED2 = '300000000000000002';
 
   const tkWorld = async () => {
@@ -1772,7 +1773,14 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     const create = w.g.channels.create;
     w.g.channels.create = async (o) => { const ch = await create(o); w.created.push(ch); return ch; };
     w.reported = w.person(REPORTED, { username: 'BadActor' });
-    const withFields = (i, fields) => { i.fields = { getTextInputValue: (id) => { if (!(id in fields)) throw new Error('no such field'); return fields[id]; } }; return i; };
+    // Tests still write reports as { username, userid }: that becomes the member picker (a real ID) or the "not in the server" box.
+    const withFields = (i, fields) => {
+      const f = { ...fields };
+      if ('username' in f || 'userid' in f) { f.who = /^\d{17,20}$/.test(String(f.userid ?? '')) ? f.userid : ''; f.outside = f.who ? '' : String(f.userid || f.username || ''); }
+      const files = f.files ?? [];
+      i.fields = { getTextInputValue: (id) => String(f[id] ?? ''), getSelectedUsers: (id) => new Map(f[id] ? [[f[id], { id: f[id] }]] : []), getUploadedFiles: () => new Map(files.map((x, k) => [String(k), x])), getStringSelectValues: (id) => [].concat(f[id] ?? []) };
+      return i;
+    };
     w.press = async (member, customId, ch = w.panelCh) => { const i = w.ix({ member, channel: ch, customId }); await w.mm.handleComponent(i); return i; };
     w.submit = async (member, customId, fields, ch = w.panelCh) => { const i = withFields(w.ix({ member, channel: ch, customId }), fields); await w.mm.handleComponent(i); return i; };
     w.slash = async (member, sub, opts = {}, ch, group = null) => { const i = w.ix({ command: 'ticket', sub, group, member, channel: ch, opts }); await w.mm.handleCommand(i); return i; };
@@ -1811,9 +1819,9 @@ export default async function runFeatureTests({ test, rejectsWith }) {
   await test('pressing a category opens the right popup (checking the open-ticket limit first)', async () => {
     const w = await tkWorld();
     const m = w.person('mem2');
-    assert.deepEqual(modalIds((await w.press(m, 'ticket:open:report')).modal), ['username', 'userid', 'details', 'evidence']);
-    assert.deepEqual(modalIds((await w.press(m, 'ticket:open:bot')).modal), ['details', 'extra']);
-    assert.deepEqual(modalIds((await w.press(m, 'ticket:open:appeal')).modal), ['what', 'why', 'extra']);
+    assert.deepEqual(modalIds((await w.press(m, 'ticket:open:report')).modal), ['who', 'outside', 'details', 'evidence', 'files']);
+    assert.deepEqual(modalIds((await w.press(m, 'ticket:open:bot')).modal), ['details', 'extra', 'files']);
+    assert.deepEqual(modalIds((await w.press(m, 'ticket:open:appeal')).modal), ['what', 'why', 'extra', 'files']);
     await w.open(m, 'bot'); await w.open(m, 'other');
     const third = await w.press(m, 'ticket:open:bot');
     assert.equal(third.modal, null, 'no popup when the member is already at their limit');
@@ -1841,7 +1849,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     const w = await tkWorld();
     const m = w.person('reporter1');
     assert.match((await w.submit(m, 'ticket:form:report', { username: 'x', userid: '12345', details: 'd', evidence: '' })).text(), /user ID/);
-    assert.match((await w.submit(m, 'ticket:form:report', { username: '', userid: '', details: 'd', evidence: '' })).text(), /who you are reporting/);
+    assert.match((await w.submit(m, 'ticket:form:report', { username: '', userid: '', details: 'd', evidence: '' })).text(), /who it is about/);
     assert.equal(w.created.length, 0, 'nothing was opened');
     const { ch } = await w.reportTicket(m);
     assert.ok(ch);
@@ -1850,7 +1858,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.equal(rows[0].target_id, REPORTED); assert.equal(rows[0].target_name, 'badactor'); assert.equal(rows[0].reporter_id, 'reporter1');
     assert.equal(rows[0].status, 'open'); assert.equal(rows[0].ticket_number, w.ticket(ch).number);
     assert.match(rows[0].summary, /scammed people/);
-    assert.equal(w.watch.sent.length, 0, 'the first report matches nothing, so there is no flag');
+    assert.equal(flagsIn(w.watch).length, 0, 'the first report matches nothing, so there is no flag');
   });
 
   await test('a scam report may leave the person out (optional), and then nothing is logged', async () => {
@@ -1863,7 +1871,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     const w = await tkWorld();
     await w.reportTicket(w.person('reporter2'));
     const { ch } = await w.open(w.person('other1'), 'bot', { details: `the user ${REPORTED} keeps spamming the bot`, extra: '' });
-    assert.equal(w.watch.sent.length, 1, 'a flag went to the staff-only channel');
+    assert.equal(flagsIn(w.watch).length, 1, 'a flag went to the staff-only channel');
     const flag = everything(w.watch);
     assert.match(flag, /Exact match/); assert.match(flag, new RegExp(REPORTED)); assert.match(flag, /1 earlier report/); assert.match(flag, /not proof/);
     assert.doesNotMatch(everything(ch), /Watch-log|Exact match|watch log/i, 'the member who opened the ticket never sees the flag');
@@ -1890,7 +1898,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     const w = await tkWorld();
     await w.reportTicket(w.person('reporter5'));
     await w.open(w.person('other3'), 'bot', { details: 'the bot is slow', extra: '' });
-    assert.equal(w.watch.sent.length, 0);
+    assert.equal(flagsIn(w.watch).length, 0);
     w.mm.setSetting('1', 'support', 'watchChannel', '');
     const before = w.log.sent.length;
     await w.open(w.person('other4'), 'bot', { details: `see ${REPORTED}`, extra: '' });
@@ -2117,7 +2125,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     const ctx = w.mm.ctx('1', 'support');
     ctx.data.set('types', [{ id: 'legacy', label: 'Legacy type', emoji: '🎫', questions: ['Why are you here?', 'Anything else?'] }]);
     const press = await w.press(w.person('oldmember'), 'ticket:open:legacy');
-    assert.deepEqual(modalIds(press.modal), ['q0', 'q1']);
+    assert.deepEqual(modalIds(press.modal), ['q0', 'q1', 'files']);
     const { ch } = await w.open(w.g.members.cache.get('oldmember'), 'legacy', { q0: 'old question', q1: 'more' });
     assert.equal(w.ticket(ch).priority, 'normal'); assert.equal(w.ticket(ch).typeLabel, 'Legacy type');
     // an old-format record: no category, no history row, no lastActivity
@@ -2462,7 +2470,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.equal(d.access, 'panel');
     for (const k of ['channels', 'roles', 'stats', 'corePermissions']) assert.equal(d[k], undefined, `${k} is withheld`);
     const names = Object.fromEntries(d.modules.map((m) => [m.name, m.panels.map((p) => p.id)]));
-    assert.deepEqual(names.support?.sort(), ['tickets', 'watch'], 'support panels default to moderators');
+    assert.deepEqual(names.support?.sort(), ['archive', 'tickets', 'watch'], 'support panels default to moderators');
     assert.equal(names.moderation, undefined, 'the AutoMod panel needs moderation.automod, which defaults to admins');
     assert.equal(d.modules.some((m) => 'settings' in m || 'values' in m || 'permissions' in m), false);
     for (const [method, p, body] of [['POST', gp('/modules/moderation/settings'), { key: 'logChannel', value: null }], ['POST', gp('/modules/support/disable'), {}], ['POST', gp('/permissions'), { key: 'dashboard.access', roles: [] }], ['GET', gp('/logs')]]) {

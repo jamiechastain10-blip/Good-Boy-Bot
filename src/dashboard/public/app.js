@@ -103,6 +103,9 @@ async function boot() {
   }
   document.getElementById('who').replaceChildren(document.createTextNode(state.me.user.username + ' · '), h('a', { href: '/logout', class: 'muted' }, 'log out'));
   mountIsland();
+  // A link from another Good Boy bot's switcher opens that server straight away (?guild=<id>).
+  const asked = new URLSearchParams(location.search).get('guild');
+  if (asked && state.me.guilds.some((g) => g.id === asked)) { state.gid = asked; history.replaceState(null, '', location.pathname); }
   state.gid ? await loadGuild() : showGuilds();
 }
 
@@ -240,6 +243,7 @@ function render() {
   const d = state.data, list = pages(), current = list.find((p) => p.id === state.page) ?? list[0];
   const side = h('aside', { class: 'side glass', 'aria-label': 'Dashboard navigation' });
   let group = null;
+  side.append(serverSwitcher());
   for (const p of list) {
     if (p.hidden) continue;
     if (p.group !== group) { group = p.group; side.append(h('div', { class: 'side-label' }, group)); }
@@ -286,6 +290,7 @@ function renderOverview(ws) {
   }
   ws.append(h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Live activity'), h('span', { class: 'hint' }, 'updates by itself')), h('ul', { id: 'feed', class: 'feed' })));
   if (d.access === 'admin') ws.append(testersCard());
+  if (state.me?.botOwner) ws.append(signedInCard());
   const tools = pages().filter((p) => p.id.startsWith('tool:'));
   if (tools.length) {
     ws.append(h('h3', { class: 'section-title' }, 'Quick access'));
@@ -444,7 +449,7 @@ function renderTool(ws, name) {
   const m = state.data.modules.find((x) => x.name === name);
   if (!m) { ws.append(h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'That tool is not available.'))); return; }
   ws.append(h('div', { class: 'card' }, h('h3', {}, TITLE[name] ?? cap(name)), h('p', { class: 'muted' }, m.description || '')));
-  for (const panel of m.panels ?? []) ws.append(panelBox(m, panel));
+  for (const panel of m.panels ?? []) ws.append(panel.kind === 'ticket-archive' ? h('div', {}, h('h3', { class: 'ta-title' }, panel.title), ticketArchive(m)) : panelBox(m, panel));
 }
 
 /**
@@ -647,8 +652,8 @@ const TAB_OF = (s) => (s.type === 'channel' || s.type === 'role' ? 'setup' : s.t
 function renderModulePage(ws, name) {
   const m = state.data.modules.find((x) => x.name === name);
   if (!m) { ws.append(h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'That module is not available.'))); return; }
-  const tabs = [['setup', 'Setup'], ['settings', 'Settings'], ['advanced', 'Advanced'], ['commands', 'Commands']]
-    .filter(([k]) => k === 'commands' ? m.commandInfo?.length : m.settings.some((s) => TAB_OF(s) === k && !hiddenHere(m, s)));
+  const tabs = [['setup', 'Setup'], ['settings', 'Settings'], ['advanced', 'Advanced'], ['where', 'Where it works'], ['who', 'Who can use it'], ['commands', 'Commands'], ['history', 'History']]
+    .filter(([k]) => k === 'commands' ? m.commandInfo?.length : k === 'where' || k === 'history' ? true : k === 'who' ? m.permissions?.length : m.settings.some((s) => TAB_OF(s) === k && !hiddenHere(m, s)));
   if (!tabs.length) tabs.push(['commands', 'About']);
   state.modTab = tabs.some(([k]) => k === state.modTab) ? state.modTab : tabs[0][0];
   const sw = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': `${modName(m)} on`, checked: m.enabled, onchange: (e) => setModuleOn(m, e.target.checked) });
@@ -664,6 +669,9 @@ function renderModulePage(ws, name) {
     m.enabled ? null : h('div', { class: 'card note' }, `${modName(m)} is off. You can change its settings now; they apply when you turn it on.`),
     bar, body].filter(Boolean));
   function drawTab() {
+    if (state.modTab === 'where') { put(body, whereTab(m)); return; }
+    if (state.modTab === 'who') { put(body, whoTab(m)); return; }
+    if (state.modTab === 'history') { put(body, historyTab(m)); return; }
     if (state.modTab === 'commands') {
       put(body, h('div', { class: 'card' }, (m.commandInfo ?? []).length ? m.commandInfo.map((c) => h('div', { class: 'cmdrow' }, h('code', {}, `/${c.name}`), h('div', {}, h('div', {}, c.description),
         c.subs.length ? h('div', { class: 'hint' }, c.subs.map((x) => x.name).join(' · ')) : null))) : h('p', { class: 'muted' }, 'This module has no commands of its own.')));
@@ -693,10 +701,8 @@ function settingRow(m, s) {
   let control;
   if (s.type === 'toggle') control = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': s.label, checked: cur === true, onchange: (e) => save(e.target.checked) });
   else if (s.type === 'select') control = h('select', { 'aria-label': s.label, onchange: (e) => save(e.target.value, `${s.label}: ${optionWord(e.target.value)}`) }, s.options.map((o) => h('option', { value: o, selected: o === cur }, optionWord(o))));
-  else if (s.type === 'channel') control = h('select', { 'aria-label': s.label, onchange: (e) => save(e.target.value || null) }, h('option', { value: '' }, 'None'),
-    state.data.channels.map((c) => h('option', { value: c.id, selected: c.id === cur }, ({ 0: '# ', 2: '🔊 ', 4: '📁 ', 5: '📢 ', 15: '💬 ' })[c.type] ?? '# ', c.name)));
-  else if (s.type === 'role') control = h('select', { 'aria-label': s.label, onchange: (e) => save(e.target.value || null) }, h('option', { value: '' }, 'None'),
-    state.data.roles.filter((r) => !isDivider(r.name)).map((r) => h('option', { value: r.id, selected: r.id === cur }, '@' + r.name)));
+  else if (s.type === 'channel') control = channelPicker({ value: cur ?? null, types: s.channelTypes ?? (/voice/i.test(s.key + s.label) ? [2, 13] : /categor/i.test(s.key + s.label) ? [4] : [0, 5, 15]), label: s.label, onPick: (id) => save(id) });
+  else if (s.type === 'role') control = rolePicker({ value: cur ?? null, label: s.label, onPick: (id) => save(id) });
   else if (s.type === 'number') {
     let v = Number(cur ?? s.default ?? 0); let t;
     const out = h('output', {}, String(v));

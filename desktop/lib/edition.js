@@ -2,10 +2,10 @@
  * Basic Ghost Labs - Good Boy
  * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
  */
-// Which of the three builds this is. Hiding a feature is for tidiness only: the real protection for publishing is the
+// Which of the three builds this is. Licences and module signing are made in Licence Studio, a separate owner-only app. Hiding a feature is for tidiness only: the real protection for publishing is the
 // signing key, which is never inside the app.
 export const EDITIONS = Object.freeze({
-  owner: { name: 'Owner', features: ['bot', 'levels', 'modules', 'updates', 'publish', 'import', 'seed', 'licenses'] },
+  owner: { name: 'Owner', features: ['bot', 'levels', 'modules', 'updates', 'publish', 'import', 'seed'] },
   consumer: { name: '', features: ['bot', 'levels', 'modules', 'updates', 'import'] },
   developer: { name: 'Developer', features: ['bot', 'levels', 'modules', 'updates', 'import', 'devtools'] },
 });
