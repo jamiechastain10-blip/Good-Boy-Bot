@@ -251,7 +251,8 @@ function serverSwitcher() {
         l.length || others.length ? null : h('p', { class: 'muted pad' }, 'No server matches.'));
     };
     input.addEventListener('input', draw);
-    openPop(btn, [all.length > 6 ? h('div', { class: 'picksearch' }, input) : null, list, h('div', { class: 'pickfoot muted' }, 'Every server where you are an admin, or where your role gives you dashboard tools.')], { width: 300 });
+    const foot = state.me?.hubUrl ? h('a', { class: 'pickfoot', href: state.me.hubUrl, target: '_blank', rel: 'noopener' }, '🌐 All your servers, every Good Boy bot ↗') : h('div', { class: 'pickfoot muted' }, 'Every server where you are an admin, or where your role gives you dashboard tools.');
+    openPop(btn, [all.length > 6 ? h('div', { class: 'picksearch' }, input) : null, list, foot], { width: 300 });
     draw(); if (all.length > 6) input.focus();
   });
   return btn;

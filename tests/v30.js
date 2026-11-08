@@ -447,7 +447,7 @@ export default async function runV30Tests({ test }) {
     assert.match(JSON.stringify(room.sent.at(-1)), /Add music/);
     w.mm.setSetting('1', 'music', 'allowUploads', false);
     const add = w.ix({ customId: 'music:add', member: mod, channel: room }); await w.mm.handleComponent(add);
-    assert.ok(add.replies.some((r) => /No music sources are set up/.test(r.content ?? '')));
+    assert.ok(add.replies.some((r) => /Join a voice channel first/.test(r.content ?? '')), 'there is always the link box now, so it asks you to join voice');
   });
 
   console.log('\n3.0 hub');
@@ -488,6 +488,41 @@ export default async function runV30Tests({ test }) {
     assert.equal(await hubA.leave(), true);
     other.cache.clear();
     assert.deepEqual(await other.lookup(['222222222222222222']), []);
+  });
+
+  await test('one dashboard link: sign in with Discord at the hub, see your servers that run a Good Boy bot, Manage opens that bot on that server; expired sign-ins and missing setup are explained', async () => {
+    const { handle } = await import('../hub/worker.js');
+    const store = new Map();
+    const HUB = { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); }, delete: async (k) => { store.delete(k); } };
+    const now = Date.now();
+    store.set('app:111111111111111111', JSON.stringify({ appId: '111111111111111111', name: 'Cove Keeper', url: 'https://cove.example.ts.net', guilds: ['222222222222222222'], updatedAt: now }));
+    store.set('guild:222222222222222222', JSON.stringify(['111111111111111111']));
+    const discord = async (url) => {
+      if (url.endsWith('/oauth2/token')) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+      if (url.endsWith('/users/@me')) return { ok: true, json: async () => ({ id: '555555555555555555', username: 'basic', global_name: 'Basic', avatar: null }) };
+      if (url.endsWith('/users/@me/guilds')) return { ok: true, json: async () => [{ id: '222222222222222222', name: 'Hangout', icon: null, owner: false, permissions: '32' }, { id: '666666666666666666', name: 'Other Place', icon: null, owner: true, permissions: '0' }] };
+      return { ok: false };
+    };
+    const go = (path, env, cookie) => handle(new Request(`https://hub.test${path}`, { headers: cookie ? { cookie } : {} }), env, { fetchFn: discord, now });
+    const noSetup = await go('/', { HUB });
+    assert.match(await noSetup.text(), /Sign-in isn't set up/);
+    const env = { HUB, DISCORD_CLIENT_ID: '111111111111111111', DISCORD_CLIENT_SECRET: 'shh' };
+    const home = await (await go('/', env)).text();
+    assert.match(home, /Sign in with Discord/);
+    const login = await go('/login', env);
+    assert.equal(login.status, 302); assert.match(login.headers.get('location'), /discord\.com\/oauth2\/authorize.*scope=identify\+guilds/);
+    const state = /gbh_state=([^;]+)/.exec(login.headers.get('set-cookie'))[1];
+    assert.equal((await go(`/callback?code=c&state=wrong`, env, `gbh_state=${state}`)).status, 400, 'a mismatched sign-in is refused');
+    const cb = await go(`/callback?code=c&state=${state}`, env, `gbh_state=${state}`);
+    assert.equal(cb.status, 302);
+    const sid = /gbh=([0-9a-f]{32})/.exec(cb.headers.get('set-cookie'))[1];
+    const list = await (await go('/', env, `gbh=${sid}`)).text();
+    assert.match(list, /Your servers/); assert.match(list, /Hangout/); assert.match(list, /Cove Keeper/);
+    assert.match(list, /href="https:\/\/cove\.example\.ts\.net\/\?guild=222222222222222222">Manage</, 'Manage opens that bot on that server');
+    assert.match(list, /Other Place[\s\S]*No Good Boy bot here yet/, 'servers they run without Good Boy are listed separately');
+    const session = JSON.parse(store.get(`sess:${sid}`));
+    assert.deepEqual(Object.keys(session.user), ['id', 'name', 'avatar'], 'only the name and picture are kept');
+    assert.equal((await go('/logout', env, `gbh=${sid}`)).status, 302); assert.equal(store.get(`sess:${sid}`), undefined);
   });
 
   console.log('\n3.0.1 what\'s new');
@@ -631,6 +666,80 @@ export default async function runV30Tests({ test }) {
       const txt = (await w.form(await w.cmd('slots', w.alice), w.alice, { bet: '100' })).submit;
       assert.ok(!txt.replies[0].files?.length, 'no picture when the server turned them off');
     } finally { globalThis[Symbol.for('goodboy.games.art')] = false; }
+  });
+
+
+  console.log('\n3.0.6 media links (opt-in)');
+  await test('media links: off by default, only the bot owner can turn them on per server, once (after a warning), direct audio links always work, Spotify songs are read, yt-dlp errors are explained', async () => {
+    const ML = await import('../src/medialinks.js');
+    const { EventEmitter } = await import('node:events');
+    assert.ok(ML.isDirectAudio('https://example.com/music/song.mp3?x=1')); assert.ok(!ML.isDirectAudio('https://youtube.com/watch?v=abc'));
+    assert.equal(ML.cleanLink('http://127.0.0.1/a.mp3'), null, 'no private addresses'); assert.equal(ML.cleanLink('file:///etc/passwd'), null);
+    assert.equal(ML.spotifyTrackId('https://open.spotify.com/intl-de/track/4cOdK2wGLETKBW3PvgPWqT?si=x'), '4cOdK2wGLETKBW3PvgPWqT');
+    assert.equal(ML.spotifyTrackId('https://open.spotify.com/album/123456789012'), null);
+    assert.deepEqual(ML.parseSpotifyPage('<meta property="og:title" content="Never Gonna Give You Up"><meta property="og:description" content="Rick Astley · Whenever You Need Somebody · Song · 1987">'), { title: 'Never Gonna Give You Up', artist: 'Rick Astley' });
+    assert.deepEqual(ML.parseSpotifyPage('<meta property="og:title" content="Song A"><meta name="music:musician_description" content="Band B">'), { title: 'Song A', artist: 'Band B' });
+    // A fake yt-dlp.
+    const calls = [];
+    const fake = (answers) => (bin, args) => { calls.push(args); const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => {};
+      const a = answers(args); setImmediate(() => { if (a.out) c.stdout.emit('data', a.out); if (a.err) c.stderr.emit('data', a.err); c.emit('close', a.code ?? 0); }); return c; };
+    const spawnFn = fake((args) => (args[0] === '--version' ? { out: '2026.10.01\n' } : /private/.test(args.at(-1)) ? { code: 1, err: 'ERROR: Private video' } : { out: JSON.stringify({ title: 'Song', uploader: 'Chan', duration: 200, webpage_url: 'https://youtu.be/x', extractor_key: 'Youtube' }) }));
+    const info = await ML.lookup('yt-dlp', 'https://youtu.be/x', { spawnFn });
+    assert.deepEqual(info, { title: 'Song', artist: 'Chan', seconds: 200, page: 'https://youtu.be/x', site: 'Youtube' });
+    await assert.rejects(ML.lookup('yt-dlp', 'https://youtu.be/private', { spawnFn }), /private or was removed/);
+    assert.ok(calls.some((a) => a.includes('--no-playlist')), 'never pulls a whole playlist');
+    // The switch: only the bot owner, with a warning first, saved for the whole bot.
+    const { makeWorld } = await import('./features.js');
+    const { PermissionFlagsBits: P } = await import('discord.js');
+    const w = await makeWorld(['music']).load();
+    const owner = w.person('900000000000000401', { bits: [P.Administrator], pos: 9 }); const admin = w.person('900000000000000402', { bits: [P.Administrator], pos: 8 });
+    w.mm.ownerIds.add(owner.id);
+    globalThis[Symbol.for('goodboy.music.spawn')] = spawnFn;
+    try {
+      const room = w.channel('music');
+      const ownerCmd = w.ix({ command: 'music', member: owner, channel: room }); await w.mm.handleCommand(ownerCmd);
+      assert.match(JSON.stringify(ownerCmd.replies[0]), /Media links: off/, 'the owner sees the switch, and it starts off');
+      const adminCmd = w.ix({ command: 'music', member: admin, channel: room }); await w.mm.handleCommand(adminCmd);
+      assert.doesNotMatch(JSON.stringify(adminCmd.replies[0]), /Media links/, 'server admins do not');
+      const sneaky = w.ix({ customId: 'music:mediaon', member: admin, channel: room }); await w.mm.handleComponent(sneaky);
+      assert.match(sneaky.text(), /Only the person who runs this bot/);
+      const warn = w.ix({ customId: 'music:media', member: owner, channel: room }); await w.mm.handleComponent(warn);
+      assert.match(warn.text(), /breaks those sites' terms of service/);
+      const on = w.ix({ customId: 'music:mediaon', member: owner, channel: room }); on.deferUpdate = async () => {}; await w.mm.handleComponent(on);
+      assert.match(on.text(), /Media links are \*\*on\*\*/);
+      assert.equal(w.mm.ctx('1', 'music').data.get('mediaLinks').on, true, 'on in this server, saved');
+      assert.notEqual(w.mm.ctx('2', 'music').data.get('mediaLinks')?.on, true, 'other servers stay off');
+      const off = w.ix({ customId: 'music:mediaoff', member: owner, channel: room }); await w.mm.handleComponent(off);
+      assert.equal(w.mm.ctx('1', 'music').data.get('mediaLinks').on, false);
+    } finally { delete globalThis[Symbol.for('goodboy.music.spawn')]; }
+  });
+
+
+  console.log('\n3.0.6 phone app: tickets from the dashboard');
+  await test('ticket actions: staff can claim, reply and close (with the same required notes) from the dashboard or phone; others cannot; report tickets need an outcome', async () => {
+    const { makeWorld } = await import('./features.js');
+    const { PermissionFlagsBits: P } = await import('discord.js');
+    const w = await makeWorld(['support']).load();
+    const staff = w.person('900000000000000501', { bits: [P.ModerateMembers, P.ManageMessages, P.KickMembers], pos: 5, username: 'staffy' });
+    staff.displayAvatarURL = () => null;
+    const member = w.person('900000000000000502', { username: 'member' });
+    const ch = w.channel('ticket-0007'); w.mm.setSetting('1', 'support', 'logChannel', w.channel('ticket-log').id);
+    const ctx = w.mm.ctx('1', 'support');
+    ctx.data.set(`ticket:${ch.id}`, { number: 7, opener: member.id, openerTag: 'member#0', type: 'other', category: 'other', typeLabel: 'Other', status: 'open', claimedBy: null, createdAt: Date.now() - 60000, answers: [] });
+    const act = (name, body, by) => w.mm.runAction('1', 'support', name, body, { userId: by.id, username: by.id });
+    await assert.rejects(act('ticket-claim', { channelId: ch.id }, member), /Only ticket staff/);
+    assert.deepEqual(await act('ticket-claim', { channelId: ch.id }, staff), { claimed: true });
+    assert.match(JSON.stringify(ch.sent.at(-1)), /claimed this ticket/);
+    await assert.rejects(act('ticket-reply', { channelId: ch.id, text: '  ' }, staff), /Write a reply/);
+    await act('ticket-reply', { channelId: ch.id, text: 'Hi, we are on it' }, staff);
+    assert.match(JSON.stringify(ch.sent.at(-1)), /Hi, we are on it/); assert.ok(ctx.data.get(`ticket:${ch.id}`).firstResponseAt, 'counts as the first response');
+    await assert.rejects(act('ticket-close', { channelId: ch.id, resolution: 'Done' }, staff), /required/);
+    assert.deepEqual(await act('ticket-close', { channelId: ch.id, resolution: 'Resolved', reason: 'Answered', action: 'None', notes: 'Easy one' }, staff), { closed: true });
+    assert.equal(ctx.data.get(`ticket:${ch.id}`).status, 'closed');
+    const view = await w.mm.runView('1', 'support', 'tickets');
+    assert.ok(Array.isArray(view.rows));
+    const panel = w.mm.describeForGuild('1').find((d) => d.name === 'support').panels.find((p) => p.id === 'tickets');
+    assert.deepEqual(panel.pageActions, ['ticket-claim', 'ticket-reply', 'ticket-close'], 'staff with the tickets panel may use them');
   });
 
 }

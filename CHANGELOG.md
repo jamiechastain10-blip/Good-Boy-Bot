@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.0.6
+**Paste links in the music player, a much more useful phone app, and one dashboard link for every Good Boy bot.**
+
+<!-- members -->
+you can paste links in the music player now. links straight to a song file always work, and if the bot owner turns it on, youtube, spotify and soundcloud links work too
+<!-- /members -->
+
+**Phone app**
+- **Moderation tab:** the full history with search; tap a name to warn, time out, kick or ban, or **Act on a member** by user ID. Same permission checks as the commands.
+- **Tickets you can work on:** open tickets at the top of the Tickets tab. Tap one to reply (posted in the ticket as you), claim it, or close it with the same required notes as in Discord. The archive is underneath.
+- **Module settings:** tap a module's name to change its settings (channels, roles, numbers, lists, on/off), not just turn it on and off.
+- **Home** shows the 14-day charts for members, people in voice and messages, plus recent activity.
+- Tabs are now Home, Tickets, Moderation, Levels and Modules; Announce and Events are on Home.
+
+**One dashboard link**
+- The Good Boy hub is now a dashboard home page like other bots have: sign in with Discord, see every server you're in that runs a Good Boy bot, and **Manage** opens that bot's dashboard on that server.
+- It's online at **https://goodboyhub.pages.dev** and built in: every Good Boy bot joins it by itself once its dashboard has a public link (Windows app: **Settings → Dashboard link**).
+- Every dashboard's server switcher links to it (**All your servers, every Good Boy bot**).
+- Arriving on a bot's dashboard from the hub (or another bot) opens the right server straight after signing in.
+
+**Music**
+- **Add music** has a **Paste a link** box. Links straight to an audio file (.mp3, .ogg, .wav and so on) always play.
+- **Media links (opt-in):** the bot owner can let members paste links from **YouTube, Spotify, SoundCloud** and most other sites. Run `/music` as the bot owner and press **Media links**: you turn it on **once per server** and it stays on there. It is **off by default**, only the person who runs the bot can switch it on, and they see a warning first, because playing audio from those sites breaks their terms of service.
+- When it's on, Good Boy downloads a free program called yt-dlp (once) to play the links. Spotify songs are matched and played from YouTube, since Spotify's own audio can't be played by any bot. Playlists, albums and live streams aren't supported.
+- The player shows where each song came from, with a link back to it.
+
 ## 3.0.5
 **Easier to find the Windows app's settings, licences and updates.**
 

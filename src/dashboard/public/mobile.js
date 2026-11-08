@@ -28,6 +28,7 @@ const ICON = {
   modules: 'M9 3h6v3a2 2 0 1 0 4 0V3h2v6h-3a2 2 0 1 0 0 4h3v8h-6v-3a2 2 0 1 0-4 0v3H3v-8h3a2 2 0 1 0 0-4H3V3z',
   tickets: 'M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z',
   tools: 'M14 6a4 4 0 0 0-5 5l-6 6 2 2 6-6a4 4 0 0 0 5-5l-2 2-2-2z',
+  moderation: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z',
 };
 function icon(name) { const s = document.createElementNS(SVG, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', ICON[name]); s.append(p); return s; }
 function toast(msg, bad = false) { const t = document.getElementById('toast'); t.textContent = msg; t.className = `show${bad ? ' bad' : ''}`; clearTimeout(toast.t); toast.t = setTimeout(() => { t.className = ''; }, 3200); }
@@ -116,22 +117,24 @@ document.getElementById('server').addEventListener('click', () => {
   document.body.append(sheet);
 });
 
+const canModerate = () => (S.guild?.modules ?? []).some((m) => m.name === 'moderation' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'cases')));
+const canWorkTickets = () => (S.guild?.modules ?? []).some((m) => m.name === 'support' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'tickets')));
 const hasArchive = () => (S.guild?.modules ?? []).some((m) => m.name === 'support' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'archive')));
 /** Admins get the full set; people with dashboard tools get Home, Tickets (if they may see them) and their tools. */
 function tabsFor() {
-  if (S.guild?.access !== 'admin') return [['home', 'Home'], ...(hasArchive() ? [['tickets', 'Tickets']] : []), ['tools', 'Tools']];
-  return [['home', 'Home'], ...(hasArchive() ? [['tickets', 'Tickets']] : []), ['levels', 'Levels'], ['announce', 'Announce'], ['modules', 'Modules']];
+  if (S.guild?.access !== 'admin') return [['home', 'Home'], ...(hasArchive() ? [['tickets', 'Tickets']] : []), ...(canModerate() ? [['moderation', 'Moderation']] : []), ['tools', 'Tools']];
+  return [['home', 'Home'], ...(hasArchive() || canWorkTickets() ? [['tickets', 'Tickets']] : []), ['moderation', 'Moderation'], ['levels', 'Levels'], ['modules', 'Modules']];
 }
 function renderTabs() {
   tabsEl.hidden = false;
   const tabs = tabsFor();
-  if (!tabs.some(([id]) => id === S.tab) && !['events', 'whatsnew'].includes(S.tab)) S.tab = 'home';
+  if (!tabs.some(([id]) => id === S.tab) && !['events', 'whatsnew', 'announce'].includes(S.tab)) S.tab = 'home';
   tabsEl.replaceChildren(...tabs.map(([id, label]) => h('button', { 'aria-current': S.tab === id ? 'page' : null, onclick: () => show(id) }, icon(id), label)));
 }
 async function show(tab) {
   S.tab = tab; renderTabs(); window.scrollTo(0, 0);
   view.replaceChildren(h('p', { class: 'center muted' }, 'Loading…'));
-  try { view.replaceChildren(...[].concat(await PAGES[tab]())); }
+  try { view.replaceChildren(...[await PAGES[tab]()].flat(Infinity).filter((x) => x != null && x !== false)); }
   catch (e) { if (e.status === 401) return signIn(); view.replaceChildren(h('p', { class: 'center muted' }, e.message)); }
 }
 
@@ -191,6 +194,118 @@ async function openTicket(number) {
   window.scrollTo(0, 0);
 }
 
+
+// ---------------------------------------------------------------- shared bits for the 3.0.6 pages
+const rowBtn = (props, ...kids) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, ...props }, ...kids);
+/** A bottom sheet. Returns a function that closes it. */
+function openSheet(title, ...content) {
+  const close = () => sheet.remove();
+  const sheet = h('div', { class: 'sheet', onclick: (e) => { if (e.target === sheet) close(); } }, h('div', { class: 'panel' }, h('div', { class: 'section' }, title), ...content));
+  document.body.append(sheet);
+  return close;
+}
+function segOf(options, value, onPick, label) {
+  const seg = h('div', { class: 'seg', role: 'group', 'aria-label': label }, options.map(([v, l]) => h('button', { type: 'button', 'aria-pressed': String(v === value), onclick: (e) => { for (const b of seg.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); onPick(v); } }, l)));
+  return seg;
+}
+const SVGNS = 'http://www.w3.org/2000/svg';
+function spark(points) {
+  const W = 120, H = 34, vals = points.map((v, i) => [i, v]).filter(([, v]) => v != null);
+  const svg = document.createElementNS(SVGNS, 'svg'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'spark'); svg.setAttribute('aria-hidden', 'true');
+  if (vals.length < 2) return svg;
+  let lo = Math.min(...vals.map((x) => x[1])), hi = Math.max(...vals.map((x) => x[1])); if (hi === lo) { hi += 1; lo = Math.max(0, lo - 1); }
+  const n = Math.max(1, points.length - 1), xy = vals.map(([i, v]) => [2 + (i / n) * (W - 4), H - 3 - ((v - lo) / (hi - lo)) * (H - 6)]);
+  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
+  const mk = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+  svg.append(mk('path', { d: `${line}L${xy.at(-1)[0]},${H}L${xy[0][0]},${H}Z`, class: 'spark-fill' }), mk('path', { d: line, class: 'spark-line' }), mk('circle', { cx: xy.at(-1)[0], cy: xy.at(-1)[1], r: 2.4, class: 'spark-dot' }));
+  return svg;
+}
+function daily(points, hourMs, from, how) {
+  const out = new Map();
+  points.forEach((v, i) => { const d = new Date(from + i * hourMs).toDateString(), was = out.get(d); if (v == null) { if (!out.has(d)) out.set(d, null); return; } out.set(d, how === 'sum' ? (was ?? 0) + v : how === 'max' ? Math.max(was ?? 0, v) : v); });
+  return [...out.values()];
+}
+
+// ---------------------------------------------------------------- moderation (3.0.6)
+const MOD_ACTIONS = { warn: ['Warn', 'warned'], timeout: ['Time out', 'timed out'], untimeout: ['Remove timeout', 'no longer timed out'], kick: ['Kick', 'kicked'], ban: ['Ban', 'banned'] };
+function modSheet({ userId = null, name = null, action = 'warn', after = null } = {}) {
+  const f = { action, minutes: 60, deleteDays: 0 };
+  const who = userId ? null : h('input', { id: 'm-who', inputmode: 'numeric', placeholder: 'User ID (long-press them in Discord, Copy User ID)' });
+  const pick = h('select', { id: 'm-act', 'aria-label': 'What to do' }, Object.entries(MOD_ACTIONS).map(([v, [l]]) => h('option', { value: v, selected: v === action }, l)));
+  const reason = h('textarea', { id: 'm-reason', maxlength: 500, placeholder: 'Reason. The member sees this, and it goes in the mod log.' });
+  const mins = h('select', { id: 'm-mins' }, [[10, '10 minutes'], [60, '1 hour'], [360, '6 hours'], [1440, '1 day'], [10080, '1 week'], [40320, '28 days']].map(([v, l]) => h('option', { value: v, selected: v === 60 }, l)));
+  const days = h('select', { id: 'm-days' }, [[0, "Don't delete messages"], [1, 'Delete the last day'], [7, 'Delete the last 7 days']].map(([v, l]) => h('option', { value: v }, l)));
+  const minsField = h('div', { class: 'field' }, h('label', { for: 'm-mins' }, 'How long'), mins);
+  const daysField = h('div', { class: 'field' }, h('label', { for: 'm-days' }, 'Their messages'), days);
+  const go = h('button', { class: 'btn' }, 'Warn');
+  const sync = () => { minsField.hidden = pick.value !== 'timeout'; daysField.hidden = pick.value !== 'ban'; go.textContent = MOD_ACTIONS[pick.value][0]; go.className = ['kick', 'ban'].includes(pick.value) ? 'btn danger' : 'btn'; };
+  pick.addEventListener('change', sync);
+  const close = openSheet(name ? `Moderate ${name}` : 'Moderate a member',
+    h('div', { class: 'group' }, who ? h('div', { class: 'field' }, h('label', { for: 'm-who' }, 'Member'), who) : h('div', { class: 'row' }, h('small', { class: 'muted' }, `ID ${userId}`)),
+      h('div', { class: 'field' }, h('label', { for: 'm-act' }, 'Action'), pick), h('div', { class: 'field' }, h('label', { for: 'm-reason' }, 'Reason'), reason), minsField, daysField), go);
+  go.addEventListener('click', async () => {
+    const id = userId ?? who.value.trim();
+    if (!/^\d{17,20}$/.test(id)) return toast('Paste the member\'s user ID.', true);
+    if (pick.value !== 'untimeout' && !reason.value.trim()) return toast('Write a reason first.', true);
+    go.disabled = true;
+    try { const r = await act('moderation', 'member-action', { userId: id, action: pick.value, reason: reason.value.trim(), minutes: Number(mins.value), deleteDays: Number(days.value) }); toast(`${r.user?.name ?? name ?? 'Member'} ${MOD_ACTIONS[pick.value][1]}${r.case ? ` (case #${r.case})` : ''}.`); close(); after?.(); }
+    catch (e) { toast(e.message, true); go.disabled = false; }
+  });
+  sync();
+}
+
+// ---------------------------------------------------------------- working on a ticket (3.0.6)
+function ticketSheet(t, after) {
+  const reply = h('textarea', { id: 't-reply', maxlength: 1900, placeholder: 'Write a reply. It is posted in the ticket as you.' });
+  const send = h('button', { class: 'btn' }, 'Send reply');
+  const claim = h('button', { class: 'btn quiet' }, t.claimed && t.claimed !== '—' ? `Claimed by ${t.claimed} · tap to change` : 'Claim this ticket');
+  const closeBtn = h('button', { class: 'btn danger' }, 'Close the ticket…');
+  const close = openSheet(`${t.number} · ${t.category}`, h('div', { class: 'group' }, h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', {}, `Opened by ${t.opener}`), h('small', {}, `${t.urgency} · ${t.opened}`))),
+    h('div', { class: 'field' }, h('label', { for: 't-reply' }, 'Reply'), reply)), send, claim, closeBtn);
+  send.addEventListener('click', async () => { if (!reply.value.trim()) return toast('Write a reply first.', true); send.disabled = true; try { await act('support', 'ticket-reply', { channelId: t.channelId, text: reply.value }); toast('Reply sent.'); reply.value = ''; } catch (e) { toast(e.message, true); } send.disabled = false; });
+  claim.addEventListener('click', async () => { try { const r = await act('support', 'ticket-claim', { channelId: t.channelId }); toast(r.claimed ? 'You claimed it.' : 'Released.'); close(); after?.(); } catch (e) { toast(e.message, true); } });
+  closeBtn.addEventListener('click', () => { close(); closeTicketSheet(t, after); });
+}
+function closeTicketSheet(t, after) {
+  const f = { outcome: '' };
+  const field = (id, label, ph, area = true) => { const el = h(area ? 'textarea' : 'input', { id: `c-${id}`, maxlength: id === 'resolution' ? 100 : 800, placeholder: ph }); if (area) el.style.minHeight = '70px'; return [el, h('div', { class: 'field' }, h('label', { for: `c-${id}` }, label), el)]; };
+  const [res, resF] = field('resolution', 'Resolution', 'e.g. Resolved, No action needed', false), [why, whyF] = field('reason', 'Why did you decide this?', ''), [did, didF] = field('action', 'Action taken', 'What you did. Write "None" if nothing.'), [notes, notesF] = field('notes', 'Notes for other staff', ''), [fu, fuF] = field('followup', 'Follow-up needed (optional)', '', false);
+  const outcome = t.report ? h('div', { class: 'field' }, h('label', {}, 'How did the report turn out?'), segOf([['confirmed', 'Right'], ['unfounded', 'Wrong'], ['inconclusive', 'Not sure']], '', (v) => { f.outcome = v; }, 'Report outcome')) : null;
+  const go = h('button', { class: 'btn danger' }, 'Close ticket');
+  const close = openSheet(`Close ${t.number}`, h('div', { class: 'group' }, outcome, resF, whyF, didF, notesF, fuF), go);
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try { await act('support', 'ticket-close', { channelId: t.channelId, resolution: res.value, reason: why.value, action: did.value, notes: notes.value, followup: fu.value, outcome: f.outcome }); toast('Ticket closed. Your notes are in the staff log.'); close(); after?.(); }
+    catch (e) { toast(e.message, true); go.disabled = false; }
+  });
+}
+
+// ---------------------------------------------------------------- module settings (3.0.6)
+function settingEditor(m, s) {
+  const cur = m.values?.[s.key];
+  const save = async (value) => { try { await api(`/api/guilds/${S.gid}/modules/${m.name}/settings`, { key: s.key, value, op: 'set' }); m.values[s.key] = value; toast(`Saved · ${s.label}`); } catch (e) { toast(e.message, true); } };
+  const id = `s-${m.name}-${s.key}`;
+  const label = h('label', { for: id }, s.label);
+  if (s.type === 'toggle') return h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', { style: { fontWeight: 500 } }, s.label)), h('input', { id, type: 'checkbox', class: 'switch', checked: cur === true, 'aria-label': s.label, onchange: (e) => save(e.target.checked) }));
+  if (s.type === 'select') return h('div', { class: 'field' }, label, h('select', { id, onchange: (e) => save(e.target.value) }, s.options.map((o) => h('option', { value: o, selected: o === cur }, pretty(String(o))))));
+  if (s.type === 'channel' || s.type === 'role') {
+    const list = s.type === 'role' ? (S.guild.roles ?? []).map((r) => [r.id, `@ ${r.name}`]) : (S.guild.channels ?? []).filter((c) => (s.channelTypes ?? (/voice/i.test(s.key + s.label) ? [2, 13] : /categor/i.test(s.key + s.label) ? [4] : [0, 5, 15])).includes(c.type)).map((c) => [c.id, c.type === 4 ? c.name : `# ${c.name}`]);
+    return h('div', { class: 'field' }, label, h('select', { id, onchange: (e) => save(e.target.value || null) }, h('option', { value: '' }, 'Not set'), list.map(([v, l]) => h('option', { value: v, selected: v === cur }, l))));
+  }
+  if (s.type === 'number') { const el = h('input', { id, type: 'number', inputmode: 'numeric', value: cur ?? s.default ?? 0, min: s.min, max: s.max }); el.addEventListener('change', () => save(Number(el.value))); return h('div', { class: 'field' }, label, el); }
+  if (s.type === 'list') { const el = h('textarea', { id, placeholder: 'One per line' }, (cur ?? []).join('\n')); el.style.minHeight = '80px'; el.addEventListener('change', () => save(el.value.split('\n').map((x) => x.trim()).filter(Boolean))); return h('div', { class: 'field' }, h('label', { for: id }, `${s.label} (one per line)`), el); }
+  const el = h('textarea', { id, maxlength: s.maxLength ?? 2000 }, cur ?? ''); el.style.minHeight = '70px'; el.addEventListener('change', () => save(el.value)); return h('div', { class: 'field' }, label, el);
+}
+function moduleSettingsPage(m) {
+  const toggles = (m.settings ?? []).filter((s) => s.type === 'toggle'), others = (m.settings ?? []).filter((s) => s.type !== 'toggle');
+  view.replaceChildren(...[h('button', { class: 'btn quiet', onclick: () => show('modules') }, '‹ Modules'), h('h1', {}, pretty(m.name)), h('p', { class: 'sub' }, m.description ?? ''),
+    !m.enabled ? h('div', { class: 'lock' }, 'This module is off. Changes are saved and used when you turn it on.') : null,
+    toggles.length ? h('div', { class: 'group' }, toggles.map((s) => settingEditor(m, s))) : null,
+    others.length ? [h('div', { class: 'section' }, 'Settings'), h('div', { class: 'group' }, others.map((s) => settingEditor(m, s)))] : null,
+    !(m.settings ?? []).length ? h('p', { class: 'sub' }, 'This module has no settings.') : null].flat(Infinity).filter((x) => x != null && x !== false));
+  window.scrollTo(0, 0);
+}
+
 // ---------------------------------------------------------------- pages
 const needs = (mod, what) => [h('div', { class: 'group' }, h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', {}, `${pretty(mod)} is off`), h('small', {}, `Turn it on to use ${what}.`)),
   h('button', { class: 'tag', style: { border: 0 }, onclick: async () => { await toggle(mod, true); show(S.tab); } }, 'Turn on')))];
@@ -210,11 +325,16 @@ const PAGES = {
     return [h('h1', {}, 'Home'), h('p', { class: 'sub' }, 'Your bot at a glance.'),
       h('div', { class: 'group' }, h('div', { class: 'status' }, h('span', { class: 'dot' }), h('div', { class: 'two' }, h('b', {}, 'Online'), h('small', { class: 'muted' }, `Up ${ago(st.uptimeSeconds ?? 0)} · version ${st.version ?? S.me.version}`))),
         h('div', { class: 'figs' }, [[st.members, 'members'], [on, 'modules on'], [st.channels, 'channels']].map(([v, l]) => h('div', {}, h('b', {}, num(v)), h('small', {}, l))))),
+      (() => { const box = h('div', { class: 'charts' }); api(`/api/guilds/${S.gid}/history`).then((hs) => {
+        const sets = [['Members', 'members', 'last'], ['In voice', 'voice', 'max'], ['Messages', 'messages', 'sum']].map(([l, k, how]) => [l, daily(hs[k] ?? [], hs.hourMs, hs.from, how)]);
+        box.replaceChildren(...sets.map(([l, pts]) => h('div', { class: 'chart' }, h('small', { class: 'muted' }, l), h('b', {}, num(pts.at(-1) ?? 0)), pts.filter((v) => v != null).length >= 2 ? spark(pts) : h('small', { class: 'muted' }, 'collecting…'))));
+      }).catch(() => box.remove()); return box; })(),
       h('div', { class: 'section' }, 'Quick actions'),
       h('div', { class: 'group' },
-        [['announce', 'Send an announcement', 'Post to any channel, with or without a ping'], ['events', 'Start an event hub', 'Teams get their own voice rooms'], ['levels', 'See the leaderboard', 'Who has the most XP']]
+        [['announce', 'Send an announcement', 'Post to any channel, with or without a ping'], ['moderation', 'Moderation', 'Warn, time out, kick or ban, and the history'], ['events', 'Start an event hub', 'Teams get their own voice rooms']]
           .map(([tab, title, small]) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show(tab) }, h('div', { class: 'two' }, h('b', {}, title), h('small', {}, small)), h('span', { class: 'end muted' }, '›')))),
       h('div', { class: 'group' }, h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show('whatsnew') }, h('div', { class: 'two' }, h('b', {}, `What's new in ${st.version ?? S.me.version}`), h('small', {}, 'See everything in this update')), h('span', { class: 'end muted' }, '›'))),
+      (() => { const box = h('div', {}); api(`/api/guilds/${S.gid}/activity`).then((d) => { if (!d.activity?.length) return; box.replaceChildren(h('div', { class: 'section' }, 'Recent activity'), h('div', { class: 'group' }, d.activity.slice(0, 8).map((a) => h('div', { class: 'row' }, h('span', {}, a.icon ?? '•'), h('div', { class: 'two' }, h('span', {}, a.text), h('small', { class: 'muted' }, a.at ? new Date(a.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '')))))); }).catch(() => {}); return box; })(),
       h('div', { class: 'lock' }, 'Restart, updates, the bot token, backups and licences are only in the Windows app.'),
       h('p', { class: 'note' }, `Signed in as ${S.me.user.username}. `, h('a', { href: '/logout' }, 'Log out'), changeLink() ? ' · ' : null, changeLink())];
   },
@@ -234,7 +354,18 @@ const PAGES = {
     const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Status' }, [['', 'All'], ['open', 'Open'], ['closed', 'Closed']].map(([v, l]) =>
       h('button', { type: 'button', 'aria-pressed': String(v === q.status), onclick: (e) => { q.status = v; for (const b of seg.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); load(); } }, l)));
     load();
-    return [h('h1', {}, 'Tickets'), h('p', { class: 'sub' }, 'Every ticket, with its messages and files.'), h('div', { class: 'group' }, h('div', { class: 'field' }, searchIn), h('div', { class: 'field' }, seg)), listBox];
+    const openBox = h('div', {});
+    const loadOpen = async () => {
+      if (!canWorkTickets()) return;
+      const d = await viewOf('support', 'tickets').catch(() => null);
+      if (!d) return;
+      openBox.replaceChildren(h('div', { class: 'section' }, `Open now (${d.rows.length})`), h('div', { class: 'group' }, d.rows.length ? d.rows.map((t) => rowBtn({ onclick: () => ticketSheet(t, loadOpen) },
+        h('div', { class: 'two' }, h('b', {}, `${t.number} · ${t.category}`), h('small', {}, `${t.opener} · ${t.claimed === '—' ? 'nobody has claimed it' : `claimed by ${t.claimed}`} · ${t.opened}`)), h('span', { class: t.claimed === '—' ? 'tag warn' : 'tag' }, t.urgency)))
+        : [h('div', { class: 'row' }, h('small', { class: 'muted' }, 'No open tickets. Nice.'))]));
+    };
+    loadOpen();
+    return [h('h1', {}, 'Tickets'), h('p', { class: 'sub' }, canWorkTickets() ? 'Tap an open ticket to reply, claim or close it.' : 'Every ticket, with its messages and files.'), openBox,
+      hasArchive() ? [h('div', { class: 'section' }, 'Archive'), h('div', { class: 'group' }, h('div', { class: 'field' }, searchIn), h('div', { class: 'field' }, seg)), listBox] : null];
   },
 
   async tools() {
@@ -315,10 +446,29 @@ const PAGES = {
         h('div', { class: 'field' }, h('label', { for: 'e-cat' }, 'Team rooms go in'), cat)), go];
   },
 
+  async moderation() {
+    if (!canModerate()) return [h('h1', {}, 'Moderation'), ...needs('moderation', 'moderation')];
+    const listBox = h('div', { class: 'group' }, h('div', { class: 'row' }, h('small', { class: 'muted' }, 'Loading…')));
+    const q = h('input', { type: 'search', id: 'mod-q', placeholder: 'Search member, reason or moderator' });
+    let rows = [];
+    const paint = () => {
+      const v = q.value.trim().toLowerCase(), shown = rows.filter((r) => !v || [r.member, r.reason, r.by, r.type].some((x) => String(x ?? '').toLowerCase().includes(v)));
+      listBox.replaceChildren(...(shown.length ? shown.slice(0, 60).map((r) => rowBtn({ onclick: () => modSheet({ userId: r.userId, name: r.member, after: load }) },
+        h('div', { class: 'two' }, h('b', {}, r.member), h('small', {}, [r.reason, `by ${r.by}`, r.when].filter(Boolean).join(' · '))), h('span', { class: /Ban|Kick/.test(r.type) ? 'tag warn' : 'tag off' }, r.type)))
+        : [h('div', { class: 'row' }, h('small', { class: 'muted' }, rows.length ? 'Nothing matches.' : 'No warnings, timeouts, kicks or bans yet.'))]));
+    };
+    const load = async () => { try { rows = (await viewOf('moderation', 'cases')).rows ?? []; paint(); } catch (e) { listBox.replaceChildren(h('div', { class: 'row' }, h('small', { class: 'muted' }, e.message))); } };
+    q.addEventListener('input', paint);
+    load();
+    return [h('h1', {}, 'Moderation'), h('p', { class: 'sub' }, 'Tap a name to act on them again.'),
+      h('button', { class: 'btn', onclick: () => modSheet({ after: load }) }, 'Act on a member'),
+      h('div', { class: 'section' }, 'History'), h('div', { class: 'group' }, h('div', { class: 'field' }, q)), listBox];
+  },
+
   async modules() {
     const mods = [...S.guild.modules].sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name));
-    return [h('h1', {}, 'Modules'), h('p', { class: 'sub' }, 'Turn features on or off for this server.'),
-      h('div', { class: 'group' }, mods.map((m) => h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', {}, pretty(m.name)), h('small', {}, m.description)),
+    return [h('h1', {}, 'Modules'), h('p', { class: 'sub' }, 'Turn features on or off. Tap a name for its settings.'),
+      h('div', { class: 'group' }, mods.map((m) => h('div', { class: 'row' }, h('button', { class: 'two', style: { border: 0, background: 'none', textAlign: 'left', padding: 0, flex: 1, color: 'inherit' }, onclick: () => moduleSettingsPage(m) }, h('b', {}, pretty(m.name), (m.settings ?? []).length ? h('span', { class: 'muted' }, ' ›') : null), h('small', {}, m.description)),
         h('input', { type: 'checkbox', class: 'switch', checked: m.enabled, 'aria-label': `${pretty(m.name)} ${m.enabled ? 'on' : 'off'}`, onchange: async (e) => { e.target.disabled = true; await toggle(m.name, e.target.checked); show('modules'); } }))))];
   },
 };
