@@ -13,6 +13,7 @@ import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, But
 import { randomBytes } from 'node:crypto';
 import { UserError, truncate } from '../../src/util.js';
 import * as CR from '../../src/critters.js';
+import { pickArt } from '../../src/customart.js';
 
 const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
@@ -32,6 +33,9 @@ const label = (c) => { const sp = CR.speciesById(c.species); return `${c.sparkly
 const elementTag = (sp) => `${CR.ELEMENTS[sp.element].emoji} ${CR.ELEMENTS[sp.element].label}`;
 
 async function withPicture(e, speciesId, opts, name = 'critter.png') {
+  // 3.1.1: the bot owner's own picture first (data/art/critters/<critter>/, or <critter>-sparkly/ for a Sparkly one).
+  const own = (opts?.sparkly ? pickArt('critters', `${speciesId}-sparkly`) : null) ?? pickArt('critters', speciesId);
+  if (own) { e.setImage(`attachment://${own.name}`); return { embeds: [e], files: [{ attachment: own.file, name: own.name }] }; }
   const png = await CR.critterImage(speciesId, opts).catch(() => null);
   if (!png) return { embeds: [e], files: [] };
   e.setThumbnail?.(null); e.setImage(`attachment://${name}`);

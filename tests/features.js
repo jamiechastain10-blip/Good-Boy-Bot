@@ -6,6 +6,7 @@
  * reputation, notifications, module tables, migrations, TTS/quote helpers, branding.
  * Called from run.js with the shared `test` helper.
  */
+import { assertDiscordLimits } from './discordlimits.js';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -89,6 +90,7 @@ export function makeWorld(moduleNames, { guildId = '1' } = {}) {
         } },
       send: async (payload) => {
         if (sendError) throw sendError;
+        assertDiscordLimits(payload, 'message', `sent in #${name}`);
         const m = { createdTimestamp: Date.now(), author: { tag: 'Bot#0' }, cleanContent: String(payload?.content ?? ''), attachments: new Map(), embeds: payload?.embeds ?? [], id: `${id}-m${++n}`, url: `https://discord.com/channels/${guildId}/${id}/${n}`, channelId: id, payload, edit: async (x) => { m.edited = x; return m; }, delete: async () => { deleted.push(m.id); store.delete(m.id); }, startThread: async () => ({ id: `${id}-t${n}` }) };
         store.set(m.id, m); sent.push(payload); return m;
       },
@@ -109,8 +111,8 @@ export function makeWorld(moduleNames, { guildId = '1' } = {}) {
         getChannel: (n) => (opts[n] ? { id: opts[n].id } : null), getFocused: () => '',
       },
       deferReply: async (o) => { out.deferred = true; out.ephemeral = !!(o?.flags); },
-      reply: async (p) => { out.replied = true; out.replies.push(p); }, editReply: async (p) => { out.edits.push(p); }, followUp: async (p) => { out.follow.push(p); },
-      deleteReply: async () => {}, update: async (p) => { out.replied = true; out.updated = p; }, showModal: async (m) => { out.modal = m; }, fetchReply: async () => ({ id: `poll-${Math.random()}` }),
+      reply: async (p) => { assertDiscordLimits(p, 'message', 'reply'); out.replied = true; out.replies.push(p); }, editReply: async (p) => { assertDiscordLimits(p, 'message', 'edited reply'); out.edits.push(p); }, followUp: async (p) => { assertDiscordLimits(p, 'message', 'follow-up'); out.follow.push(p); },
+      deleteReply: async () => {}, update: async (p) => { assertDiscordLimits(p, 'message', 'update'); out.replied = true; out.updated = p; }, showModal: async (m) => { assertDiscordLimits(m, 'modal'); out.modal = m; }, fetchReply: async () => ({ id: `poll-${Math.random()}` }),
       text: () => [...out.replies, ...out.edits, ...out.follow, out.updated].filter(Boolean).map((r) => (typeof r === 'string' ? r : r.content ?? '')).join(' | '),
     });
   };
