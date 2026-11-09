@@ -54,6 +54,8 @@ switch on per server. You run it yourself, so your community's data stays with y
 | 💾 **Backups** | Weekly snapshots of roles, channels and permissions; restore only adds back what's missing |
 | 🧰 **Extras** | Custom commands with variables, sticky messages, `/say`, highlights, right-click Translate, image quotes, clips, reminders |
 
+**Your own art.** The bot owner can replace any roleplay GIF or critter picture with their own (`/art`, or drop files in a folder): [`docs/CUSTOM-ART.md`](docs/CUSTOM-ART.md).
+
 **Switching from another bot?** `/migrate scan` finds what Carl-bot, YAGPDB, Statbot or TTS Bot left behind (reaction
 roles, logs, starboard, welcome, join roles, custom commands) and offers to set it up. See
 [`docs/REPLACING-OTHER-BOTS.md`](docs/REPLACING-OTHER-BOTS.md).
@@ -86,6 +88,7 @@ You need [Node.js](https://nodejs.org) **22.13 or newer**.
 3. **Invite it** with that link (or `npm run invite`). Then, in Server Settings → Roles, **drag the bot's role near the
    top**: Discord only lets a bot manage roles and members below its own role.
 4. **Turn things on** in Discord with `/modules`. Nothing is on until you turn it on, and each server has its own settings.
+   Want a channel left alone (no critters or coin drops in your arcade channel, say)? Run `/channel` there and pick what stays quiet.
 
 `npm run check` tests your setup (Node, packages, token and intents). `/health` in Discord shows what's working.
 
@@ -160,7 +163,7 @@ already.
 | **deadchat** | pings an opt-in role with a conversation starter when a channel goes quiet |
 | **backup** | `/backup create\|list\|restore\|download` · weekly automatic backups |
 
-Always available: `/modules` `/module` `/config` `/permissions` `/notifications` `/health` `/help`.
+Always available: `/modules` `/module` `/config` `/channel` (what stays quiet in a channel) `/permissions` `/notifications` `/health` `/help`.
 
 </details>
 

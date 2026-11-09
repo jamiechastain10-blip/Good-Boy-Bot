@@ -533,5 +533,13 @@ await (await import('./defer.js')).default({ test, rejectsWith });
 await (await import('./about.js')).default({ test, rejectsWith });
 
 fs.rmSync(tmp, { recursive: true, force: true });
+// Messages Discord would have refused anywhere in the run (even ones the bot caught and answered with "something went wrong").
+const refused = globalThis[Symbol.for('goodboy.tests.discordViolations')] ?? [];
+const kinds = [...new Map(refused.map((v) => [v.msg, v])).values()];
+if (kinds.length) {
+  console.log(`\nDiscord would refuse ${kinds.length} kind${kinds.length === 1 ? '' : 's'} of message the bot sends:`);
+  for (const v of kinds) console.log(`  FAIL ${v.msg}\n${v.stack.replace(/^/gm, '       ')}`);
+  failed += kinds.length;
+}
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

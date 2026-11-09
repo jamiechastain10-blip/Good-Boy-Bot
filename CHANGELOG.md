@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.1
+**Fixes fishing (`/fish` showed "Something went wrong") adds `/channel` to keep modules quiet in a channel, and lets the bot owner use their own art for roleplay and critters.**
+
+<!-- members -->
+fishing works again 🎣 sorry about that! staff can also keep things like critters out of certain channels now
+<!-- /members -->
+
+- **Fixed:** `/fish` (and Back to the fishing menu) failed with "Something went wrong while running that". 3.1 added a Rods button, which put 6 buttons in one row, and Discord only allows 5. The menu now has two rows.
+- **New `/channel` command: keep modules quiet in a channel.** Run it in a channel (or pick one, or a whole category) and choose which modules stay quiet there. For example, an arcade channel with no critters popping up and no coin drops, while the games still work. A quiet module ignores everything in that channel (no spawns, coin drops, XP, counting or auto-replies), and its commands don't work there, though admins still can. **Everything on here** undoes it. Moderation, logs and tickets always work everywhere. It's the same switch as the dashboard's "Where it works" tab.
+- **Your own art:** the bot owner can replace any roleplay GIF or critter picture with their own, in every server. `/art add` opens a form with a file upload (roleplay actions can have several GIFs, picked at random; critters can have a separate Sparkly picture), plus `/art list` and `/art remove`. Or copy files into `data/art/rp/<action>/` and `data/art/critters/<critter>/`. Only real pictures are kept (PNG, JPG, GIF or WEBP, up to 8 MB). Guide: [docs/CUSTOM-ART.md](docs/CUSTOM-ART.md).
+- The automatic tests now check every message the bot sends against Discord's own limits (buttons per row, rows, text lengths, menu options, popups), so a message Discord would refuse is caught before a release.
+
 ## 3.1.0
 **Good Boy can replace your other bots: families, roleplay, giveaways, invite tracking, modmail, a coin shop, six new arcade games, Critters to catch, a new rods system for fishing, a scam-link filter, captcha, staff applications, and a much stronger music player.**
 

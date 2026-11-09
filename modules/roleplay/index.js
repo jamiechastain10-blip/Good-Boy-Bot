@@ -10,6 +10,7 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { UserError } from '../../src/util.js';
 import { ACTIONS, rpGif } from '../../src/rpart.js';
+import { pickArt } from '../../src/customart.js';
 
 const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
@@ -47,8 +48,11 @@ async function perform(ctx, i, action, fromId, toId, { update = false } = {}) {
     : `<@${fromId}> ${A.verb} <@${toId}>`;
   const e = new EmbedBuilder().setColor(0xff8fb3).setDescription(`${A.emoji} ${line}!`).setFooter({ text: toId && !A.solo ? `That's ${times(n)}.` : n > 1 ? `${n} times so far.` : 'First time!' });
   const files = [];
-  const tenor = ctx.config.get('useTenor') !== false ? await tenorGif(tenorKey(ctx), action) : null;
-  if (tenor) e.setImage(tenor).setFooter({ text: `${e.data.footer.text} · via Tenor` });
+  // 3.1.1: the bot owner's own art comes first (data/art/rp/<action>/), then Tenor, then Good Boy's animations.
+  const own = ctx.config.get('pictures') !== false ? pickArt('rp', action) : null;
+  const tenor = !own && ctx.config.get('useTenor') !== false ? await tenorGif(tenorKey(ctx), action) : null;
+  if (own) { e.setImage(`attachment://${own.name}`); files.push({ attachment: own.file, name: own.name }); }
+  else if (tenor) e.setImage(tenor).setFooter({ text: `${e.data.footer.text} · via Tenor` });
   else if (ctx.config.get('pictures') !== false) { const art = await rpGif(action); if (art) { e.setImage(`attachment://${art.name}`); files.push({ attachment: art.file, name: art.name }); } }
   const back = toId && !A.solo && toId !== ctx.client?.user?.id
     ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`rp:back:${action}:${fromId}:${toId}`).setLabel(`${action === 'highfive' ? 'High-five' : action[0].toUpperCase() + action.slice(1)} back`).setEmoji(A.emoji).setStyle(ButtonStyle.Secondary))]

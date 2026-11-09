@@ -628,13 +628,16 @@ function hubMessage(ctx, i) {
       { name: 'Caught', value: `${fmtNum(p.caught)} of ${fmtNum(p.casts)} casts`, inline: true },
       ...(quest ? [{ name: 'Challenges', value: `📜 ${quest.daily.filter((r) => r.done_at).length}/3 today${quest.weekly[0]?.done_at ? ' · weekly ✅' : ''}${liveStreak(p) ? ` · 🔥 ${liveStreak(p)}` : ''}`, inline: true }] : []),
     ).setFooter({ text: 'Cast opens a form to pick where to fish, your rod, bait and tackle.' });
-  return { embeds: [e], components: [new ActionRowBuilder().addComponents(
-    pipe.button(i, 'cast', [], { label: 'Cast', emoji: '🎣', style: ButtonStyle.Success }),
-    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:bag`).setEmoji('🎒').setLabel('Bag').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:shop`).setEmoji('🛒').setLabel('Shop').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:rods`).setEmoji('🎣').setLabel('Rods').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('Collection').setStyle(ButtonStyle.Secondary),
-    ...(quest ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:quests`).setEmoji('📜').setLabel('Challenges').setStyle(ButtonStyle.Secondary)] : []))], flags: EPH, allowedMentions: NOPING };
+  // Discord allows 5 buttons in a row: Cast and the bag/shop/rods on top, the collection and challenges below.
+  return { embeds: [e], components: [
+    new ActionRowBuilder().addComponents(
+      pipe.button(i, 'cast', [], { label: 'Cast', emoji: '🎣', style: ButtonStyle.Success }),
+      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:bag`).setEmoji('🎒').setLabel('Bag').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:shop`).setEmoji('🛒').setLabel('Shop').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:rods`).setEmoji('🎣').setLabel('Rods').setStyle(ButtonStyle.Secondary)),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('Collection').setStyle(ButtonStyle.Secondary),
+      ...(quest ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:quests`).setEmoji('📜').setLabel('Challenges').setStyle(ButtonStyle.Secondary)] : []))], flags: EPH, allowedMentions: NOPING };
 }
 
 function bagMessage(ctx, i, note) {

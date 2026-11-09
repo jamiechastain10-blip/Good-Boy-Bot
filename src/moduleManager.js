@@ -9,6 +9,7 @@
  * Module code is TRUSTED: it runs in this process with full access to discord.js.
  * Only install modules you wrote or have reviewed.
  */
+import { setArtRoot } from './customart.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -104,6 +105,7 @@ export class ModuleManager {
     this.db = db;
     /** Where modules keep files (ticket archives). Tests without one get a temporary folder. */
     this.dataDir = dataDir ?? process.env.GOODBOY_DATA_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), 'goodboy-data-'));
+    setArtRoot(this.dataDir); // 3.1.1: custom art lives in data/art
     this.perms = perms;
     this.queue = queue;
     this.log = log;

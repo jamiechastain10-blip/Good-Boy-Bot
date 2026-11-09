@@ -1035,4 +1035,99 @@ export default async function runV31Tests({ test }) {
     await w.mm.runAction('1', 'economy', 'shop-restore', {}, { userId: 'x', username: 'x' });
     assert.equal(SHOP.starters(g).find((x) => x.id === 'luck').off, false);
   });
+
+  await test('3.1.1: the fishing menu fits Discord (at most 5 buttons in a row); the Discord-limits checker catches messages Discord would refuse', async () => {
+    const { discordProblems } = await import('./discordlimits.js');
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+    const six = new ActionRowBuilder().addComponents(Array.from({ length: 6 }, (_, k) => new ButtonBuilder().setCustomId(`b${k}`).setLabel(`B${k}`).setStyle(ButtonStyle.Secondary)));
+    assert.match(discordProblems({ components: [six] }).join(), /6 buttons/);
+    assert.match(discordProblems({ embeds: [{ fields: [{ name: 'x', value: 'y'.repeat(1025) }] }] }).join(), /1024/);
+    assert.match(discordProblems({ content: 'z'.repeat(2001) }).join(), /2000/);
+    assert.deepEqual(discordProblems({ content: 'fine', components: [] }), []);
+    const w = await makeWorld(['economy', 'games']).load();
+    const i = w.ix({ command: 'fish', member: w.person('995000000000000001'), channel: w.channel('games') });
+    await w.mm.handleCommand(i);
+    const rows = i.replies[0].components.map((r) => r.toJSON());
+    assert.ok(rows.every((r) => r.components.length <= 5), 'every row fits');
+    assert.deepEqual(rows.flatMap((r) => r.components.map((c) => c.label)), ['Cast', 'Bag', 'Shop', 'Rods', 'Collection', 'Challenges'], 'and nothing went missing');
+  });
+
+  await test('/channel: pick modules to keep quiet in a channel (an arcade channel with no critters or coin drops, games still on); a category counts for its channels; Everything on here undoes it', async () => {
+    const { PermissionFlagsBits: P } = await import('discord.js');
+    const w = await makeWorld(['economy', 'games', 'critters']).load();
+    const arcade = w.channel('arcade'), general = w.channel('general');
+    const admin = w.person('996000000000000009', { bits: [P.Administrator], pos: 10 }), member = w.person('996000000000000001');
+    const open = await (async () => { const i = w.ix({ command: 'channel', member: admin, channel: arcade }); await w.mm.handleCommand(i); return i; })();
+    const panel = JSON.stringify(open.replies[0]);
+    assert.match(panel, /Every module works here/); assert.match(panel, /gbch:set:/);
+    assert.ok(!/"value":"moderation"/.test(panel), 'moderation can never be switched off');
+    const pick = async (values) => { const i = w.ix({ customId: `gbch:set:${arcade.id}:0`, member: admin, channel: arcade }); i.values = values; i.isStringSelectMenu = () => true; await w.mm.handleComponent(i); return i; };
+    const saved = await pick(['critters', 'economy']);
+    assert.match(JSON.stringify(saved.updated), /Saved: .*Critters.*Economy|Saved: .*Economy.*Critters/);
+    assert.deepEqual(w.mm.offIn('1', 'critters'), [arcade.id]); assert.deepEqual(w.mm.offIn('1', 'games'), [], 'games stay on');
+    // Chat in the arcade never spawns critters or coin drops; the general channel still does.
+    w.mm.setSetting('1', 'critters', 'spawnEvery', 5);
+    const spawns = globalThis[Symbol.for('goodboy.critters.spawns')]; spawns.delete('1'); globalThis[Symbol.for('goodboy.critters.counts')].delete('1');
+    for (let k = 0; k < 12; k++) await w.mm.dispatch('messageCreate', '1', { guildId: '1', channelId: arcade.id, channel: arcade, author: member.user, member, content: 'hi' });
+    assert.ok(!spawns.get('1'), 'no critter in the arcade');
+    for (let k = 0; k < 12; k++) await w.mm.dispatch('messageCreate', '1', { guildId: '1', channelId: general.id, channel: general, author: member.user, member, content: 'hi' });
+    assert.ok(spawns.get('1'), 'but there is one in general'); spawns.delete('1');
+    // Members can't use the quiet module's commands there; games still work.
+    const run = async (command, ch) => { const i = w.ix({ command, member, channel: ch }); await w.mm.handleCommand(i); return JSON.stringify(i.replies); };
+    assert.match(await run('shop', arcade), /switched off in this channel/);
+    assert.doesNotMatch(await run('arcade', arcade), /switched off/);
+    // Undo.
+    const all = w.ix({ customId: `gbch:all:${arcade.id}`, member: admin, channel: arcade }); await w.mm.handleComponent(all);
+    assert.deepEqual(w.mm.offIn('1', 'critters'), []); assert.deepEqual(w.mm.offIn('1', 'economy'), []);
+    // Members can't change it.
+    const nope = w.ix({ customId: `gbch:all:${arcade.id}`, member, channel: arcade }); await w.mm.handleComponent(nope);
+    assert.match(JSON.stringify(nope.replies), /Only server admins/);
+    // A category: the panel for a channel inside it says so.
+    const cat = { id: '996000000000000100', name: 'Games', type: 4 }; w.g.channels.cache.set(cat.id, cat);
+    arcade.parentId = cat.id; w.mm.setOffIn('1', 'critters', [cat.id]);
+    const again = w.ix({ command: 'channel', member: admin, channel: arcade }); await w.mm.handleCommand(again);
+    assert.match(JSON.stringify(again.replies[0]), /off for the whole category/);
+  });
+
+  await test('custom art (/art and data/art): the bot owner\'s own pictures replace roleplay GIFs and critter pictures everywhere; only real pictures are kept; files dropped into the folder work too', async () => {
+    const fs = await import('node:fs'); const path = await import('node:path');
+    const ART = await import('../src/customart.js');
+    const w = await makeWorld(['roleplay', 'critters']).load();
+    const owner = w.person('997000000000000001'); w.mm.ownerIds.add(owner.id);
+    const other = w.person('997000000000000002');
+    const room = w.channel('chat');
+    // A tiny real GIF and PNG.
+    const gif = Buffer.from('R0lGODlhAQABAAAAACw=', 'base64'); const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    assert.equal(ART.imageType(gif), 'gif'); assert.equal(ART.imageType(png), 'png'); assert.equal(ART.imageType(Buffer.from('<html>not a picture</html>')), null);
+    assert.throws(() => ART.saveArt('rp', 'hug', Buffer.from('MZ fake program file')), /isn't a picture/);
+    assert.throws(() => ART.saveArt('rp', 'notanaction', gif), /isn't one of/);
+    // /art add through its popup (Discord's file upload), bot owner only.
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => gif });
+    try {
+      const open = w.ix({ command: 'art', sub: 'add', member: owner, channel: room }); await w.mm.handleCommand(open);
+      assert.ok(open.modal, 'a popup with a file upload');
+      const submit = async (member, fields) => { const i = w.ix({ customId: 'gbart:add', member, channel: room }); i.isModalSubmit = () => true;
+        i.fields = { getTextInputValue: (k) => fields[k] ?? '', getStringSelectValues: (k) => [].concat(fields[k] ?? []), getUploadedFiles: () => new Map([['0', { name: 'hug.gif', url: 'https://cdn.discordapp.com/x/hug.gif', size: gif.length }]]) };
+        await w.mm.handleComponent(i); return JSON.stringify([i.replies, i.edits]); };
+      assert.match(await submit(other, { kind: 'rp', name: 'hug' }), /Only the person who runs this bot/);
+      assert.match(await submit(owner, { kind: 'rp', name: 'hug' }), /Saved!/);
+      assert.equal(ART.listArt('rp', 'hug').length, 1);
+    } finally { globalThis.fetch = realFetch; }
+    // /rp hug now shows it.
+    const hug = w.ix({ command: 'rp', member: owner, channel: room, opts: { action: 'hug', member: other.user } }); await w.mm.handleCommand(hug);
+    const sent = hug.replies[0] ?? hug.edits[0];
+    assert.equal(sent.files[0].name, 'hug.gif'); assert.ok(sent.files[0].attachment.equals(gif), 'the owner\'s GIF, not the built-in one');
+    // A critter picture dropped straight into the folder.
+    const dir = path.join(ART.artRoot(), 'critters', 'emberpup'); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'mine.png'), png);
+    const C = await import('../modules/critters/index.js');
+    await C.spawn(w.mm.ctx('1', 'critters'), room, { species: 'emberpup', iv: { hp: 1, atk: 1, def: 1, spd: 1 }, sparkly: false });
+    const spawnMsg = room.sent.at(-1);
+    assert.equal(spawnMsg.files[0].name, 'emberpup.png'); assert.ok(spawnMsg.files[0].attachment.equals(png));
+    globalThis[Symbol.for('goodboy.critters.spawns')].delete('1');
+    assert.deepEqual(ART.summary('critters'), [{ name: 'emberpup', count: 1 }]);
+    // Remove: back to the built-in look.
+    assert.equal(ART.clearArt('rp', 'hug'), 1); assert.equal(ART.pickArt('rp', 'hug'), null);
+    ART.clearArt('critters', 'emberpup');
+  });
 }
