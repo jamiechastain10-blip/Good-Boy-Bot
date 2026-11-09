@@ -179,7 +179,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
     if (kind === 'action' && mod?.panels?.some((p) => (p.globalActions ?? []).some((x) => x.action === name && x.confirmWord))) return false;
     return !!mod?.panels?.some((p) => p.permission && perms.check(a.member, p.permission) && (kind === 'view'
       ? p.view === name || (p.pageViews ?? []).includes(name)
-      : [...(p.rowActions ?? []), ...(p.globalActions ?? [])].some((x) => x.action === name) || (p.pageActions ?? []).includes(name)));
+      : [...(p.rowActions ?? []), ...(p.globalActions ?? []), ...(p.addForm ? [p.addForm] : [])].some((x) => x.action === name) || (p.pageActions ?? []).includes(name)));
   }
 
   const sameOrigin = (req) => {
@@ -582,7 +582,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         const risky = new Set(), safe = new Set();
         for (const d of manager.describeForGuild(a.guild.id)) for (const pn of d.panels ?? []) {
           if (!pn.permission) continue;
-          if (pn.private || pn.rowActions?.length || pn.globalActions?.length) risky.add(pn.permission);
+          if (pn.private || pn.rowActions?.length || pn.globalActions?.length || pn.addForm) risky.add(pn.permission);
           else if (d.enabled) safe.add(pn.permission);
         }
         for (const k of safe) if (!risky.has(k)) keys.add(k);

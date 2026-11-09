@@ -103,7 +103,7 @@ manager.version = version;
 manager.rootDir = root;
 
 // ---- intents: try everything, fall back gracefully if privileged ones are off ----
-const BASE = ['Guilds', 'GuildModeration', 'GuildMessages', 'GuildMessageReactions', 'GuildVoiceStates'];
+const BASE = ['Guilds', 'GuildModeration', 'GuildMessages', 'GuildMessageReactions', 'GuildVoiceStates', 'GuildInvites', 'DirectMessages']; // 3.1: invite tracking, modmail
 const ATTEMPTS = [
   ['GuildMembers', 'MessageContent', 'GuildPresences'],
   ['GuildMembers', 'MessageContent'],
@@ -130,9 +130,51 @@ function wire(client) {
     logger.info(`Removed from server "${guild.name}" (data kept in case you re-add me)`);
   });
 
+  // 3.1: modmail. A DM goes to the staff of the server the member shares with the bot (they pick if there are several).
+  const pendingDMs = new Map(); // user id -> the message waiting for them to pick a server
+  async function modmailServers(user) {
+    const out = [];
+    for (const [gid, g] of client.guilds.cache) {
+      if (!manager.isActive(gid, 'modmail')) continue;
+      const api = manager.ctx(gid, 'modmail').api('modmail');
+      if (!api?.ready(gid)) continue;
+      const member = g.members.cache.get(user.id) ?? await g.members.fetch(user.id).catch(() => null);
+      if (member) out.push({ gid, name: g.name, open: api.hasOpen(gid, user.id), api });
+    }
+    return out;
+  }
+  client.on(Events.MessageCreate, async (message) => {
+    if (message.guildId || message.author?.bot || message.system) return;
+    try {
+      const servers = await modmailServers(message.author);
+      if (!servers.length) return;
+      const open = servers.filter((s) => s.open);
+      const target = open.length === 1 ? open[0] : servers.length === 1 ? servers[0] : null;
+      if (target) { await target.api.fromDM(target.gid, message); return; }
+      pendingDMs.set(message.author.id, message);
+      const { ActionRowBuilder, StringSelectMenuBuilder } = await import('discord.js');
+      await message.reply({ content: 'Which server\'s staff is this for?', components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('mmpick')
+        .setPlaceholder('Pick a server').addOptions(servers.slice(0, 25).map((s) => ({ label: s.name.slice(0, 100), value: s.gid }))))] }).catch(() => {});
+    } catch (e) { await message.reply(e.name === 'UserError' ? e.message : 'Something went wrong sending that. Try again in a minute.').catch(() => {}); if (e.name !== 'UserError') logger.warn(`Modmail DM: ${e.message}`); }
+  });
+
   client.on(Events.InteractionCreate, async (i) => {
     try {
       if (!i.guildId) {
+        if (i.isStringSelectMenu?.() && i.customId === 'mmpick') {
+          const msg = pendingDMs.get(i.user.id); pendingDMs.delete(i.user.id);
+          const gid = i.values?.[0];
+          if (!msg || !manager.isActive(gid, 'modmail')) return await i.update({ content: 'That expired. Send your message again.', components: [] }).catch(() => {});
+          await i.update({ content: `Sending it to the staff of **${client.guilds.cache.get(gid)?.name ?? 'that server'}**...`, components: [] }).catch(() => {});
+          await manager.ctx(gid, 'modmail').api('modmail').fromDM(gid, msg).catch((e) => i.followUp({ content: e.message }).catch(() => {}));
+          return;
+        }
+        if (i.isButton?.() && i.customId.startsWith('rate:')) { // 3.1 ticket ratings, sent by DM
+          const [, gid, number, stars] = i.customId.split(':');
+          if (!manager.isActive(gid, 'support')) return await i.update({ content: 'Tickets are off in that server now.', embeds: [], components: [] }).catch(() => {});
+          const text = await Promise.resolve().then(() => manager.ctx(gid, 'support').api('support').rate(gid, number, i.user.id, stars)).catch((e) => (e.name === 'UserError' ? e.message : 'Something went wrong. Try again later.'));
+          return await i.update({ content: text, components: [] }).catch(() => {});
+        }
         if (i.isRepliable()) await i.reply({ content: 'This bot only works inside servers.', flags: 64 }).catch(() => {});
         return;
       }

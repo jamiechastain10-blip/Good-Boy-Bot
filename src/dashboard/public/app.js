@@ -87,6 +87,43 @@ function ask({ title, text, field = null, confirmWord = null, okLabel = 'OK', da
     (input ?? word ?? ok).focus();
   });
 }
+/**
+ * 3.1: a dialog with several fields, for a panel's "Add" form. fields: [{ key, label, type: text|number|paragraph|select|role|channel,
+ * options, placeholder, optional }]. Resolves to { key: value } or null.
+ */
+function askForm({ title, text, fields, okLabel = 'Save' }) {
+  return new Promise((resolve) => {
+    const prev = document.activeElement;
+    const pickFrom = (list, none) => [h('option', { value: '' }, none), ...list];
+    const inputs = fields.map((f) => {
+      let el;
+      if (f.type === 'select') el = h('select', { class: 'field' }, f.options.map((o) => h('option', { value: o.value }, o.label)));
+      else if (f.type === 'role') el = h('select', { class: 'field' }, pickFrom((state.data?.roles ?? []).filter((r) => !isDivider(r.name)).map((r) => h('option', { value: r.id }, '@' + r.name)), f.optional ? '(none)' : 'Choose a role…'));
+      else if (f.type === 'channel') el = h('select', { class: 'field' }, pickFrom((state.data?.channels ?? []).map((c) => h('option', { value: c.id }, (c.type === 4 ? '📁 ' : '# ') + c.name)), f.optional ? '(none)' : 'Choose a channel…'));
+      else if (f.type === 'paragraph') el = h('textarea', { class: 'field', placeholder: f.placeholder ?? '', maxlength: f.max ?? 1000 });
+      else el = h('input', { class: 'field', type: f.type === 'number' ? 'number' : 'text', placeholder: f.placeholder ?? '' });
+      return { f, el };
+    });
+    const ok = h('button', {}, okLabel), cancel = h('button', { class: 'ghost' }, 'Cancel');
+    const valid = () => inputs.every(({ f, el }) => f.optional || f.type === 'select' || String(el.value).trim() !== '');
+    const refresh = () => { ok.disabled = !valid(); };
+    const done = (v) => { back.remove(); document.removeEventListener('keydown', key); prev?.focus?.(); resolve(v); };
+    const key = (e) => { if (e.key === 'Escape') done(null); };
+    ok.addEventListener('click', () => valid() && done(Object.fromEntries(inputs.map(({ f, el }) => [f.key, f.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value]))));
+    cancel.addEventListener('click', () => done(null));
+    for (const { el } of inputs) { el.addEventListener('input', refresh); el.addEventListener('change', refresh); }
+    const back = h('div', { class: 'dialog-back', role: 'presentation' },
+      h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+        h('h3', {}, title), text ? h('p', { class: 'muted' }, text) : null,
+        inputs.map(({ f, el }) => h('label', { class: 'small form-field' }, f.label, el)),
+        h('div', { class: 'dialog-buttons' }, cancel, ok)));
+    back.addEventListener('click', (e) => { if (e.target === back) done(null); });
+    document.addEventListener('keydown', key);
+    document.body.append(back);
+    refresh();
+    inputs[0]?.el.focus();
+  });
+}
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 // ---------------------------------------------------------------- sign-in and server list
@@ -542,8 +579,12 @@ function panelBox(m, panel) {
       (data.recent ?? []).length ? h('table', {}, h('tr', {}, panel.recentColumns.map((c) => h('th', { title: c.hint ?? null }, c.label))),
         data.recent.map((r) => h('tr', {}, panel.recentColumns.map((c) => h('td', {}, r[c.key] ?? '—')))))
         : h('p', { class: 'empty-note' }, panel.recentEmpty ?? 'Nothing has happened here yet.')) : null;
+    const add = panel.addForm ? h('button', { onclick: async () => {
+      const v = await askForm({ title: panel.addForm.label, text: panel.addForm.hint ?? null, fields: panel.addForm.fields, okLabel: panel.addForm.okLabel ?? 'Add' });
+      if (v) run(panel.addForm.action, v, panel.addForm.done ?? 'Added');
+    } }, panel.addForm.label) : null;
     put(box, h('div', { class: 'row' }, h('h3', {}, panel.title),
-      h('div', {}, (panel.globalActions ?? []).map((a) => h('button', { class: 'danger', onclick: async () => {
+      h('div', {}, add, (panel.globalActions ?? []).map((a) => h('button', { class: 'danger', onclick: async () => {
         const w = await ask({ title: a.label, text: a.confirm ?? 'This changes everyone at once and cannot be undone from here. A backup is made first.', confirmWord: a.confirmWord, okLabel: a.label, danger: true });
         if (w === null) return;
         run(a.action, { confirm: a.confirmWord }, 'Done');

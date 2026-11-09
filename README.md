@@ -25,7 +25,7 @@ Your bot, settings and data are kept. See [Troubleshooting](#troubleshooting) be
 
 ---
 
-### What's new in 3.0
+### What's new in 3.0 and 3.1
 
 - **A new dashboard and Windows app**: one clean dark design, a Home page with what needs attention and charts for the
   last 14 days, a server switcher, channel and role pickers, and right-click menus.
@@ -34,6 +34,7 @@ Your bot, settings and data are kept. See [Troubleshooting](#troubleshooting) be
 - **Tickets rebuilt**: pick a type, pick the member, drop screenshots straight into the form, and a searchable archive
   that reads like the original chat.
 - **Fishing expansion**: 24 places, 2,000 fish, levels up to 4,000, strike timing and quick-time events.
+- **3.1:** families and a family tree, roleplay actions, giveaways, invite tracking, rank cards, modmail, highlights, Translate, Twitch alerts and a full music queue.
 - **Animated games** (being tested in 3.0.4: real cards, spinning reels, a moving fishing lake), **Pong**, **music**, **pictures in welcome and leave messages**, and **What's new** in every app.
 - **Licences**: a licensed bot can use its own name, picture, banner and description in the Windows app (the Good Boy
   credit always stays).
@@ -62,7 +63,7 @@ update themselves. If you're starting fresh, use the latest version; there's no 
 **Prefer to run it from the code?** That works too, as described below.
 
 Moderation, member management, roles, tickets, polls, leveling, voice TTS, feeds and image quotes, built as
-independent **modules** you switch on or off per server. It runs on your own computer: **`npm install`, `npm start`, nothing else** (no Docker, no database server, no build step).
+independent **modules** you switch on or off per server. It runs on your own computer: **`npm install`, `npm start`, nothing else** (no Docker, no database server, no build step). Want it online even when your PC is off? See [docs/ALWAYS-ONLINE.md](docs/ALWAYS-ONLINE.md) (Raspberry Pi, a small server, or Docker).
 
 ---
 
@@ -150,7 +151,7 @@ Nothing needs typing anywhere: every command opens a popup (on/off and choices a
 | **engagement** | `/announce send\|schedule` (no options: a **Configure Announcement** button opens one popup for channel, title, text, colour and pings) · `/announce list` (cancel with a picker) · `/poll create\|end` · `/suggest` and `/suggestion …` · `/starboard …` (popups for the long text) |
 | **community** | `/rank` `/leaderboard` `/rep …` `/serverstats` `/xp set\|reset` `/levels reward …` · **`/liveboard setup\|refresh\|remove`** (a leaderboard message the bot keeps editing) · member-count channel · voice XP (only when not alone, never AFK or deafened, daily limit) and reaction XP · `/xp ignore` to switch XP off in channels or categories (tickets never give XP) |
 | **voice** | `/tts say\|join\|leave\|skip\|stop\|queue\|voices\|voice\|setup\|reading\|diagnose` · a **no-mic channel** whose messages are read aloud as "Name says …" |
-| **music** | `/music` posts a shared player · add songs you upload, links to audio files, radio stations your admins added, or free Creative Commons music (Jamendo) · pause, skip and stop for whoever added it, the DJ role or staff · **opt-in media links:** the bot owner can allow YouTube, Spotify and SoundCloud links (off by default; it breaks those sites' terms, so the owner decides after a warning; uses yt-dlp) |
+| **music** | `/music` posts a shared player · add songs you upload, links to audio files, radio stations your admins added, or free Creative Commons music (Jamendo) · pause, skip and stop for whoever added it, the DJ role or staff · **opt-in media links:** the bot owner can allow YouTube, Spotify (songs, playlists and albums), SoundCloud, BandLab and most other sites' links (off by default; it breaks those sites' terms, so the owner decides after a warning; uses yt-dlp) |
 | **reminders** | `/remind me\|team\|list\|cancel` · team reminders can notify several roles |
 | **integrations** | `/feed add\|remove\|list\|check` (RSS, YouTube, GitHub, Reddit) · `/minecraft` · `/webhook create\|list\|delete` |
 | **tempvoice** | `/voicehub add\|remove\|list` (pick "join to create" lobbies) · members get their own voice room, deleted when empty · `/room name\|limit\|privacy\|invite\|permit\|kick\|ban\|transfer\|claim\|info` |
@@ -158,13 +159,23 @@ Nothing needs typing anywhere: every command opens a popup (on/off and choices a
 | **stats** | `/stats member\|me\|server\|top\|coverage\|recap\|backfill\|inactive\|optout\|optin\|forget` · right-click a member → **Message stats** (this month, last month, month by month) · `/counter add\|remove\|list` (live counter channels) · activity charts on the dashboard · counts messages, voice time and reactions (never message text), weekly recap, optional history backfill, dashboard overview |
 | **achievements** | `/achievements show\|list\|privacy\|optout\|optin` · 17 built-in achievements plus your own (`/achievements custom create\|delete\|grant\|revoke`) · announcements to a channel and/or DM |
 | **eclipseid** | `/id show\|edit\|privacy\|link\|unlink\|roblox\|delete` · a member card with an ID, about text, linked game accounts (shown as *not verified*), per-field public / staff / private visibility |
-| **economy** | `/balance` `/daily` `/pay` `/top` `/economy-admin` · right-click → **View wallet** / **Pay member** · daily streaks with Streak Shields and milestone bonuses · a live, paginated leaderboard (coins, streaks, fishing, casino) for the server or across servers that opt in. Every amount is typed in a popup |
-| **games** | `/slots` (progressive server jackpot) `/blackjack` `/coinflip` `/fish` `/arcade` · each game opens a bet popup from a button · **fishing**: places unlocked by level, fish from Common to Mythical, daily and weekly challenges with a streak bonus, Mutated and Corrupted variants, rods, bait and tackle, a reeling mini-game played with buttons, a bag and a collection log. Since 3.0: 24 places, 2,000 fish, levels up to 4,000, strike timing, quick-time events and choosing exactly which fish to sell. Needs **economy**. Play money only · player guide: [Fishing Wiki](docs/FISHING-WIKI.md) |
+| **economy** | `/balance` `/daily` `/pay` `/top` `/economy-admin` · right-click → **View wallet** / **Pay member** · daily streaks with Streak Shields and milestone bonuses · a live, paginated leaderboard (coins, streaks, fishing, casino) for the server or across servers that opt in. Every amount is typed in a popup · 3.1: `/shop` (roles and items, inventory), `/work`, `/bank` with daily interest |
+| **games** | `/slots` (progressive server jackpot) `/blackjack` `/coinflip` `/fish` `/arcade` · each game opens a bet popup from a button · **fishing**: places unlocked by level, fish from Common to Mythical, daily and weekly challenges with a streak bonus, Mutated and Corrupted variants, rods, bait and tackle, a reeling mini-game played with buttons, a bag and a collection log. Since 3.0: 24 places, 2,000 fish, levels up to 4,000, strike timing, quick-time events and choosing exactly which fish to sell. Needs **economy**. Play money only · player guide: [Fishing Wiki](docs/FISHING-WIKI.md) · 3.1: Tower, Wires, Bingo, Memory, Hangman and Trivia (with an anime category) in `/arcade` |
 | **tags** | custom commands and auto-replies: `?rules` / `!ip` style commands, or replies when a message is, starts with or contains a phrase · `/tags add\|list\|use\|remove` · variables, cooldowns, never pings · import with `/migrate tags` |
 | **messages** | `/say send\|edit` (post or change a message as the bot, plain or in a box) · `/sticky set\|remove\|list` (a message that stays at the bottom of a channel) |
 | **clips** | `/clips setup` (clips channel, Best clips channel, votes needed) · `/clips top` · uploaded videos from any clipping app, pasted clip links, and Medal's **Send to Discord** button (MedalBot's post is credited to the member it mentions) · 🔥 votes (not the owner's or bots'), enough votes reposts to Best clips with the video, **clip of the week** every Monday wins coins, coins for sharing, "Clips shared" and "Clip votes" boards in `/top` |
 | **botnews** | `/botnews setup` (popup: admin channel, announcements channel, optional role to ping) · `/botnews test` · every bot update posts its full notes to the **admin channel** and only the part for members to **announcements**; new modules and modules turned on or off are posted to the admin channel; the first time a member feature (economy, games, dead chat) is turned on, members get a short intro. Nothing is posted twice, and each kind of post can be switched off |
 | **deadchat** | `/deadchat` (button → popup: channel, role to ping, quiet minutes, cooldown) · when the channel has been quiet that long, the bot posts a random conversation starter and pings the opt-in **@deadchat** role (created for you; members join or leave with a **Ping me** button), once per quiet spell. Starters are editable in the dashboard. Uses message times only, never message text |
+| **family** | `/marry` (Accept/Decline) · `/family tree\|info\|adopt\|divorce\|disown\|leave` · a family tree picture · no marrying family, one parent per child, server limits |
+| **roleplay** | `/rp` with 20 actions (hug, pat, boop, bonk, kiss, high five, dance…) · Good Boy's own animations or Tenor GIFs (owner adds a key) · "do it back" button and counts per pair |
+| **giveaways** | `/giveaway start\|end\|reroll\|list` · Enter button, fair draw, role requirement, coin prizes paid automatically · dashboard panel |
+| **invites** | who invited whom, still here vs left, new accounts flagged · `/invites user\|top` · optional join line |
+| **modmail** | members DM the bot; a private staff thread opens; staff reply there, `//` notes, Close and Block |
+| **utility** | `/highlight add\|remove\|list\|clear` (DM when your word is said) · right-click → Apps → **Translate** |
+| **fun** | `/fun 8ball`, `/fun dice`, `/fun ship` (how well two members match) and `/fun topic` (a conversation starter) |
+| **counting** | Counting channels (sums allowed, no double turns, records) and word chain · `/counting here\|words-here\|stats\|reset` |
+| **backup** | Snapshots of roles, channels and permissions (last 10, weekly automatic) · `/backup create\|list\|restore\|download` · restore only adds back what's missing |
+| **critters** | Good Boy's own collecting game: 52 original critters appear while people chat; first to press Catch and type the name keeps it · `/critters list\|info\|dex\|buddy\|rename\|trade\|battle\|release` · staff: `here`, `spawn` |
 | **quotes** | right-click a message → Apps → **Quote Image** (black & white) / **Quote Image (Color)**, or `/quote`. Members with an animated (GIF) avatar get an **animated GIF quote**; the picture falls back to a still image if anything goes wrong or the file would be too big |
 
 Always available: **`/modules`** (control panel with buttons and popups) `/module` `/config` `/permissions` `/notifications` `/health` `/help`.

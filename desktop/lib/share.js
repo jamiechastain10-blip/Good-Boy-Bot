@@ -107,7 +107,7 @@ export class Share {
   }
 
   /** Where things stand, in one object the window can show. */
-  async status(port) {
+  async status(port, httpsPort = 443) {
     if (!this.bin && !(await this.find())) return { state: 'missing', link: DOWNLOAD };
     const r = await run(this.execFile, this.bin, ['status', '--json']);
     let j = null; try { j = JSON.parse(r.out); } catch { /* not running */ }
@@ -115,16 +115,18 @@ export class Share {
     if (j.BackendState !== 'Running') return { state: 'login', error: 'Sign in to Tailscale (open the Tailscale app and log in).', link: typeof j.AuthURL === 'string' && isTailscaleLink(j.AuthURL) ? j.AuthURL : null };
     const host = String(j.Self?.DNSName ?? '').replace(/\.$/, '');
     if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/i.test(host)) return { state: 'error', error: 'Tailscale did not report a name for this computer. Turn on MagicDNS in the Tailscale admin console.' };
-    const url = `https://${host}`;
-    const funnel = await this.isFunneling(port);
+    const url = httpsPort === 443 ? `https://${host}` : `https://${host}:${httpsPort}`;
+    const funnel = await this.isFunneling(port, httpsPort);
     return { state: funnel ? 'on' : 'off', url, host };
   }
 
-  async isFunneling(port) {
+  async isFunneling(port, httpsPort = 443) {
     const r = await run(this.execFile, this.bin, ['funnel', 'status', '--json']);
     let j = null; try { j = JSON.parse(r.out); } catch { return false; }
-    const web = JSON.stringify(j?.Web ?? {});
-    const allow = j?.AllowFunnel && Object.values(j.AllowFunnel).some(Boolean);
+    // Web is keyed by "host:port" (443, 8443 or 10000): only the entry on our Funnel port counts.
+    const entries = Object.entries(j?.Web ?? {}).filter(([k]) => k.endsWith(`:${httpsPort}`));
+    const web = JSON.stringify(Object.fromEntries(entries));
+    const allow = j?.AllowFunnel && Object.entries(j.AllowFunnel).some(([k, v]) => v && k.endsWith(`:${httpsPort}`));
     return !!allow && (web.includes(`127.0.0.1:${port}`) || web.includes(`localhost:${port}`));
   }
 
@@ -133,13 +135,13 @@ export class Share {
    * Funnel allowed for the account it prints a page to approve and keeps waiting; that page comes back straight away
    * (state 'approve') while Tailscale finishes on its own once it is approved.
    */
-  async on(port) {
-    const st = await this.status(port);
+  async on(port, httpsPort = 443) {
+    const st = await this.status(port, httpsPort);
     if (st.state === 'on') return { ok: true, url: st.url };
     if (st.state !== 'off') return { ok: false, error: st.error ?? 'Install Tailscale first.', link: st.link ?? null, state: st.state };
-    const r = await this.funnelCommand(port, ['funnel', '--bg', '--yes', `http://127.0.0.1:${port}`]);
-    if (/flag provided but not defined: -yes/.test(r.text) && !r.link) Object.assign(r, await this.funnelCommand(port, ['funnel', '--bg', `http://127.0.0.1:${port}`])); // older Tailscale
-    if (await this.isFunneling(port)) return { ok: true, url: st.url };
+    const r = await this.funnelCommand(port, ['funnel', '--bg', '--yes', `--https=${httpsPort}`, `http://127.0.0.1:${port}`]);
+    if (/flag provided but not defined: -yes/.test(r.text) && !r.link) Object.assign(r, await this.funnelCommand(port, ['funnel', '--bg', `--https=${httpsPort}`, `http://127.0.0.1:${port}`])); // older Tailscale
+    if (await this.isFunneling(port, httpsPort)) return { ok: true, url: st.url };
     if (r.link) return { ok: false, error: 'Allow Funnel (public links) for your Tailscale account once. Good Boy carries on by itself after you approve.', link: r.link, state: 'approve' };
     return { ok: false, error: `Tailscale could not share the dashboard: ${r.text.trim().split('\n').pop()?.slice(0, 200) || 'unknown problem'}` };
   }
@@ -157,9 +159,9 @@ export class Share {
     });
   }
 
-  async off() {
+  async off(httpsPort = 443) {
     if (!this.bin && !(await this.find())) return { ok: true };
-    const r = await run(this.execFile, this.bin, ['funnel', '--https=443', 'off']);
+    const r = await run(this.execFile, this.bin, ['funnel', `--https=${httpsPort}`, 'off']);
     return r.ok || /not.*serv|no serve config|nothing/i.test(r.err + r.out) ? { ok: true } : { ok: false, error: (r.err || r.out).trim().slice(0, 200) };
   }
 }

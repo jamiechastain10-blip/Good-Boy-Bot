@@ -42,6 +42,8 @@ export const EVENT_GUILD = {
   roleDelete: (r) => r.guild?.id,
   guildBanAdd: (b) => b.guild?.id,
   guildAuditLogEntryCreate: (e, g) => g?.id,
+  inviteCreate: (inv) => inv.guild?.id, // 3.1: invite tracking
+  inviteDelete: (inv) => inv.guild?.id,
 };
 
 const NAME_RE = /^[a-z][a-z0-9-]{1,31}$/;

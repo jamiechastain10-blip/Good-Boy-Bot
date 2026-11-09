@@ -40,8 +40,9 @@ export default async function runV30Tests({ test }) {
     for (let l = 102; l <= 4000; l += 37) { const step = F.xpForLevel(l) - F.xpForLevel(l - 1); assert.ok(step >= prev, `level ${l}`); prev = step; }
     for (const l of [1, 2, 99, 100, 101, 777, 2500, 3999]) { assert.equal(F.levelFromXp(F.xpForLevel(l)).level, l); assert.equal(F.levelFromXp(F.xpForLevel(l + 1) - 1).level, l); }
     assert.equal(F.levelFromXp(F.xpForLevel(4000)).max, true);
-    for (let k = 1; k < F.RODS.length; k++) assert.ok(F.RODS[k].level > F.RODS[k - 1].level && F.RODS[k].luck > F.RODS[k - 1].luck, F.RODS[k].id);
-    assert.ok(F.RODS.at(-1).level <= F.BIOMES.at(-1).level, 'the last rod comes before the last place');
+    const shop = F.RODS.filter((r) => !r.earn);
+    for (let k = 1; k < shop.length; k++) assert.ok(shop[k].level > shop[k - 1].level && shop[k].luck > shop[k - 1].luck, shop[k].id);
+    assert.ok(shop.at(-1).level <= F.MAX_LEVEL, 'the last shop rod (3.1: the Mythic rod at max level) is reachable');
   });
 
   await test('the bite and the strike: early presses spook the fish, a quick Reel after the bite is a strike', () => {

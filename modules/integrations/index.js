@@ -11,7 +11,7 @@
  * (SSRF protection), caps the response size and enforces a timeout.
  */
 import crypto from 'node:crypto';
-import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags, ModalBuilder, ActionRowBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { UserError, fetchText, truncate, fillTemplate, SNOWFLAKE, getChannelOption } from '../../src/util.js';
 
 const EPH = MessageFlags.Ephemeral;
@@ -90,6 +90,86 @@ providers.set('reddit', {
   items: (target) => feedItems(`https://www.reddit.com/r/${target}/new/.rss`),
 });
 
+// 3.1: Twitch live alerts. Twitch only answers registered apps, so the bot owner adds a free Twitch app's ID and secret
+// once (/feed twitch-keys, a private popup); they are kept for the whole bot. Each live stream is a new "item".
+const twitch = (globalThis[Symbol.for('goodboy.twitch')] ??= { id: process.env.TWITCH_CLIENT_ID || null, secret: process.env.TWITCH_CLIENT_SECRET || null, token: null, until: 0 });
+export async function twitchToken(fetchFn = globalThis.fetch) {
+  if (!twitch.id || !twitch.secret) throw new UserError('Twitch alerts need the bot owner to add Twitch keys first: `/feed twitch-keys` (free from dev.twitch.tv/console).');
+  if (twitch.token && Date.now() < twitch.until) return twitch.token;
+  const r = await fetchFn(`https://id.twitch.tv/oauth2/token?client_id=${encodeURIComponent(twitch.id)}&client_secret=${encodeURIComponent(twitch.secret)}&grant_type=client_credentials`, { method: 'POST', signal: AbortSignal.timeout(10000) }).catch(() => null);
+  const d = r?.ok ? await r.json() : null;
+  if (!d?.access_token) throw new UserError("Twitch didn't accept the bot's Twitch keys. The bot owner can enter them again with `/feed twitch-keys`.");
+  twitch.token = d.access_token; twitch.until = Date.now() + Math.max(60, (d.expires_in ?? 3600) - 120) * 1000;
+  return twitch.token;
+}
+export async function twitchLive(login, fetchFn = globalThis.fetch) {
+  const token = await twitchToken(fetchFn);
+  const r = await fetchFn(`https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`, { headers: { 'Client-Id': twitch.id, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) }).catch(() => null);
+  if (r?.status === 401) { twitch.token = null; throw new UserError('Twitch asked for new keys. Try again in a minute.'); }
+  if (!r?.ok) throw new UserError("Twitch didn't answer.");
+  return ((await r.json()).data ?? []).map((st) => ({ id: `live-${st.id}`, title: `🔴 ${st.user_name} is live: ${st.title || 'streaming now'}`, url: `https://twitch.tv/${st.user_login}`, author: st.game_name || st.user_name }));
+}
+providers.set('twitch', {
+  owner: null, label: 'Twitch channel: name or twitch.tv link (live alerts)',
+  async resolve(raw) {
+    const m = /^(?:https?:\/\/(?:www\.)?twitch\.tv\/)?([A-Za-z0-9_]{3,25})\/?$/.exec(raw.trim());
+    if (!m) throw new UserError('Use a Twitch name like `ninja` or a twitch.tv link.');
+    await twitchToken();
+    return m[1].toLowerCase();
+  },
+  items: (target) => twitchLive(target),
+});
+
+// 3.1: Bluesky posts (its public API needs no key), Kick live alerts, and Mastodon posts (every server has an RSS feed).
+/** New posts from a Bluesky account (not replies, not reposts). Exported for tests. */
+export async function blueskyPosts(handle, fetchFn = globalThis.fetch) {
+  const r = await fetchFn(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${encodeURIComponent(handle)}&limit=10&filter=posts_no_replies`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+  if (r?.status === 400) throw new UserError("That Bluesky account doesn't exist.");
+  if (!r?.ok) throw new UserError("Bluesky didn't answer.");
+  return ((await r.json()).feed ?? []).filter((x) => !x.reason && x.post?.author?.handle?.toLowerCase() === handle.toLowerCase()).map((x) => {
+    const id = x.post.uri.split('/').pop();
+    return { id: x.post.uri, title: truncate(x.post.record?.text || 'New post', 200), url: `https://bsky.app/profile/${x.post.author.handle}/post/${id}`, author: x.post.author.displayName || x.post.author.handle };
+  });
+}
+providers.set('bluesky', {
+  owner: null, label: 'Bluesky account: handle like name.bsky.social',
+  async resolve(raw) {
+    const m = /^(?:https?:\/\/bsky\.app\/profile\/)?@?([a-z0-9][a-z0-9.-]{1,250}\.[a-z]{2,})\/?$/i.exec(raw.trim());
+    if (!m) throw new UserError('Use a Bluesky handle like `name.bsky.social` or a bsky.app profile link.');
+    await blueskyPosts(m[1]);
+    return m[1].toLowerCase();
+  },
+  items: (target) => blueskyPosts(target),
+});
+/** A Kick channel's live stream as an item (or nothing when offline). Exported for tests. */
+export async function kickLive(slug, fetchFn = globalThis.fetch) {
+  const r = await fetchFn(`https://kick.com/api/v2/channels/${encodeURIComponent(slug)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GoodBoyBot)', Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }).catch(() => null);
+  if (r?.status === 404) throw new UserError("That Kick channel doesn't exist.");
+  if (!r?.ok) throw new UserError("Kick didn't answer (it sometimes blocks bots; it will be tried again).");
+  const d = await r.json().catch(() => null);
+  const ls = d?.livestream;
+  return ls?.is_live ? [{ id: `kick-${ls.id}`, title: `🟢 ${d.user?.username ?? slug} is live on Kick: ${ls.session_title || 'streaming now'}`, url: `https://kick.com/${d.slug ?? slug}`, author: ls.categories?.[0]?.name || d.user?.username || slug }] : [];
+}
+providers.set('kick', {
+  owner: null, label: 'Kick channel: name or kick.com link (live alerts)',
+  async resolve(raw) {
+    const m = /^(?:https?:\/\/(?:www\.)?kick\.com\/)?([A-Za-z0-9_-]{2,30})\/?$/.exec(raw.trim());
+    if (!m) throw new UserError('Use a Kick name like `xqc` or a kick.com link.');
+    return m[1].toLowerCase();
+  },
+  items: (target) => kickLive(target),
+});
+providers.set('mastodon', {
+  owner: null, label: 'Mastodon account: @name@server',
+  async resolve(raw) {
+    const m = /^@?([A-Za-z0-9_]{1,30})@([a-z0-9.-]+\.[a-z]{2,})$/i.exec(raw.trim()) ?? /^https?:\/\/([a-z0-9.-]+\.[a-z]{2,})\/@([A-Za-z0-9_]{1,30})\/?$/i.exec(raw.trim())?.slice(0).reverse().slice(0, 3).reverse();
+    if (!m) throw new UserError('Use a Mastodon address like `@name@mastodon.social`.');
+    const [user, server] = raw.includes('://') ? [m[2], m[1]] : [m[1], m[2]];
+    return `${user}@${server.toLowerCase()}`;
+  },
+  items(target) { const [user, server] = target.split('@'); return feedItems(`https://${server}/@${user}.rss`); },
+});
+
 const api = {
   /** Add-ons call this to add a service. def = { label, resolve(raw) -> target, items(target) -> [{id,title,url,author}] } */
   registerProvider(name, def, owner) {
@@ -157,6 +237,12 @@ async function pollTask(ctx) {
 // ------------------------------------------------------------------ commands
 async function feedCmd(ctx, i) {
   const sub = i.options.getSubcommand();
+  if (sub === 'twitch-keys') {
+    if (!ctx.isBotOwner?.(i.user.id)) throw new UserError('Only the person who runs this bot can set the Twitch keys.');
+    return i.showModal(new ModalBuilder().setCustomId('feedtw:keys').setTitle('Twitch keys (for live alerts)').addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('id').setLabel('Client ID').setStyle(TextInputStyle.Short).setMaxLength(60).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('secret').setLabel('Client secret').setStyle(TextInputStyle.Short).setMaxLength(60).setRequired(true))));
+  }
   if (sub === 'list') {
     const rows = ctx.data.list('sub:').map(({ value: s }) => `**#${s.id}** ${s.provider} · \`${truncate(s.target, 60)}\` → <#${s.channelId}>${s.failures ? ` ⚠️ ${s.failures} failure(s)` : ''}`);
     return i.reply({ content: rows.join('\n') || 'No feeds yet. Add one with `/feed add`.', flags: EPH, allowedMentions: NOPING });
@@ -236,7 +322,20 @@ async function webhookCmd(ctx, i) {
 export default {
   name: 'integrations',
   version: '1.0.0',
-  description: 'Follow RSS, YouTube, GitHub and Reddit feeds; Minecraft status; inbound webhooks. Add-ons can add more services.',
+  description: 'Follow RSS, YouTube, GitHub, Reddit and Twitch (live alerts); Minecraft status; inbound webhooks. Add-ons can add more services.',
+  components: [{
+    prefix: 'feedtw:',
+    async execute(ctx, i) {
+      if (!ctx.isBotOwner?.(i.user.id)) throw new UserError('Only the person who runs this bot can set the Twitch keys.');
+      const id = String(i.fields.getTextInputValue('id') ?? '').trim(), secret = String(i.fields.getTextInputValue('secret') ?? '').trim();
+      const before = { ...twitch };
+      Object.assign(twitch, { id, secret, token: null, until: 0 });
+      try { await twitchToken(); } catch (e) { Object.assign(twitch, before); throw e; }
+      ctx.botData.set('twitchKeys', { id, secret });
+      return i.reply({ content: '✅ Twitch keys saved. Add a live alert with `/feed add provider:twitch`.', flags: EPH });
+    },
+  }],
+  async init(ctx) { const k = ctx.botData?.get('twitchKeys'); if (k?.id && k?.secret && !process.env.TWITCH_CLIENT_ID) Object.assign(twitch, { id: k.id, secret: k.secret }); },
   api,
   settings: [{ key: 'pollMinutes', type: 'number', label: 'Check feeds every N minutes', default: 10, min: 5, max: 120 }],
   permissions: [
@@ -248,13 +347,14 @@ export default {
       permission: 'integrations.manage',
       data: new SlashCommandBuilder().setName('feed').setDescription('Follow feeds in a channel')
         .addSubcommand((s) => s.setName('add').setDescription('Follow something')
-          .addStringOption((o) => o.setName('provider').setDescription('rss, youtube, github, reddit…').setRequired(true).setAutocomplete(true))
+          .addStringOption((o) => o.setName('provider').setDescription('rss, youtube, github, reddit, twitch, bluesky, kick, mastodon…').setRequired(true).setAutocomplete(true))
           .addStringOption((o) => o.setName('target').setDescription('URL, channel, owner/repo or r/subreddit').setRequired(true))
           .addChannelOption((o) => o.setName('channel').setDescription('Where to post').setRequired(true))
           .addStringOption((o) => o.setName('message').setDescription('Template: {title} {url} {author}').setMaxLength(300)))
         .addSubcommand((s) => s.setName('remove').setDescription('Stop following').addIntegerOption((o) => o.setName('id').setDescription('Feed number').setRequired(true)))
         .addSubcommand((s) => s.setName('list').setDescription('Show feeds'))
-        .addSubcommand((s) => s.setName('check').setDescription('Check all feeds now')),
+        .addSubcommand((s) => s.setName('check').setDescription('Check all feeds now'))
+        .addSubcommand((s) => s.setName('twitch-keys').setDescription('(Bot owner) Add Twitch keys for live alerts')),
       execute: feedCmd,
       autocomplete: feedAutocomplete,
     },

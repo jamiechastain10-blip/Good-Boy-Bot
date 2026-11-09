@@ -36,6 +36,29 @@ async function menuCreate(ctx, i) {
   if (!i.options.getString('title') || !picked.length) throw new UserError('Fill in a title and at least one role, or leave everything empty to use the popup.');
   return postMenu(ctx, i, { title: i.options.getString('title'), description: i.options.getString('description'), roles: picked, type: i.options.getString('style') ?? 'buttons', mode: i.options.getString('mode') ?? 'toggle' });
 }
+/** 3.1 limits from the command's options: most roles at once, a role needed to use it, how long roles last. */
+function limitsFrom(i) {
+  return { max: i.options.getInteger?.('max') ?? 0, needs: i.options.getRole?.('needs')?.id ?? null, hours: i.options.getInteger?.('hours') ?? 0 };
+}
+/** Checks a member's choice against a menu's limits. Returns an error message, or null. Exported for tests. */
+export function limitProblem(menu, { roleIds = [], wanted = new Set() } = {}) {
+  if (menu.needs && !roleIds.includes(menu.needs)) return `You need the <@&${menu.needs}> role to use this menu.`;
+  const before = menu.roleIds.filter((r) => roleIds.includes(r)).length;
+  if (menu.max && menu.mode !== 'unique' && wanted.size > menu.max && wanted.size > before) return `You can have up to ${menu.max} role${menu.max === 1 ? '' : 's'} from this menu. Take one off first.`;
+  return null;
+}
+async function menuLimits(ctx, i) {
+  const id = i.options.getString('message_id', true).trim();
+  const menu = ctx.data.get(`menu:${id}`);
+  if (!menu) throw new UserError('No menu with that message ID.');
+  const l = limitsFrom(i);
+  if (l.needs) { const r = i.guild.roles.cache.get(l.needs); if (!r) throw new UserError('That role is gone.'); }
+  const next = { ...menu, max: l.max, needs: l.needs, hours: l.hours };
+  ctx.data.set(`menu:${id}`, next);
+  const msg = await i.channel.messages.fetch(id).catch(() => null);
+  if (msg) await ctx.queue(() => msg.edit(buildMenu(i.guild, next))).catch(() => {});
+  return i.reply({ content: `Saved. ${[l.max ? `Up to **${l.max}** at once` : 'No limit on how many', l.needs ? `only for <@&${l.needs}>` : 'open to everyone', l.hours ? `roles last **${l.hours} h**` : 'roles stay'].join(' · ')}.${msg ? '' : '\n-# Run this in the menu\'s channel to refresh the message itself.'}`, flags: EPH, allowedMentions: NOPING });
+}
 
 async function menuForm(ctx, i) {
   menuForms.take(i.customId.split(':')[2], i.user.id);
@@ -57,11 +80,13 @@ export function buildMenu(guild, menu) {
   const lines = roles.map((r) => `${em[r.id] ? `${em[r.id]} ` : ''}<@&${r.id}> · **${count(r).toLocaleString('en-US')}** ${count(r) === 1 ? 'member' : 'members'}`);
   const embed = new EmbedBuilder().setColor(menu.color ?? 0x4cc3ff).setTitle(truncate(menu.title || 'Pick your roles', 200))
     .setDescription(truncate([menu.description, lines.join('\n')].filter(Boolean).join('\n\n'), 4000))
-    .setFooter({ text: menu.mode === 'unique' ? 'Pick one. Choosing another swaps it.' : 'Tap a button to add or remove a role. Tap again to take it off.' });
+    .setFooter({ text: [menu.mode === 'unique' ? 'Pick one. Choosing another swaps it.' : menu.max ? `Pick up to ${menu.max}. Tap again to take one off.` : 'Tap a button to add or remove a role. Tap again to take it off.',
+      menu.hours ? `Roles last ${menu.hours} hour${menu.hours === 1 ? '' : 's'}.` : null].filter(Boolean).join(' ') });
+  if (menu.needs) embed.setDescription(truncate(`${embed.data.description ?? ''}\n\n🔒 Only for members with <@&${menu.needs}>.`, 4000));
   let components;
   if (menu.type === 'dropdown') {
     components = [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('rolemenu:sel').setPlaceholder('Choose your roles')
-      .setMinValues(0).setMaxValues(menu.mode === 'unique' ? 1 : Math.min(25, roles.length))
+      .setMinValues(0).setMaxValues(menu.mode === 'unique' ? 1 : Math.max(1, Math.min(25, roles.length, menu.max || 25)))
       .addOptions(roles.slice(0, 25).map((r) => { const o = { label: truncate(r.name, 100), value: r.id, description: `${count(r)} ${count(r) === 1 ? 'member' : 'members'}` }; if (em[r.id]) o.emoji = em[r.id]; return o; })))];
   } else {
     components = chunk(roles.slice(0, 25), 5).map((row) => new ActionRowBuilder().addComponents(row.map((r) => {
@@ -74,16 +99,16 @@ export function buildMenu(guild, menu) {
 }
 
 /** Posts a role menu in a channel and remembers it. roles: [{ id, emoji? }] */
-export async function postRoleMenu(ctx, channel, { title, description, roles, type = 'buttons', mode = 'toggle', from = null }) {
-  const menu = { roleIds: roles.map((r) => r.id), emojis: Object.fromEntries(roles.filter((r) => r.emoji).map((r) => [r.id, r.emoji])), mode, type, title, description, from };
+export async function postRoleMenu(ctx, channel, { title, description, roles, type = 'buttons', mode = 'toggle', from = null, max = 0, needs = null, hours = 0 }) {
+  const menu = { roleIds: roles.map((r) => r.id), emojis: Object.fromEntries(roles.filter((r) => r.emoji).map((r) => [r.id, r.emoji])), mode, type, title, description, from, max, needs, hours };
   const msg = await ctx.queue(() => channel.send(buildMenu(channel.guild, menu)));
-  ctx.data.set(`menu:${msg.id}`, menu);
+  ctx.data.set(`menu:${msg.id}`, { ...menu, channelId: channel.id });
   return msg;
 }
 
 async function postMenu(ctx, i, o) {
   for (const r of o.roles) must(i.guild, r, i.member);
-  await postRoleMenu(ctx, i.channel, { title: o.title, description: o.description, roles: o.roles.map((r) => ({ id: r.id })), type: o.type, mode: o.mode });
+  await postRoleMenu(ctx, i.channel, { title: o.title, description: o.description, roles: o.roles.map((r) => ({ id: r.id })), type: o.type, mode: o.mode, ...limitsFrom(i) });
   await i.reply({ content: `Role menu posted in <#${i.channelId}>.`, flags: EPH });
 }
 
@@ -113,9 +138,11 @@ async function applyChoice(ctx, i, menu, wanted) {
     (want ? adds : removes).push(role);
   }
   if (adds.length) await member.roles.add(adds, 'Role menu');
+  if (menu.hours) for (const r of adds) ctx.data.set(`temp:${member.id}:${r.id}`, Date.now() + menu.hours * 3600000);
+  for (const r of removes) ctx.data.delete(`temp:${member.id}:${r.id}`);
   if (removes.length) await member.roles.remove(removes, 'Role menu');
   const parts = [];
-  if (adds.length) parts.push(`Added ${adds.map((r) => `**${r.name}**`).join(', ')}`);
+  if (adds.length) parts.push(`Added ${adds.map((r) => `**${r.name}**`).join(', ')}${menu.hours ? ` for ${menu.hours} hour${menu.hours === 1 ? '' : 's'}` : ''}`);
   if (removes.length) parts.push(`Removed ${removes.map((r) => `**${r.name}**`).join(', ')}`);
   if (skipped.length) parts.push(skipped[0]);
   return parts.join('\n') || 'No changes.';
@@ -133,9 +160,37 @@ async function menuClick(ctx, i) {
     const has = i.member.roles.cache.has(id);
     wanted = new Set(menu.mode === 'unique' ? (has ? [] : [id]) : [...menu.roleIds.filter((r) => i.member.roles.cache.has(r) && r !== id), ...(has ? [] : [id])]);
   }
+  const problem = limitProblem(menu, { roleIds: [...i.member.roles.cache.keys()], wanted });
+  if (problem) throw new UserError(problem);
   await i.deferReply({ flags: EPH });
   await i.editReply({ content: await applyChoice(ctx, i, menu, wanted), allowedMentions: NOPING });
   refreshCounts(ctx, i.message);
+}
+
+/** Saves new limits for a menu and redraws its message when the channel is known. */
+async function setLimits(ctx, id, patch) {
+  const menu = ctx.data.get(`menu:${id}`);
+  if (!menu) throw new UserError('That menu is gone.');
+  const next = { ...menu, ...patch };
+  ctx.data.set(`menu:${id}`, next);
+  const ch = menu.channelId ? ctx.guild?.channels.cache.get(menu.channelId) : null;
+  const msg = ch ? await ch.messages?.fetch?.(id).catch(() => null) : null;
+  if (msg) await ctx.queue(() => msg.edit(buildMenu(ctx.guild, next))).catch(() => {});
+  return { id, ...patch };
+}
+const intOrZero = (v, max) => { const n = String(v ?? '').trim() === '' ? 0 : Math.floor(Number(v)); if (!Number.isFinite(n) || n < 0 || n > max) throw new UserError(`Use a whole number from 0 to ${max} (0 = no limit).`); return n; };
+
+/** Takes away temporary roles whose time is up. Exported for tests. */
+export async function expireTempRoles(ctx, now = Date.now()) {
+  let n = 0;
+  for (const { key, value: until } of ctx.data.list('temp:')) {
+    if (until > now) continue;
+    const [, userId, roleId] = key.split(':');
+    ctx.data.delete(key);
+    const m = ctx.guild?.members.cache.get(userId) ?? await ctx.guild?.members.fetch(userId).catch(() => null);
+    if (m?.roles.cache.has(roleId)) { await m.roles.remove(roleId, 'Temporary role ran out').catch(() => {}); n++; }
+  }
+  return n;
 }
 
 // ------------------------------------------------------------------ reaction roles
@@ -217,10 +272,19 @@ export default {
           .addStringOption((o) => o.setName('title').setDescription('Menu title')))
           .addStringOption((o) => o.setName('description').setDescription('Text under the title'))
           .addStringOption((o) => o.setName('style').setDescription('Buttons or a dropdown').addChoices({ name: 'buttons', value: 'buttons' }, { name: 'dropdown', value: 'dropdown' }))
-          .addStringOption((o) => o.setName('mode').setDescription('Can members hold several?').addChoices({ name: 'several (toggle)', value: 'toggle' }, { name: 'only one', value: 'unique' })))
+          .addStringOption((o) => o.setName('mode').setDescription('Can members hold several?').addChoices({ name: 'several (toggle)', value: 'toggle' }, { name: 'only one', value: 'unique' }))
+          .addIntegerOption((o) => o.setName('max').setDescription('Most roles one member can pick from this menu').setMinValue(1).setMaxValue(25))
+          .addRoleOption((o) => o.setName('needs').setDescription('Only members with this role can use the menu'))
+          .addIntegerOption((o) => o.setName('hours').setDescription('Roles from this menu are taken away after this many hours').setMinValue(1).setMaxValue(2160)))
+        .addSubcommand((s) => s.setName('limits').setDescription('Change an existing menu\'s limits (run it in the menu\'s channel)')
+          .addStringOption((o) => o.setName('message_id').setDescription('The menu message ID').setRequired(true))
+          .addIntegerOption((o) => o.setName('max').setDescription('Most roles one member can pick (empty = no limit)').setMinValue(1).setMaxValue(25))
+          .addRoleOption((o) => o.setName('needs').setDescription('Only members with this role can use it (empty = everyone)'))
+          .addIntegerOption((o) => o.setName('hours').setDescription('Roles are taken away after this many hours (empty = they stay)').setMinValue(1).setMaxValue(2160)))
         .addSubcommand((s) => s.setName('delete').setDescription('Stop a menu working and delete it').addStringOption((o) => o.setName('message_id').setDescription('The menu message ID').setRequired(true))),
       async execute(ctx, i) {
         if (i.options.getSubcommand() === 'create') return menuCreate(ctx, i);
+        if (i.options.getSubcommand() === 'limits') return menuLimits(ctx, i);
         const id = i.options.getString('message_id', true).trim();
         if (!ctx.data.get(`menu:${id}`)) throw new UserError('No menu with that message ID.');
         ctx.data.delete(`menu:${id}`);
@@ -300,6 +364,34 @@ export default {
     },
   ],
   components: [{ prefix: 'rolemenu:', execute: (ctx, i) => (i.customId.startsWith('rolemenu:form:') ? menuForm(ctx, i) : menuClick(ctx, i)) }],
+  tasks: [{ name: 'temp-roles', everyMs: 5 * 60000, run: expireTempRoles }],
+  views: {
+    async menus(ctx) {
+      return { rows: ctx.data.list('menu:').map(({ key, value: m }) => ({ id: key.slice(5), name: m.title || 'Role menu', roles: String(m.roleIds?.length ?? 0), channel: m.channelId ? `#${ctx.guild?.channels.cache.get(m.channelId)?.name ?? '?'}` : '—',
+        max: m.max ? String(m.max) : 'No limit', maxRaw: m.max || '', needs: m.needs ? `@${ctx.guild?.roles.cache.get(m.needs)?.name ?? 'deleted role'}` : 'Everyone', hours: m.hours ? `${m.hours} h` : 'For good', hoursRaw: m.hours || '' })) };
+    },
+  },
+  actions: {
+    async 'menu-max'(ctx, body) { return setLimits(ctx, String(body.id), { max: intOrZero(body.max, 25) }); },
+    async 'menu-hours'(ctx, body) { return setLimits(ctx, String(body.id), { hours: intOrZero(body.hours, 2160) }); },
+    async 'menu-needs'(ctx, body) { const r = String(body.needs ?? '').trim(); if (r && !ctx.guild?.roles.cache.get(r)) throw new UserError('That role is gone.'); return setLimits(ctx, String(body.id), { needs: r || null }); },
+    async 'menu-delete'(ctx, body) {
+      const id = String(body.id), menu = ctx.data.get(`menu:${id}`);
+      if (!menu) throw new UserError('That menu is gone.');
+      ctx.data.delete(`menu:${id}`);
+      const ch = menu.channelId ? ctx.guild?.channels.cache.get(menu.channelId) : null;
+      await ch?.messages?.delete?.(id).catch(() => {});
+      return { id };
+    },
+  },
+  panels: [{ id: 'menus', title: 'Role menus', view: 'menus', permission: 'roles.manage', empty: 'No role menus yet. Post one with /rolemenu create.',
+    description: 'Every role menu, with its limits. Changes show on the menu message straight away.',
+    columns: [{ key: 'name', label: 'Menu' }, { key: 'channel', label: 'Channel' }, { key: 'roles', label: 'Roles' }, { key: 'max', label: 'Most at once' }, { key: 'needs', label: 'Who can use it' }, { key: 'hours', label: 'Roles last' }],
+    rowActions: [
+      { action: 'menu-max', label: 'Most at once', prompt: 'number', field: 'max', current: 'maxRaw', hint: '0 = no limit', done: 'Saved' },
+      { action: 'menu-hours', label: 'Roles last', prompt: 'number', field: 'hours', current: 'hoursRaw', hint: 'Hours before the role is taken away. 0 = for good.', done: 'Saved' },
+      { action: 'menu-needs', label: 'Who can use it', prompt: 'text', field: 'needs', placeholder: 'A role ID, or empty for everyone', done: 'Saved' },
+      { action: 'menu-delete', label: 'Delete', confirm: 'Stop this menu working and delete its message?', danger: true, done: 'Deleted' }] }],
   events: {
     guildMemberAdd: onJoin,
     presenceUpdate: onPresence,

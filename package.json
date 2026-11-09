@@ -1,6 +1,6 @@
 {
   "name": "good-boy",
-  "version": "3.0.7",
+  "version": "3.1.0",
   "description": "Good Boy - modular Discord bot platform by Basic Ghost Labs",
   "private": true,
   "type": "module",
@@ -17,7 +17,8 @@
     "supervised": "node --disable-warning=ExperimentalWarning scripts/supervise.js",
     "update": "node scripts/update.js",
     "release": "node scripts/release.js",
-    "release:keygen": "node scripts/release-keygen.js"
+    "release:keygen": "node scripts/release-keygen.js",
+    "import-data": "node scripts/app-tools.js import"
   },
   "dependencies": {
     "discord.js": "^14.28.0",

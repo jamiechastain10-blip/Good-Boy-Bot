@@ -260,7 +260,7 @@ async function prepare() {
   } catch (e) { prep = { ...prep, done: false, error: `Could not set up the bot: ${e.message}` }; log(prep.error); }
   recheck(); send('state', snapshot()); refreshTray();
   if (settings.startBotWithApp && ready() && !smokeDir) startBot();
-  if (!smokeDir && settings.shareAuto) { setTimeout(() => keepShared().catch((e) => log(`share: ${e.message}`)), 8000); setInterval(() => keepShared().catch(() => {}), 30 * 60000).unref?.(); }
+  if (!smokeDir && (settings.shareAuto || settings.customLink)) { setTimeout(() => keepShared().catch((e) => log(`share: ${e.message}`)), 8000); setInterval(() => keepShared().catch(() => {}), 30 * 60000).unref?.(); }
   if (!smokeDir) { setTimeout(() => keepBrand().catch(() => {}), 20000); setInterval(() => keepBrand().catch(() => {}), 6 * 3600000).unref?.(); }
   if (!smokeDir) { setTimeout(() => refreshCancelList(), 30000); setInterval(() => refreshCancelList(), 12 * 3600000).unref?.(); }
 }
@@ -655,7 +655,32 @@ const share = new Share();
 const restartIfRunning = async () => { if (['running', 'starting'].includes(runner.status().state)) await runner.restart(); };
 ipcMain.handle('gb:share-state', async () => {
   if (!bundled) return { state: 'unsupported' };
-  try { const st = await share.status(folder.port); return { ...st, redirectUri, auto: settings.shareAuto, qr: st.state === 'on' ? await qrFor(st.url) : null }; } catch (e) { return { state: 'error', error: e.message }; }
+  if (settings.customLink) return { state: 'on', custom: true, url: settings.customLink, redirectUri, auto: true, sharePort: settings.sharePort, qr: await qrFor(settings.customLink) };
+  try { const st = await share.status(folder.port, settings.sharePort); return { ...st, redirectUri, auto: settings.shareAuto, sharePort: settings.sharePort, qr: st.state === 'on' ? await qrFor(st.url) : null }; } catch (e) { return { state: 'error', error: e.message }; }
+});
+/** 3.1: which Funnel port to use (for people whose Funnel already serves something on 443). */
+ipcMain.handle('gb:share-port', async (_e, port) => {
+  const p = Number(port);
+  if (![443, 8443, 10000].includes(p)) return { ok: false, error: 'Tailscale Funnel only allows ports 443, 8443 and 10000.' };
+  if (p === settings.sharePort) return { ok: true };
+  const was = settings.sharePort, wasOn = bundled && (await share.status(folder.port, was).catch(() => ({}))).state === 'on';
+  settings = normalize({ ...settings, sharePort: p }); saveSettings();
+  if (!wasOn) return { ok: true };
+  await share.off(was);
+  const r = await share.on(folder.port, p);
+  return r.ok ? useSharedLink(r.url) : r;
+});
+/** 3.1: use an https address the person set up themselves. It has to answer as this dashboard before it's used. */
+ipcMain.handle('gb:share-custom', async (_e, raw) => {
+  if (!bundled) return { ok: false, error: 'This works with the built-in bot.' };
+  const { cleanCustomLink } = await import('./lib/settings.js');
+  const url = cleanCustomLink(raw);
+  if (!url) return { ok: false, error: 'Use an https address like https://bot.example.com (no path).' };
+  const r = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+  const j = r?.ok ? await r.json().catch(() => null) : null;
+  if (!j?.ok || !j.version) return { ok: false, error: `${url} doesn't reach this dashboard. Point it at http://127.0.0.1:${folder.port} on this computer, then try again.` };
+  settings = normalize({ ...settings, customLink: url, shareAuto: false }); saveSettings();
+  return useSharedLink(url);
 });
 /** Link is on: the dashboard uses it, Discord's Redirects get it, the bot restarts to pick it up if it changed. */
 async function useSharedLink(url) {
@@ -671,7 +696,7 @@ const phoneLink = (url) => `${url}/app?pair=1`;
 const qrFor = (url) => QRCode.toDataURL(phoneLink(url), { margin: 1, width: 360, errorCorrectionLevel: 'M' }).catch(() => null);
 ipcMain.handle('gb:share-on', async () => {
   if (!bundled) return { ok: false, error: 'Sharing works with the built-in bot.' };
-  const r = await share.on(folder.port);
+  const r = await share.on(folder.port, settings.sharePort);
   if (!r.ok) return r;
   return useSharedLink(r.url);
 });
@@ -695,24 +720,25 @@ ipcMain.handle('gb:share-setup', async () => {
     if (!inst.ok) { step('install', 'error', inst.error, { link: inst.link }); return inst; }
     step('install', 'done', 'Tailscale is installed.');
 
-    let st = await share.status(port);
-    if (st.state === 'stopped') { await share.waitFor(async () => (st = await share.status(port)).state !== 'stopped', { seconds: 30, every: 2000 }); }
+    const hp = settings.sharePort;
+    let st = await share.status(port, hp);
+    if (st.state === 'stopped') { await share.waitFor(async () => (st = await share.status(port, hp)).state !== 'stopped', { seconds: 30, every: 2000 }); }
     if (st.state === 'login') {
       step('login', 'busy', 'Sign in to Tailscale in your browser. Good Boy carries on when you are done.');
       const l = await share.login();
       openTailscale(l.link ?? st.link);
-      const ok = await share.waitFor(async () => !['login', 'stopped'].includes((st = await share.status(port)).state), { seconds: 600 });
+      const ok = await share.waitFor(async () => !['login', 'stopped'].includes((st = await share.status(port, hp)).state), { seconds: 600 });
       if (!ok) { step('login', 'error', 'Sign-in did not finish. Press Set up to try again.'); return { ok: false, error: 'Tailscale sign-in did not finish.' }; }
     }
     if (st.state === 'error' || st.state === 'stopped') { step('login', 'error', st.error); return { ok: false, error: st.error }; }
     step('login', 'done', 'Signed in to Tailscale.');
 
     step('funnel', 'busy', 'Turning on your dashboard link...');
-    let on = await share.on(port);
+    let on = await share.on(port, hp);
     if (!on.ok && on.state === 'approve') {
       step('funnel', 'busy', 'Approve public links for your Tailscale account in your browser. Good Boy carries on when you do.');
       openTailscale(on.link);
-      await share.waitFor(async () => (on = await share.on(port)).ok || on.state !== 'approve', { seconds: 600, every: 5000 });
+      await share.waitFor(async () => (on = await share.on(port, hp)).ok || on.state !== 'approve', { seconds: 600, every: 5000 });
     }
     if (!on.ok) { step('funnel', 'error', on.error, { link: on.link }); return on; }
     step('funnel', 'done', `Your link: ${on.url}`);
@@ -729,11 +755,13 @@ ipcMain.handle('gb:share-setup', async () => {
 
 /** At every start (and now and then) put the link back if it went off, without asking anything. */
 async function keepShared() {
-  if (!bundled || !settings.shareAuto) return;
-  const st = await share.status(folder.port);
+  if (!bundled) return;
+  if (settings.customLink) { if (vault.setting('DASHBOARD_BASE_URL') !== settings.customLink) await useSharedLink(settings.customLink); return; }
+  if (!settings.shareAuto) return;
+  const st = await share.status(folder.port, settings.sharePort);
   if (st.state === 'on') { if (vault.setting('DASHBOARD_BASE_URL') !== st.url) await useSharedLink(st.url); return; }
   if (st.state !== 'off') { log(`share: ${st.state}`); return; }
-  const r = await share.on(folder.port);
+  const r = await share.on(folder.port, settings.sharePort);
   if (r.ok) { await useSharedLink(r.url); log('share: dashboard link is on'); }
 }
 
@@ -745,8 +773,8 @@ function keepAwake(state) {
 }
 ipcMain.handle('gb:share-off', async () => {
   if (!bundled) return { ok: false, error: 'Sharing works with the built-in bot.' };
-  const r = await share.off();
-  settings = normalize({ ...settings, shareAuto: false }); saveSettings();
+  const r = settings.customLink ? { ok: true } : await share.off(settings.sharePort);
+  settings = normalize({ ...settings, shareAuto: false, customLink: '' }); saveSettings();
   vault.merge(shareSettings(null)); recheck();
   await restartIfRunning();
   send('state', snapshot());

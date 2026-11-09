@@ -9,7 +9,7 @@ import { SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType,
 import { UserError, hierarchyError, parseDuration, formatDuration, truncate, escapeRegex, ts, SNOWFLAKE } from '../../src/util.js';
 import { formStore } from '../../src/forms.js';
 import { createPipeline } from '../../src/modalpipe.js';
-import { RULES, RULE_IDS, ACTIONS, ruleById, ruleEnabled, actionFor, isExempt, editExempt, countEmoji, capsRatio, recordRepeat, snippet, activityCounts } from '../../src/automod.js';
+import { RULES, RULE_IDS, ACTIONS, ruleById, ruleEnabled, actionFor, isExempt, editExempt, countEmoji, capsRatio, recordRepeat, snippet, activityCounts, scamReason } from '../../src/automod.js';
 
 const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
@@ -240,6 +240,11 @@ function detect(ctx, message, where = {}) {
   const live = (rule) => ruleEnabled(cfg, rule) && !isExempt(ex, rule.id, where);
   const R = (id) => ruleById(id);
 
+  // Scams first: the allowed-links list never lets these through.
+  if (text && live(R('scams'))) {
+    const why = scamReason(text);
+    if (why) return { rule: 'scams', name: 'scam link', msg: 'that link looks like a scam, so it was removed. If your account was hacked, change your password and turn on two-factor login.', why };
+  }
   if (text && live(R('words'))) {
     const re = wordRegex(ctx.config.get('bannedWords') ?? []);
     if (re?.test(text)) return { rule: 'words', name: 'word filter', msg: 'that word is not allowed here.' };
@@ -300,7 +305,7 @@ async function onMessage(ctx, message) {
 
   const reason = `AutoMod: ${v.name}`;
   let c;
-  if (action === 'delete-warn') c = addCase(ctx, { type: 'warn', user: message.author, modId: null, reason });
+  if (action === 'delete-warn') { c = addCase(ctx, { type: 'warn', user: message.author, modId: null, reason }); await escalate(ctx, message.guild, message.member, message.author); }
   if (action === 'delete-timeout') c = await doTimeout(ctx, message.member, ctx.config.get('automodTimeoutMinutes') * 60000, reason, null, 'timeout').catch(() => null);
   remember(ctx, message, v, action, c);
 
@@ -489,7 +494,7 @@ async function modPopupSubmit(ctx, i) {
   if (form.action === 'kick') return runKick(ctx, i, user, reason);
   if (form.action === 'unban') return runUnban(ctx, i, user.id, reason);
   if (form.action === 'timeout') return runTimeout(ctx, i, user, parseTimeoutInput(text('duration')), reason);
-  if (form.action === 'ban') return runBan(ctx, i, user, reason, parseDays(text('days')));
+  if (form.action === 'ban') return runBan(ctx, i, user, reason, parseDays(text('days')), form.durationMs ?? null);
 }
 function parseTimeoutInput(raw) {
   const ms = parseDuration(raw);
@@ -512,18 +517,54 @@ async function memberFor(i, user) {
   return member;
 }
 
+/**
+ * What a member's warning count leads to: 'ban' and 'kick' once they reach those counts (0 = off), otherwise a timeout
+ * every `timeoutEvery` warnings. Exported for tests.
+ */
+export function warnStep(warns, { timeoutEvery = 0, kickAt = 0, banAt = 0 } = {}) {
+  if (banAt > 0 && warns >= banAt) return 'ban';
+  if (kickAt > 0 && warns >= kickAt) return 'kick';
+  if (timeoutEvery > 0 && warns % timeoutEvery === 0) return 'timeout';
+  return null;
+}
+/** After any warning (command, dashboard or AutoMod): times out, kicks or bans when the count says so. Returns a line for the moderator, or ''. */
+async function escalate(ctx, guild, member, user) {
+  const warns = (ctx.data.get(`hist:${user.id}`) ?? []).filter((e) => e.type === 'warn').length;
+  const step = warnStep(warns, { timeoutEvery: ctx.config.get('warnTimeoutThreshold'), kickAt: ctx.config.get('warnKickAt'), banAt: ctx.config.get('warnBanAt') });
+  const why = `Automatic: ${warns} warnings`;
+  try {
+    if (step === 'timeout' && member) {
+      const mins = ctx.config.get('warnTimeoutMinutes');
+      await doTimeout(ctx, member, mins * 60000, why, null);
+      return `Reached ${warns} warnings - timed out for ${mins} minutes.`;
+    }
+    if (step === 'kick' && member?.kickable) {
+      await tellUser(ctx, user, guild, `you were kicked: ${why}.`);
+      await member.kick(why);
+      const c = addCase(ctx, { type: 'kick', user, modId: null, reason: why });
+      await modLog(ctx, caseEmbed('kick', c, user, null));
+      return `Reached ${warns} warnings - kicked.`;
+    }
+    if (step === 'ban') {
+      if (member && !member.bannable) return `Reached ${warns} warnings, but I can't ban them (their role is above mine).`;
+      await tellUser(ctx, user, guild, `you were banned: ${why}.`);
+      await guild.members.ban(user.id, { reason: why });
+      const c = addCase(ctx, { type: 'ban', user, modId: null, reason: why });
+      await modLog(ctx, caseEmbed('ban', c, user, null));
+      return `Reached ${warns} warnings - banned.`;
+    }
+  } catch (e) { ctx.log?.warn?.(`Warning escalation failed: ${e.message}`); }
+  return '';
+}
+
 async function runWarn(ctx, i, user, reason, details = {}) {
   const member = await memberFor(i, user);
   const c = addCase(ctx, { type: 'warn', user, modId: i.user.id, reason, extra: details });
   await tellUser(ctx, user, i.guild, `you were warned: ${reason}`);
   await modLog(ctx, caseEmbed('warn', c, user, i.user.id));
   const warns = (ctx.data.get(`hist:${user.id}`) ?? []).filter((e) => e.type === 'warn').length;
-  const threshold = ctx.config.get('warnTimeoutThreshold');
-  let extra = '';
-  if (threshold > 0 && warns % threshold === 0) {
-    const mins = ctx.config.get('warnTimeoutMinutes');
-    await doTimeout(ctx, member, mins * 60000, `Automatic: ${warns} warnings`, null).then(() => { extra = `\nReached ${warns} warnings - timed out for ${mins} minutes.`; }).catch(() => {});
-  }
+  const said = await escalate(ctx, i.guild, member, user);
+  const extra = said ? `\n${said}` : '';
   await i.editReply({ embeds: [caseEmbed('warn', c, user, i.user.id).setFooter({ text: `${warns} warning(s) total` })], content: extra || undefined, allowedMentions: NOPING });
 }
 
@@ -591,13 +632,22 @@ async function runKick(ctx, i, user, reason) {
   await i.editReply({ embeds: [caseEmbed('kick', c, user, i.user.id)], allowedMentions: NOPING });
 }
 
-async function runBan(ctx, i, user, reason, days) {
+/** 3.1: "for how long" on /ban ("7d", "12h"); null = for good. Up to a year. */
+function banDuration(raw) {
+  if (!raw) return null;
+  const ms = parseDuration(raw);
+  if (!ms || ms < 60000 || ms > 365 * 86400000) throw new UserError('Ban length: use something like 1h, 7d or 30d (up to a year), or leave it empty to ban for good.');
+  return ms;
+}
+async function runBan(ctx, i, user, reason, days, durationMs = null) {
   const member = await fetchTarget(i, user);
   if (member) { guardTarget(i, member); if (!member.bannable) throw new UserError("I can't ban that member - move my role above theirs."); }
   else if (user.id === i.guild.ownerId || user.id === i.user.id) throw new UserError("You can't do that.");
-  await tellUser(ctx, user, i.guild, `you were banned: ${reason}`);
-  await i.guild.members.ban(user.id, { reason: `${i.user.tag}: ${truncate(reason, 400)}`, deleteMessageSeconds: days * 86400 });
-  const c = addCase(ctx, { type: 'ban', user, modId: i.user.id, reason });
+  const until = durationMs ? Date.now() + durationMs : null;
+  await tellUser(ctx, user, i.guild, `you were banned${until ? ` until <t:${Math.floor(until / 1000)}:f>` : ''}: ${reason}`);
+  await i.guild.members.ban(user.id, { reason: `${i.user.tag}: ${truncate(reason, 400)}${until ? ` (until ${new Date(until).toISOString()})` : ''}`, deleteMessageSeconds: days * 86400 });
+  if (until) ctx.data.set(`tempban:${user.id}`, { until, by: i.user.id, reason }); else ctx.data.delete(`tempban:${user.id}`);
+  const c = addCase(ctx, { type: 'ban', user, modId: i.user.id, reason: until ? `${reason} (for ${formatDuration(durationMs)})` : reason });
   await modLog(ctx, caseEmbed('ban', c, user, i.user.id));
   await i.editReply({ embeds: [caseEmbed('ban', c, user, i.user.id)], allowedMentions: NOPING });
 }
@@ -642,6 +692,7 @@ export async function dashboardModAction(ctx, body, actor) {
     c = addCase(ctx, { type: 'warn', user, modId: by.id, reason, extra: { severity: 'medium', via: 'dashboard' } });
     await tellUser(ctx, user, guild, `you were warned: ${reason}`);
     await modLog(ctx, caseEmbed('warn', c, user, by.id));
+    await escalate(ctx, guild, member, user);
   } else if (action === 'timeout') {
     const minutes = Math.max(1, Math.min(40320, Math.round(Number(body.minutes) || 60)));
     c = await doTimeout(ctx, member, minutes * 60000, reason, by.id);
@@ -693,6 +744,7 @@ function ruleRow(ctx, rule, counts) {
 /** Switch a rule on or off, set its action and/or its threshold. Goes through the validated settings path, like /config. */
 // ---- AutoMod page (2.3.2): presets, plain descriptions, units, a safe "test a message", list editing ----
 export const RULE_INFO = {
+  scams: { desc: 'A message has a fake Discord or Steam site, or a "free Nitro" style scam link. Usually sent by hacked accounts. Your allowed-links list never lets these through.' },
   spam: { desc: 'Someone sends lots of messages in a few seconds.', unit: 'messages', min: 2, max: 30 },
   words: { desc: 'A message contains a word from your list.' },
   links: { desc: 'A message has a link to a site that is not on your allowed list, or a server invite.' },
@@ -702,10 +754,10 @@ export const RULE_INFO = {
   emoji: { desc: 'A message is stuffed with emoji.', unit: 'emoji', min: 2, max: 50 },
 };
 export const PRESETS = {
-  off: { automodSpam: false, automodWords: false, automodLinks: false, maxMentions: 0, automodRepeat: false, automodCaps: false, automodEmoji: false, raidProtection: false, antiNuke: false, minAccountAgeDays: 0 },
-  relaxed: { automodSpam: true, spamMaxMessages: 8, spamWindowSeconds: 6, automodWords: true, automodLinks: false, maxMentions: 10, automodRepeat: false, automodCaps: false, automodEmoji: false, raidProtection: true, raidAction: 'alert', antiNuke: true, minAccountAgeDays: 0 },
-  balanced: { automodSpam: true, spamMaxMessages: 5, spamWindowSeconds: 6, automodWords: true, automodLinks: true, maxMentions: 6, automodRepeat: true, repeatMax: 3, repeatWindowSeconds: 60, automodCaps: false, automodEmoji: true, emojiMax: 12, raidProtection: true, raidAction: 'alert', antiNuke: true, minAccountAgeDays: 0 },
-  strict: { automodSpam: true, spamMaxMessages: 4, spamWindowSeconds: 6, automodWords: true, automodLinks: true, maxMentions: 4, automodRepeat: true, repeatMax: 2, repeatWindowSeconds: 60, automodCaps: true, capsPercent: 70, automodEmoji: true, emojiMax: 8, raidProtection: true, raidAction: 'timeout', antiNuke: true, minAccountAgeDays: 3, newAccountAction: 'alert' },
+  off: { automodScams: false, automodSpam: false, automodWords: false, automodLinks: false, maxMentions: 0, automodRepeat: false, automodCaps: false, automodEmoji: false, raidProtection: false, antiNuke: false, minAccountAgeDays: 0 },
+  relaxed: { automodScams: true, automodSpam: true, spamMaxMessages: 8, spamWindowSeconds: 6, automodWords: true, automodLinks: false, maxMentions: 10, automodRepeat: false, automodCaps: false, automodEmoji: false, raidProtection: true, raidAction: 'alert', antiNuke: true, minAccountAgeDays: 0 },
+  balanced: { automodScams: true, automodSpam: true, spamMaxMessages: 5, spamWindowSeconds: 6, automodWords: true, automodLinks: true, maxMentions: 6, automodRepeat: true, repeatMax: 3, repeatWindowSeconds: 60, automodCaps: false, automodEmoji: true, emojiMax: 12, raidProtection: true, raidAction: 'alert', antiNuke: true, minAccountAgeDays: 0 },
+  strict: { automodScams: true, automodSpam: true, spamMaxMessages: 4, spamWindowSeconds: 6, automodWords: true, automodLinks: true, maxMentions: 4, automodRepeat: true, repeatMax: 2, repeatWindowSeconds: 60, automodCaps: true, capsPercent: 70, automodEmoji: true, emojiMax: 8, raidProtection: true, raidAction: 'timeout', antiNuke: true, minAccountAgeDays: 3, newAccountAction: 'alert' },
 };
 const PAGE_KEYS = new Set(['automodAction', 'spamWindowSeconds', 'repeatWindowSeconds', 'raidProtection', 'raidJoinThreshold', 'raidWindowSeconds', 'raidAction', 'minAccountAgeDays', 'newAccountAction', 'antiNuke', 'nukeAction', 'automodTimeoutMinutes']);
 export function currentPreset(ctx) {
@@ -717,6 +769,8 @@ export function testMessage(ctx, text) {
   const cfg = automodCfg(ctx);
   const out = [];
   const add = (id, hit, why) => { const rule = ruleById(id); out.push({ id, label: rule.label, on: ruleEnabled(cfg, rule), hit, why }); };
+  const scam = scamReason(text);
+  add('scams', !!scam, scam ?? 'no scam links');
   const re = wordRegex(ctx.config.get('bannedWords') ?? []);
   const word = re ? (String(text).match(re) ?? [])[0] : null;
   add('words', !!word, word ? `contains "${word}"` : 'no blocked words');
@@ -952,14 +1006,16 @@ const commands = [
     permission: 'moderation.ban',
     data: new SlashCommandBuilder().setName('ban').setDescription('Ban a user')
       .addUserOption((o) => userOpt(o, 'Who to ban')).addStringOption(reasonOpt)
-      .addIntegerOption((o) => o.setName('delete_days').setDescription('Also delete their messages from the last N days (0-7)').setMinValue(0).setMaxValue(7)),
+      .addIntegerOption((o) => o.setName('delete_days').setDescription('Also delete their messages from the last N days (0-7)').setMinValue(0).setMaxValue(7))
+      .addStringOption((o) => o.setName('duration').setDescription('Ban for how long, like 7d or 12h (empty = for good)').setMaxLength(10)),
     async execute(ctx, i) {
       const user = i.options.getUser('user', true);
       const reason = i.options.getString('reason');
       const days = i.options.getInteger('delete_days');
-      if (!reason) return askFor(i, 'ban', { userId: user.id }, [FIELD.reason(), FIELD.days(days)]);
+      const durationMs = banDuration(i.options.getString('duration'));
+      if (!reason) return askFor(i, 'ban', { userId: user.id, durationMs }, [FIELD.reason(), FIELD.days(days)]);
       await i.deferReply();
-      return runBan(ctx, i, user, reason, days ?? 0);
+      return runBan(ctx, i, user, reason, days ?? 0, durationMs);
     },
   },
   {
@@ -1021,8 +1077,11 @@ export default {
     { key: 'logVoice', type: 'toggle', label: 'Log voice joins, leaves and moves', default: false },
     { key: 'warnTimeoutThreshold', type: 'number', label: 'Auto-timeout every N warnings (0 = off)', default: 3, min: 0, max: 20 },
     { key: 'warnTimeoutMinutes', type: 'number', label: 'Auto-timeout length (minutes)', default: 60, min: 1, max: 40320 },
+    { key: 'warnKickAt', type: 'number', label: 'Auto-kick at this many warnings (0 = off)', default: 0, min: 0, max: 50 },
+    { key: 'warnBanAt', type: 'number', label: 'Auto-ban at this many warnings (0 = off)', default: 0, min: 0, max: 50 },
     { key: 'automodAction', type: 'select', label: 'AutoMod action', options: ['delete', 'delete-warn', 'delete-timeout'], default: 'delete-warn' },
     { key: 'automodTimeoutMinutes', type: 'number', label: 'AutoMod timeout (minutes)', default: 5, min: 1, max: 1440 },
+    { key: 'automodScams', type: 'toggle', label: 'Scam and phishing link filter', default: true },
     { key: 'automodSpam', type: 'toggle', label: 'Spam protection', default: false },
     { key: 'spamMaxMessages', type: 'number', label: 'Spam: messages allowed...', default: 5, min: 2, max: 30 },
     { key: 'spamWindowSeconds', type: 'number', label: '...within N seconds', default: 6, min: 2, max: 60 },
@@ -1039,7 +1098,7 @@ export default {
     { key: 'capsMinLetters', type: 'number', label: 'Caps: ignore messages with fewer letters than', default: 12, min: 5, max: 100 },
     { key: 'automodEmoji', type: 'toggle', label: 'Emoji filter', default: false },
     { key: 'emojiMax', type: 'number', label: 'Emoji: most allowed in one message', default: 10, min: 2, max: 50 },
-    ...RULES.map((r) => ({ key: r.action, type: 'select', label: `${r.label}: action`, options: ACTIONS, default: 'default' })),
+    ...RULES.map((r) => ({ key: r.action, type: 'select', label: `${r.label}: action`, options: ACTIONS, default: r.id === 'scams' ? 'delete-timeout' : 'default' })),
     { key: 'automodKeepSnippets', type: 'toggle', label: 'Keep a short preview of removed messages in the AutoMod activity list', default: true },
     { key: 'raidProtection', type: 'toggle', label: 'Raid protection', default: false },
     { key: 'raidJoinThreshold', type: 'number', label: 'Raid: joins...', default: 8, min: 3, max: 100 },
@@ -1190,6 +1249,20 @@ export default {
       for (const [k, v] of repeats) if (!prune(v, 300000, now).length) repeats.delete(k);
       for (const [k, v] of joins) if (!prune(v, 300000, now).length) joins.delete(k);
       for (const [k, v] of nuke) if (!prune(v, 600000, now).length) nuke.delete(k);
+    },
+  }, {
+    // 3.1: lift temporary bans when their time is up.
+    name: 'tempbans', everyMs: 60000,
+    async run(ctx) {
+      for (const { key, value } of ctx.data.list('tempban:')) {
+        if (!value?.until || value.until > Date.now()) continue;
+        const id = key.slice(8);
+        ctx.data.delete(key);
+        const ok = await ctx.guild?.bans?.remove?.(id, 'Temporary ban ended').then(() => true).catch(() => false);
+        if (!ok) continue;
+        const c = addCase(ctx, { type: 'unban', user: { id, tag: id }, modId: ctx.client?.user?.id ?? null, reason: 'Temporary ban ended' });
+        await modLog(ctx, caseEmbed('unban', c, { id, tag: id }, ctx.client?.user?.id ?? null)).catch(() => {});
+      }
     },
   }],
 };

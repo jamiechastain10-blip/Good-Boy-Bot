@@ -18,6 +18,9 @@ const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
 const need = (ctx, i, key) => { if (!ctx.perms.check(i.member, key)) throw new UserError(`You don't have permission for that (\`${key}\`).`); };
 const DAY = 86400000;
+// 3.1: timed messages: repeat every few hours, as well as daily or weekly.
+const HOUR = 3600000;
+export const REPEATS = { h1: { label: 'Every hour', ms: HOUR }, h2: { label: 'Every 2 hours', ms: 2 * HOUR }, h3: { label: 'Every 3 hours', ms: 3 * HOUR }, h6: { label: 'Every 6 hours', ms: 6 * HOUR }, h12: { label: 'Every 12 hours', ms: 12 * HOUR }, daily: { label: 'Every day', ms: DAY }, weekly: { label: 'Every week', ms: 7 * DAY } };
 const MAX_SCHEDULES = 25;
 const starLocks = new Set();
 
@@ -121,7 +124,7 @@ const annPipe = createPipeline({
       fields: (ctx, i) => [
         { id: 'channel', kind: 'channel', label: 'Post in', value: i.channelId ? [i.channelId] : undefined },
         { id: 'when', label: 'When', placeholder: '2h, 1d, or 2026-12-31 18:30', max: 40 },
-        { id: 'repeat', kind: 'select', label: 'Repeat', value: 'none', options: [{ label: 'Only once', value: 'none' }, { label: 'Every day', value: 'daily' }, { label: 'Every week', value: 'weekly' }] },
+        { id: 'repeat', kind: 'select', label: 'Repeat', value: 'none', options: [{ label: 'Only once', value: 'none' }, ...Object.entries(REPEATS).map(([value, r]) => ({ label: r.label, value }))] },
         { id: 'text', kind: 'paragraph', label: 'Main body text', placeholder: 'Write it exactly as it should appear. New lines work.', max: 1800 },
         pingField,
       ],
@@ -130,7 +133,7 @@ const annPipe = createPipeline({
         const at = parseWhen(v.when, ctx.config.get('timezoneOffset'));
         if (!at || at < Date.now() + 30000) throw new UserError('That time is in the past (or too soon). Pick at least a minute ahead.');
         if (at > Date.now() + 366 * DAY) throw new UserError('Schedule within the next year.');
-        const form = { sub: 'schedule', by: i.user.id, channelId: v.channel ?? i.channelId, at, repeat: ['daily', 'weekly'].includes(v.repeat) ? v.repeat : 'none', ...notifyFromRoles(ctx, v.roles) };
+        const form = { sub: 'schedule', by: i.user.id, channelId: v.channel ?? i.channelId, at, repeat: REPEATS[v.repeat] ? v.repeat : 'none', ...notifyFromRoles(ctx, v.roles) };
         return finishAnnouncement(ctx, i, form, v.text, undefined);
       },
     },
@@ -140,7 +143,7 @@ const annPipe = createPipeline({
 /** The schedule list, with a picker to cancel one (no typing a number). */
 function scheduleList(ctx, i, note) {
   const items = ctx.data.list('sched:').map(({ value: s }) => s).sort((a, b) => a.nextAt - b.nextAt);
-  const rows = items.map((s) => `**#${s.id}** ${ts(s.nextAt, 'f')} → <#${s.channelId}>${s.repeat !== 'none' ? ` (${s.repeat})` : ''} - ${truncate(s.text, 60)}`);
+  const rows = items.map((s) => `**#${s.id}** ${ts(s.nextAt, 'f')} → <#${s.channelId}>${s.repeat !== 'none' ? ` (${REPEATS[s.repeat]?.label.toLowerCase() ?? s.repeat})` : ''} - ${truncate(s.text, 60)}`);
   const components = items.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`announce:cancel:${i.user.id}`).setPlaceholder('Cancel one...')
     .addOptions(items.slice(0, 25).map((s) => new StringSelectMenuOptionBuilder().setLabel(`#${s.id} · ${truncate(s.text.replace(/\s+/g, ' '), 80)}`).setValue(String(s.id)).setEmoji('🗑️'))))] : [];
   return { content: [note, rows.join('\n') || 'Nothing scheduled.'].filter(Boolean).join('\n\n'), components, flags: EPH, allowedMentions: NOPING };
@@ -219,7 +222,7 @@ async function schedulerTask(ctx) {
       await u?.send({ content: `⚠️ Scheduled announcement **#${s.id}** was posted in <#${ch.id}> **without its ping.** ${problem}`, allowedMentions: { parse: [] } }).catch(() => {});
     }
     if (s.repeat === 'none') ctx.data.delete(key);
-    else { const step = s.repeat === 'weekly' ? 7 * DAY : DAY; while (s.nextAt <= now) s.nextAt += step; ctx.data.set(key, s); }
+    else { const step = REPEATS[s.repeat]?.ms ?? DAY; while (s.nextAt <= now) s.nextAt += step; ctx.data.set(key, s); }
   }
 }
 

@@ -194,25 +194,106 @@ export const fishIn = (biome) => Object.values(FISH).filter((f) => f.biome === b
 // Rods: luck shifts rarity odds, control = zone width, power = catch gain per good reel, step = how far a pull moves
 // the zone, line = tension before the line snaps.
 export const RODS = [
-  { id: 'driftwood', label: 'Driftwood Rod', price: 0, level: 1, luck: 0, control: 5, power: 11, step: 2, line: 100 },
-  { id: 'reedspring', label: 'Reedspring Rod', price: 1500, level: 3, luck: 0.1, control: 6, power: 13, step: 2, line: 110 },
-  { id: 'carbon', label: 'Carbon Striker', price: 8000, level: 8, luck: 0.2, control: 6, power: 15, step: 3, line: 120 },
-  { id: 'rimeglass', label: 'Rimeglass Rod', price: 25000, level: 14, luck: 0.35, control: 7, power: 17, step: 3, line: 130 },
-  { id: 'cinderspine', label: 'Cinderspine Rod', price: 75000, level: 22, luck: 0.5, control: 7, power: 20, step: 3, line: 140 },
-  { id: 'voidreach', label: 'Voidreach Rod', price: 250000, level: 32, luck: 0.8, control: 8, power: 24, step: 3, line: 160 },
-  { id: 'stormglass', label: 'Stormglass Rod', price: 600000, level: 42, luck: 1.0, control: 8, power: 27, step: 3, line: 175 },
-  { id: 'spirebone', label: 'Spirebone Rod', price: 1500000, level: 58, luck: 1.25, control: 9, power: 30, step: 3, line: 190 },
-  { id: 'starforged', label: 'Starforged Rod', price: 4000000, level: 75, luck: 1.6, control: 9, power: 34, step: 4, line: 210 },
+  { id: 'driftwood', label: 'Driftwood Rod', price: 0, level: 1, luck: 0, control: 5, power: 11, step: 2, line: 100, home: ['bay'], perk: 'xp' },
+  { id: 'reedspring', label: 'Reedspring Rod', price: 1500, level: 3, luck: 0.1, control: 6, power: 13, step: 2, line: 110, home: ['marsh'], perk: 'calm' },
+  { id: 'carbon', label: 'Carbon Striker', price: 8000, level: 8, luck: 0.2, control: 6, power: 15, step: 3, line: 120, home: ['bay', 'reef'], perk: 'strike' },
+  { id: 'rimeglass', label: 'Rimeglass Rod', price: 25000, level: 14, luck: 0.35, control: 7, power: 17, step: 3, line: 130, home: ['glacier', 'fjord'], perk: 'tension' },
+  { id: 'cinderspine', label: 'Cinderspine Rod', price: 75000, level: 22, luck: 0.5, control: 7, power: 20, step: 3, line: 140, home: ['vents', 'caldera'], perk: 'nosnap' },
+  { id: 'voidreach', label: 'Voidreach Rod', price: 250000, level: 32, luck: 0.8, control: 8, power: 24, step: 3, line: 160, home: ['deep', 'eclipse'], perk: 'corrupt' },
+  { id: 'stormglass', label: 'Stormglass Rod', price: 600000, level: 42, luck: 1.0, control: 8, power: 27, step: 3, line: 175, home: ['reef', 'skyfall'], perk: 'surge' },
+  { id: 'spirebone', label: 'Spirebone Rod', price: 1500000, level: 58, luck: 1.25, control: 9, power: 30, step: 3, line: 190, home: ['spire', 'rift'], perk: 'giant' },
+  { id: 'starforged', label: 'Starforged Rod', price: 4000000, level: 75, luck: 1.6, control: 9, power: 34, step: 4, line: 210, home: ['abyss', 'trench'], perk: 'mutation' },
   // 3.0
-  { id: 'rootbinder', label: 'Rootbinder Rod', price: 9000000, level: 100, luck: 1.8, control: 10, power: 38, step: 4, line: 230 },
-  { id: 'geode', label: 'Geode Rod', price: 20000000, level: 240, luck: 2.0, control: 10, power: 42, step: 4, line: 250 },
-  { id: 'anchorchain', label: 'Anchorchain Rod', price: 45000000, level: 390, luck: 2.2, control: 11, power: 46, step: 4, line: 270 },
-  { id: 'mainspring', label: 'Mainspring Rod', price: 100000000, level: 600, luck: 2.45, control: 11, power: 50, step: 5, line: 290 },
-  { id: 'wisplight', label: 'Wisplight Rod', price: 220000000, level: 900, luck: 2.7, control: 11, power: 54, step: 5, line: 310 },
-  { id: 'quicksilver', label: 'Quicksilver Rod', price: 500000000, level: 1300, luck: 3.0, control: 12, power: 58, step: 5, line: 335 },
-  { id: 'wyrmspine', label: 'Wyrmspine Rod', price: 1100000000, level: 1650, luck: 3.3, control: 12, power: 62, step: 5, line: 360 },
-  { id: 'umbral', label: 'Umbral Rod', price: 2500000000, level: 2450, luck: 3.7, control: 13, power: 68, step: 5, line: 400 },
+  { id: 'rootbinder', label: 'Rootbinder Rod', price: 9000000, level: 100, luck: 1.8, control: 10, power: 38, step: 4, line: 230, home: ['mangrove', 'kelp'], perk: 'calm' },
+  { id: 'geode', label: 'Geode Rod', price: 20000000, level: 240, luck: 2.0, control: 10, power: 42, step: 4, line: 250, home: ['caverns', 'oasis'], perk: 'value' },
+  { id: 'anchorchain', label: 'Anchorchain Rod', price: 45000000, level: 390, luck: 2.2, control: 11, power: 46, step: 4, line: 270, home: ['wreck'], perk: 'sunken' },
+  { id: 'mainspring', label: 'Mainspring Rod', price: 100000000, level: 600, luck: 2.45, control: 11, power: 50, step: 5, line: 290, home: ['clockwork'], perk: 'strike' },
+  { id: 'wisplight', label: 'Wisplight Rod', price: 220000000, level: 900, luck: 2.7, control: 11, power: 54, step: 5, line: 310, home: ['fjord', 'lotus'], perk: 'xp' },
+  { id: 'quicksilver', label: 'Quicksilver Rod', price: 500000000, level: 1300, luck: 3.0, control: 12, power: 58, step: 5, line: 335, home: ['mirror', 'shoals'], perk: 'quickbite' },
+  { id: 'wyrmspine', label: 'Wyrmspine Rod', price: 1100000000, level: 1650, luck: 3.3, control: 12, power: 62, step: 5, line: 360, home: ['rift', 'dreamtide'], perk: 'tamer' },
+  { id: 'umbral', label: 'Umbral Rod', price: 2500000000, level: 2450, luck: 3.7, control: 13, power: 68, step: 5, line: 400, home: ['eclipse'], perk: 'surge' },
+  // 3.1: endgame rods for the climb to 4,000. Leviathan's Oath is the Mythic rod: at home everywhere.
+  { id: 'eclipsebreaker', label: 'Eclipsebreaker Rod', price: 6000000000, level: 2800, luck: 4.1, control: 13, power: 74, step: 5, line: 440, home: ['eclipse', 'dreamtide'], perk: 'mutation' },
+  { id: 'tidecaller', label: 'Tidecaller Rod', price: 14000000000, level: 3200, luck: 4.5, control: 14, power: 80, step: 6, line: 480, home: ['mirror', 'dreamtide', 'shoals'], perk: 'quickbite' },
+  { id: 'worldline', label: 'Worldline Rod', price: 32000000000, level: 3600, luck: 4.9, control: 14, power: 86, step: 6, line: 520, home: ['rift', 'eclipse'], perk: 'tamer' },
+  { id: 'leviathan', label: "Leviathan's Oath", price: 75000000000, level: 4000, luck: 5.4, control: 15, power: 94, step: 6, line: 580, home: [], perk: 'mythic', mythic: true },
 ];
+// 3.1: rods you earn instead of buy. They never show in the shop (price 0, `earn` says how to get one).
+// Sunken rods: fished up in Ironwreck Graveyard, one after another. Challenge rods: for streaks and weekly challenges.
+RODS.push(
+  { id: 'barnacle', label: 'Barnacled Rod', price: 0, level: 0, luck: 1.1, control: 9, power: 30, step: 4, line: 190, home: ['wreck', 'reef'], perk: 'giant', earn: { kind: 'sunken', order: 1 }, worth: 800000 },
+  { id: 'captain', label: "Captain's Rod", price: 0, level: 0, luck: 2.5, control: 11, power: 52, step: 5, line: 300, home: ['wreck', 'clockwork'], perk: 'value', earn: { kind: 'sunken', order: 2 }, worth: 150000000 },
+  { id: 'drownedking', label: "Drowned King's Rod", price: 0, level: 0, luck: 3.4, control: 13, power: 64, step: 5, line: 380, home: ['wreck', 'eclipse', 'deep'], perk: 'tamer', earn: { kind: 'sunken', order: 3 }, worth: 1500000000 },
+  { id: 'streakline', label: 'Streakline Rod', price: 0, level: 0, luck: 0.4, control: 7, power: 17, step: 3, line: 135, home: [], perk: 'xp', earn: { kind: 'streak', days: 7 }, worth: 30000 },
+  { id: 'taskmaster', label: 'Taskmaster Rod', price: 0, level: 0, luck: 0.9, control: 8, power: 25, step: 3, line: 165, home: [], perk: 'strike', earn: { kind: 'weeklies', count: 10 }, worth: 300000 },
+  { id: 'grandangler', label: 'Grand Angler Rod', price: 0, level: 0, luck: 1.7, control: 9, power: 35, step: 4, line: 215, home: [], perk: 'wanderer', earn: { kind: 'streak', days: 30 }, worth: 5000000 },
+);
+// Keepsake rods: catch every fish in a place to earn its rod. As good as the best shop rod of that place's level, a
+// little better at control, line and pull, and at home there.
+for (const b of BIOMES) {
+  const base = RODS.filter((r) => r.price && r.level <= b.level).at(-1) ?? RODS[0];
+  RODS.push({ id: `keep-${b.id}`, label: `${b.label} Keepsake Rod`, price: 0, level: 0, luck: base.luck, control: Math.min(15, base.control + 1), power: Math.round(base.power * 1.1), step: base.step,
+    line: Math.round(base.line * 1.1), home: [b.id], perk: 'collector', earn: { kind: 'collection', biome: b.id }, worth: Math.max(5000, base.price) });
+}
+/** What each perk does, in words. */
+export const PERKS = {
+  xp: { emoji: '📘', label: 'Fast learner', desc: '+20% fishing XP' },
+  calm: { emoji: '🫧', label: 'Steady', desc: 'Fish dart around less' },
+  strike: { emoji: '⚡', label: 'Hair trigger', desc: 'Longer strike window and a bigger strike head start' },
+  tension: { emoji: '🧵', label: 'Soft line', desc: 'Line tension builds 25% slower' },
+  nosnap: { emoji: '🔥', label: 'Heatproof', desc: 'The line never snaps in its home places' },
+  corrupt: { emoji: '🕳️', label: 'Void-touched', desc: 'Corrupted fish 2.5× as likely' },
+  surge: { emoji: '🌊', label: 'Surge rider', desc: 'Answering a surge gives twice the gain' },
+  giant: { emoji: '📏', label: 'Big game', desc: 'Giant fish 3× as likely' },
+  mutation: { emoji: '🧬', label: 'Strange lure', desc: 'Mutations 1.5× as likely' },
+  value: { emoji: '💰', label: 'Appraiser', desc: 'Fish are worth 15% more' },
+  sunken: { emoji: '⚓', label: 'Salvager', desc: 'Sunken rods 3× as likely to be fished up' },
+  quickbite: { emoji: '⏱️', label: 'Quick bite', desc: 'Fish bite much faster, and the strike window is longer' },
+  tamer: { emoji: '🐉', label: 'Tamer', desc: 'Legendary and mythical fish fight 40% less' },
+  collector: { emoji: '🏅', label: 'Keepsake', desc: 'Fish from its home place are worth 25% more' },
+  wanderer: { emoji: '🧭', label: 'Wanderer', desc: 'At home in every place' },
+  mythic: { emoji: '🌟', label: 'Mythic', desc: 'At home in every place, +20% XP, and the line never snaps' },
+};
+export const MAX_STARS = 5;
+/** A rod's numbers with its stars and the place it's used in. `home` is true when the place is one of its homes. */
+export function rodStats(id, { stars = 1, biome = null } = {}) {
+  const r = rodById(id), n = Math.max(1, Math.min(MAX_STARS, Math.floor(stars) || 1)) - 1;
+  const home = !!biome && (r.perk === 'mythic' || r.perk === 'wanderer' || (r.home ?? []).includes(biome));
+  const ctrl = r.control + (n >= 2 ? 1 : 0) + (n >= 4 ? 1 : 0);
+  return {
+    id: r.id, label: r.label, perk: r.perk ?? null, stars: n + 1, home,
+    luck: Math.round((r.luck + 0.05 * n + (home ? 0.4 : 0)) * 100) / 100,
+    control: Math.min(16, ctrl),
+    power: Math.round(r.power * (1 + 0.06 * n) * (home ? 1.2 : 1)),
+    step: r.step,
+    line: Math.round(r.line * (1 + 0.05 * n) * (home ? 1.15 : 1)),
+  };
+}
+/** What going from `stars` to `stars + 1` costs: coins plus fish of one rarity from the bag. Null at the top. */
+export function upgradeCost(id, stars) {
+  if (stars >= MAX_STARS) return null;
+  const r = rodById(id), worth = Math.max(2000, r.price || r.worth || 0);
+  const steps = [[0.3, 'common', 15], [0.6, 'uncommon', 12], [1, 'rare', 8], [1.6, 'epic', 4]][stars - 1];
+  return { coins: Math.round(worth * steps[0]), rarity: steps[1], fish: steps[2] };
+}
+/** Sunken rods: the chance a catch in Ironwreck Graveyard is an old rod instead, and which one is next. */
+export const SUNKEN_CHANCE = 0.004;
+export const nextSunken = (owned) => RODS.filter((r) => r.earn?.kind === 'sunken').sort((a, b) => a.earn.order - b.earn.order).find((r) => !owned.includes(r.id)) ?? null;
+/** Challenge rods a member has earned by now (streak days, weekly challenges finished) that they don't own yet. */
+export function challengeRodsDue({ streak = 0, weeklies = 0, owned = [] } = {}) {
+  return RODS.filter((r) => !owned.includes(r.id) && ((r.earn?.kind === 'streak' && streak >= r.earn.days) || (r.earn?.kind === 'weeklies' && weeklies >= r.earn.count)));
+}
+/** How a rod is earned, in words. */
+export function earnText(r) {
+  const e = r.earn;
+  if (!e) return r.price ? `Shop · ${r.price.toLocaleString('en-US')} coins · level ${r.level}` : 'Everyone starts with it';
+  if (e.kind === 'collection') return `Catch every fish in ${biomeById(e.biome).label}`;
+  if (e.kind === 'sunken') return 'Fished up in Ironwreck Graveyard (rare)';
+  if (e.kind === 'streak') return `A ${e.days}-day fishing challenge streak`;
+  if (e.kind === 'weeklies') return `Finish ${e.count} weekly fishing challenges`;
+  return 'Earned';
+}
+
 // Bait is used up, one per cast.
 export const BAITS = [
   { id: 'none', label: 'No bait', price: 0, luck: 0 },
@@ -285,9 +366,9 @@ export function rarityWeights(luck = 0) {
 }
 
 /** What bites. `rand` returns [0, 1). */
-export function rollCatch({ biome = 'bay', rod, bait, tackle }, rand = Math.random) {
-  const b = biomeById(biome), rd = rodById(rod), bt = baitById(bait), tk = tackleById(tackle);
-  const weights = rarityWeights(rd.luck + bt.luck);
+export function rollCatch({ biome = 'bay', rod, bait, tackle, stars = 1, bonusLuck = 0 }, rand = Math.random) {
+  const b = biomeById(biome), rd = rodStats(rod, { stars, biome }), bt = baitById(bait), tk = tackleById(tackle);
+  const weights = rarityWeights(rd.luck + bt.luck + bonusLuck);
   const total = weights.reduce((a, w) => a + w.weight, 0);
   let r = rand() * total, rarity = weights[0].id;
   for (const w of weights) { if (r < w.weight) { rarity = w.id; break; } r -= w.weight; }
@@ -296,15 +377,16 @@ export function rollCatch({ biome = 'bay', rod, bait, tackle }, rand = Math.rand
   // Smaller fish are more common: square the roll so weights lean towards the minimum.
   const roll = rand();
   let weight = species.min + (species.max - species.min) * roll * roll;
-  const giant = roll > 0.98;
+  const giant = roll > (rd.perk === 'giant' ? 0.94 : 0.98);
   if (giant) weight *= 1.6;
-  const mult = tk.mutation ?? 1;
-  const corruptChance = (MUTATIONS.corrupted.chance + (b.corruption ?? 0) + (bt.corruption ?? 0)) * mult;
+  const mult = (tk.mutation ?? 1) * (rd.perk === 'mutation' ? 1.5 : 1);
+  const corruptChance = (MUTATIONS.corrupted.chance + (b.corruption ?? 0) + (bt.corruption ?? 0)) * mult * (rd.perk === 'corrupt' ? 2.5 : 1);
   const mutRoll = rand();
   const mutation = mutRoll < corruptChance ? 'corrupted' : mutRoll < corruptChance + MUTATIONS.mutated.chance * mult ? 'mutated' : null;
   if (mutation) weight *= MUTATIONS[mutation].weight;
   weight = Math.round(weight * 100) / 100;
-  return { species: species.id, rarity, weight, giant, mutation, value: fishValue(species, weight, mutation) };
+  const worth = rd.perk === 'value' ? 1.15 : rd.perk === 'collector' && rd.home ? 1.25 : 1;
+  return { species: species.id, rarity, weight, giant, mutation, value: Math.round(fishValue(species, weight, mutation) * worth) };
 }
 
 export function fishValue(species, weight, mutation) {
@@ -313,30 +395,34 @@ export function fishValue(species, weight, mutation) {
   return Math.max(1, Math.round(v));
 }
 /** XP for a catch. `biome` (the place it was caught) adds that place's XP multiplier. */
-export function catchXp(c, biome) {
-  return Math.round(rarityById(c.rarity).xp * (c.mutation ? 1.5 : 1) * (c.giant ? 1.25 : 1) * (biome ? biomeById(biome).xp ?? 1 : 1));
+export function catchXp(c, biome, perk = null) {
+  return Math.round(rarityById(c.rarity).xp * (c.mutation ? 1.5 : 1) * (c.giant ? 1.25 : 1) * (biome ? biomeById(biome).xp ?? 1 : 1) * (perk === 'xp' || perk === 'mythic' ? 1.2 : 1));
 }
 /** How much harder fish fight in a place (0 for the first five). */
 const hardOf = (s) => (s.biome ? biomeById(s.biome).hard ?? 0 : 0);
 
 // ------------------------------------------------------------------ the reeling mini-game
 /** biteMs: how long until the bite (default: a few seconds, from the seed). surges: false turns surges off. */
-export function startReel({ rod, tackle, fish, seed, now = Date.now(), biteMs, surges = true }) {
-  const rd = rodById(rod);
+export function startReel({ rod, tackle, fish, seed, now = Date.now(), biteMs, surges = true, stars = 1, biome = null }) {
+  const rd = rodStats(rod, { stars, biome });
   const zone = Math.floor((TRACK - rd.control) / 2);
   const r = seeded(seed ^ 0x2545f491);
-  const biteAt = now + (Number.isFinite(biteMs) ? biteMs : BITE_MIN_MS + Math.floor(r() * BITE_SPREAD_MS));
-  return { rod: rd.id, tackle: tackleById(tackle).id, fish, seed: seed >>> 0, step: 0, zone, pos: Math.floor(seeded(seed)() * TRACK), progress: 30, tension: 0, status: 'reeling', startedAt: now, lastAt: now, biteAt, struck: null, surge: null, lastSurge: 0, surges: { won: 0, lost: 0 }, noSurges: !surges, note: null };
+  const wait = Number.isFinite(biteMs) ? biteMs : BITE_MIN_MS + Math.floor(r() * BITE_SPREAD_MS);
+  const biteAt = now + (rd.perk === 'quickbite' && !Number.isFinite(biteMs) ? Math.round(wait * 0.4) : wait);
+  return { gear: rd, rod: rd.id, tackle: tackleById(tackle).id, fish, seed: seed >>> 0, step: 0, zone, pos: Math.floor(seeded(seed)() * TRACK), progress: 30, tension: 0, status: 'reeling', startedAt: now, lastAt: now, biteAt, struck: null, surge: null, lastSurge: 0, surges: { won: 0, lost: 0 }, noSurges: !surges, note: null };
 }
 /** Has the fish bitten yet? (Old saved games have no biteAt: they are already biting.) */
 export const bitten = (s, now = Date.now()) => !s.biteAt || now >= s.biteAt;
 
-export const inZone = (s) => s.pos >= s.zone && s.pos < s.zone + rodById(s.rod).control;
+/** The rod's numbers for this cast (saved with it); casts saved before 3.1 use the plain rod. */
+export const gearOf = (s) => s.gear ?? rodStats(s.rod);
+const strikeMs = (g) => STRIKE_MS + (g.perk === 'quickbite' ? 2000 : g.perk === 'strike' ? 1500 : 0);
+export const inZone = (s) => s.pos >= s.zone && s.pos < s.zone + gearOf(s).control;
 
 function moveFish(s) {
   const rand = seeded(s.seed + s.step * 7919);
   // Harder places add half their difficulty to how far fish move (rounded down), so a Lead Sinker still helps.
-  const agility = Math.max(1, rarityById(s.fish.rarity).agility + Math.floor(hardOf(s) / 2) - (tackleById(s.tackle).calm ?? 0));
+  const agility = Math.max(1, rarityById(s.fish.rarity).agility + Math.floor(hardOf(s) / 2) - (tackleById(s.tackle).calm ?? 0) - (gearOf(s).perk === 'calm' ? 1 : 0));
   const dart = rand() < 0.18;                                  // now and then the fish bolts
   const dist = dart ? agility + 1 + Math.floor(rand() * 2) : Math.floor(rand() * (agility + 1));
   const dir = rand() < 0.5 ? -1 : 1;
@@ -355,13 +441,14 @@ export function reelStep(s, action, now = Date.now()) {
   // Before the bite: pulling the line spooks the fish a little.
   if (!bitten(s, now)) { s.lastAt = now; s.progress = Math.max(5, s.progress - 8); s.struck = false; s.note = 'early'; return s; }
   if (now - Math.max(s.lastAt, s.biteAt ?? 0) > IDLE_MS) return Object.assign(s, { status: 'escaped', reason: 'idle' });
-  const rd = rodById(s.rod), tk = tackleById(s.tackle), base = rarityById(s.fish.rarity), hard = hardOf(s);
-  const rar = { escape: base.escape + hard, pull: base.pull + hard * 2 };
-  const tensionMul = tk.tension ?? 1;
+  const rd = gearOf(s), tk = tackleById(s.tackle), base = rarityById(s.fish.rarity), hard = hardOf(s);
+  const tame = rd.perk === 'tamer' && ['legendary', 'mythical'].includes(s.fish.rarity) ? 0.6 : 1;
+  const rar = { escape: Math.round((base.escape + hard) * tame), pull: Math.round((base.pull + hard * 2) * tame) };
+  const tensionMul = (tk.tension ?? 1) * (rd.perk === 'tension' ? 0.75 : 1);
   // The strike: the first press after the bite. Reel quickly for a head start.
   if (s.struck == null) {
-    s.struck = action === 'reel' && now - s.biteAt <= STRIKE_MS;
-    if (s.struck) { s.step += 1; s.lastAt = now; s.progress = Math.min(99, s.progress + 15); s.note = 'strike'; return s; }
+    s.struck = action === 'reel' && now - s.biteAt <= strikeMs(rd);
+    if (s.struck) { s.step += 1; s.lastAt = now; s.progress = Math.min(99, s.progress + (rd.perk === 'strike' ? 25 : 15)); s.note = 'strike'; return s; }
   }
   // A surge: the next press has to be the right answer, quickly. It replaces the normal step.
   if (s.surge) {
@@ -369,7 +456,7 @@ export function reelStep(s, action, now = Date.now()) {
     s.step += 1; s.lastAt = now;
     if (action === sg.answer && fast) {
       s.surges.won += 1; s.note = 'surge-won';
-      s.progress += 12 + Math.round(rd.power / 3); s.tension = Math.max(0, s.tension - 15);
+      s.progress += (12 + Math.round(rd.power / 3)) * (rd.perk === 'surge' ? 2 : 1); s.tension = Math.max(0, s.tension - 15);
     } else {
       s.surges.lost += 1; s.note = fast ? 'surge-wrong' : 'surge-slow';
       if (s.surge.kind === 'leap') s.tension += (30 + rar.pull) * tensionMul; else s.progress -= 10 + rar.escape;
@@ -400,6 +487,7 @@ export function reelStep(s, action, now = Date.now()) {
 function finish(s, rd) {
   s.progress = Math.max(0, Math.min(100, Math.round(s.progress)));
   s.tension = Math.max(0, Math.round(s.tension));
+  if ((rd.perk === 'nosnap' && rd.home) || rd.perk === 'mythic') s.tension = Math.min(s.tension, rd.line - 1); // never snaps
   if (s.tension >= rd.line) return Object.assign(s, { status: 'snapped' });
   if (s.progress >= 100) return Object.assign(s, { status: 'caught' });
   if (s.progress <= 0) return Object.assign(s, { status: 'escaped', reason: 'pulled' });
@@ -414,7 +502,7 @@ export function meter(pct, width = 10) {
 
 /** The slider line, e.g. [░░░░■■■■◈■░░░░░░░░░░]. */
 export function trackLine(s) {
-  const width = rodById(s.rod).control;
+  const width = gearOf(s).control;
   let out = '';
   for (let k = 0; k < TRACK; k++) {
     const zone = k >= s.zone && k < s.zone + width;
@@ -430,7 +518,7 @@ export function reelNote(s, now = Date.now()) {
   return { early: '😬 Too early! You tugged before it bit.', strike: '⚡ **Strike!** Perfect timing, a head start.', 'surge-won': '🙌 **Nailed it!** Big gain.', 'surge-wrong': '❌ Wrong move!', 'surge-slow': '🐢 Too slow!' }[s.note] ?? null;
 }
 
-export function reelPanel(s, rodLine = rodById(s.rod).line) {
+export function reelPanel(s, rodLine = gearOf(s).line) {
   return [
     '```',
     trackLine(s),

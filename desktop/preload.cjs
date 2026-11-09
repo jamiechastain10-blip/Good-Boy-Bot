@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('goodBoy', {
   shareOn: () => ipcRenderer.invoke('gb:share-on'),
   shareOff: () => ipcRenderer.invoke('gb:share-off'),
   shareSetup: () => ipcRenderer.invoke('gb:share-setup'),
+  sharePort: (port) => ipcRenderer.invoke('gb:share-port', port),
+  shareCustom: (url) => ipcRenderer.invoke('gb:share-custom', url),
   onShareStep: listen('share-step'),
   shareLink: (url) => ipcRenderer.invoke('gb:share-link', String(url ?? '')),
   onState: listen('state'),

@@ -12,6 +12,7 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 import { formModal, readForm } from '../../src/modalkit.js';
+import * as CAP from '../../src/captcha.js';
 import { formStore } from '../../src/forms.js';
 import { UserError, fillTemplate, normalizeHex, hexToInt, sanitizeName, truncate, ts, roleGrantProblem, getChannelOption, describeDiscordError } from '../../src/util.js';
 
@@ -331,6 +332,41 @@ async function verifyClick(ctx, i) {
   if (i.member.roles.cache.has(roleId)) return i.reply({ content: "You're already verified.", flags: EPH });
   const problem = roleGrantProblem(i.guild, role, null, P);
   if (problem) { ctx.log.warn(`Verification blocked: ${problem}`); throw new UserError('Verification is misconfigured right now. Tell an admin to run `/verify status`.'); }
+  if (ctx.config.get('verifyCaptcha')) return showCaptcha(ctx, i);
+  return grantVerified(ctx, i, role);
+}
+// 3.1 captcha: a code to type, 3 tries, 10 minutes. Kept in memory: a restart just means pressing Verify again.
+const captchas = (globalThis[Symbol.for('goodboy.verify.captchas')] ??= new Map()); // guild:user -> { code, at, tries }
+const CAPTCHA_MS = 10 * 60000, CAPTCHA_TRIES = 3;
+async function showCaptcha(ctx, i) {
+  const code = CAP.makeCode();
+  captchas.set(`${ctx.guildId}:${i.user.id}`, { code, at: Date.now(), tries: 0 });
+  const png = await CAP.captchaImage(code).catch(() => null);
+  const e = new EmbedBuilder().setColor(0x57f287).setTitle('🔐 One quick check')
+    .setDescription(png ? 'Type the code in the picture. Capitals or not, both are fine.' : `Type this code: **${CAP.codeText(code)}**`).setFooter({ text: `${CAPTCHA_TRIES} tries · 10 minutes` });
+  if (png) e.setImage('attachment://code.png');
+  return i.reply({ embeds: [e], files: png ? [{ attachment: png, name: 'code.png' }] : [], flags: EPH,
+    components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('verify:enter').setLabel('Type the code').setEmoji('⌨️').setStyle(ButtonStyle.Primary))] });
+}
+async function captchaEnter(ctx, i) {
+  if (!captchas.has(`${ctx.guildId}:${i.user.id}`)) throw new UserError('That code ran out. Press **Verify me** again for a new one.');
+  return i.showModal(new ModalBuilder().setCustomId('verify:code').setTitle('Verification code').addComponents(new ActionRowBuilder().addComponents(
+    new TextInputBuilder().setCustomId('code').setLabel('The code from the picture').setStyle(TextInputStyle.Short).setMinLength(CAP.CODE_LENGTH).setMaxLength(12).setRequired(true))));
+}
+async function captchaSubmit(ctx, i) {
+  const key = `${ctx.guildId}:${i.user.id}`, c = captchas.get(key);
+  if (!c || Date.now() - c.at > CAPTCHA_MS) { captchas.delete(key); throw new UserError('That code ran out. Press **Verify me** again for a new one.'); }
+  if (!CAP.codeMatches(i.fields.getTextInputValue('code'), c.code)) {
+    c.tries += 1;
+    if (c.tries >= CAPTCHA_TRIES) { captchas.delete(key); throw new UserError('That wasn\'t it, and that was the last try. Press **Verify me** again for a new code.'); }
+    throw new UserError(`That wasn't it. ${CAPTCHA_TRIES - c.tries} ${CAPTCHA_TRIES - c.tries === 1 ? 'try' : 'tries'} left: press **Type the code** again.`);
+  }
+  captchas.delete(key);
+  const role = i.guild.roles.cache.get(ctx.config.get('verificationRole'));
+  if (!role) throw new UserError('Verification is not set up right now. Tell an admin to run `/verify status`.');
+  return grantVerified(ctx, i, role);
+}
+async function grantVerified(ctx, i, role) {
   await i.member.roles.add(role, 'Verified via button').catch((e) => { ctx.log.warn(`Verify role add failed: code=${e.code}`); throw new UserError("I couldn't give you the role - an admin needs to move my role above it (`/verify status` shows what's wrong)."); });
   const un = ctx.config.get('unverifiedRole');
   if (un && i.member.roles.cache.has(un)) await i.member.roles.remove(un).catch(() => {});
@@ -451,6 +487,7 @@ export default {
     { key: 'goodbyeImage', type: 'text', label: 'Goodbye picture (set with /greeting image)', default: '' },
     { key: 'verificationRole', type: 'role', label: 'Role given after verifying' },
     { key: 'unverifiedRole', type: 'role', label: 'Role new members get until verified (optional)' },
+    { key: 'verifyCaptcha', type: 'toggle', label: 'Captcha: members type a code from a picture to verify (stops bot accounts)', default: false },
     { key: 'verifyMessage', type: 'text', label: 'Verification panel text', default: 'Press the button below to verify and unlock the server.' },
     { key: 'verifyChannel', type: 'channel', label: 'Channel holding the verification panel' },
     { key: 'profilesEnabled', type: 'toggle', label: 'Custom profile roles', default: true },
@@ -530,7 +567,7 @@ export default {
     },
   ],
   components: [
-    { prefix: 'verify:', execute: (ctx, i) => (i.customId.startsWith('verify:form:') ? verifyForm(ctx, i) : verifyClick(ctx, i)) },
+    { prefix: 'verify:', execute: (ctx, i) => (i.customId.startsWith('verify:form:') ? verifyForm(ctx, i) : i.customId === 'verify:enter' ? captchaEnter(ctx, i) : i.customId === 'verify:code' ? captchaSubmit(ctx, i) : verifyClick(ctx, i)) },
     { prefix: 'intro:', execute: introSubmit },
     { prefix: 'greet:', execute: greetingImageSubmit },
   ],

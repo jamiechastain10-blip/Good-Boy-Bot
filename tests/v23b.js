@@ -383,7 +383,7 @@ export default async function runV23bTests({ test }) {
     assert.equal(F.levelFromXp(F.xpForLevel(100) - 1).level, 99);
     assert.equal(F.levelFromXp(F.xpForLevel(70)).level, 70);
     // Rods unlock in order and each new one is better.
-    for (let k = 1; k < F.RODS.length; k++) assert.ok(F.RODS[k].level > F.RODS[k - 1].level && F.RODS[k].luck > F.RODS[k - 1].luck);
+    { const shop = F.RODS.filter((r) => !r.earn); for (let k = 1; k < shop.length; k++) assert.ok(shop[k].level > shop[k - 1].level && shop[k].luck > shop[k - 1].luck); }
     assert.ok(F.BAITS.find((b) => b.id === 'stormfly') && F.BAITS.find((b) => b.id === 'starlure'));
     // XP multiplier by place.
     const c = { rarity: 'epic', mutation: null, giant: false };
@@ -403,7 +403,7 @@ export default async function runV23bTests({ test }) {
     const p = ctx.sql.get('SELECT xp FROM games_fish_profile WHERE guild_id = ? AND user_id = ?', G, 'u1');
     assert.equal(F.levelFromXp(p.xp).level, 100);
     const src = fs.readFileSync(new URL('../modules/games/index.js', import.meta.url), 'utf8');
-    assert.match(src, /F\.catchXp\(c, sp\.biome\)/, 'landing a fish uses the place it came from');
+    assert.match(src, /F\.catchXp\(c, sp\.biome[,)]/, 'landing a fish uses the place it came from');
     assert.match(src, /lv\.max \?/, 'the hub has a max-level line instead of dividing by zero');
   });
 
