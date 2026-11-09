@@ -1,5 +1,134 @@
 # Changelog
 
+## 3.1.0
+**Good Boy can replace your other bots: families, roleplay, giveaways, invite tracking, modmail, a coin shop, six new arcade games, Critters to catch, a new rods system for fishing, a scam-link filter, captcha, staff applications, and a much stronger music player.**
+
+<!-- members -->
+big one 🎉 you can marry people and adopt them now, then see your whole family as a picture with /family tree. there's /rp to hug, pat, boop and bonk each other (with cute animations), giveaways with an enter button, /rank is a proper card now, the music player has a real queue (spotify playlists and bandlab links work now), and you can DM the bot to talk to staff privately. /highlight pings you when someone says your word, and you can translate any message with right-click, apps, translate. there's also a coin shop, /work and /bank, six new arcade games, /fun, and critters to catch while you chat 🐾
+<!-- /members -->
+
+**Families**
+- `/marry @member` proposes; they press **Accept** or **Decline**. `/family adopt`, `divorce`, `disown` and `leave`, with confirm buttons.
+- `/family tree` draws the whole family as a picture: couples side by side, children below, you highlighted (text when pictures are off). `/family info` lists partner, parent, children and siblings.
+- No marrying or adopting someone already in your family, one parent per child, and limits a server can change (partners, children).
+
+**Roleplay**
+- `/rp`: hug, cuddle, kiss, hold hands, high five, pat, boop, poke, tickle, feed, bonk, slap, bite, wave, dance, cry, blush, smile, laugh and sleep, with a "do it back" button and a count per pair.
+- Good Boy's own animations (two little pups) out of the box. The bot owner can add a free Tenor key (`/rp` → Tenor GIFs) for real GIFs, safe-search on.
+
+**Giveaways**
+- `/giveaway start` opens a form: prize, length, winners, channel and an optional role needed to win. **Enter** toggles; winners are drawn fairly when time is up; a prize like "5000 coins" is paid automatically. `end`, `reroll` and `list`, plus a dashboard panel.
+
+**Server tools**
+- **Invite tracking:** who invited each new member, still here vs left, new accounts flagged, `/invites user` and `/invites top`, and an optional "joined, invited by" line.
+- **Rank cards:** `/rank` is a picture card with avatar, level, rank and XP bar.
+- **Repeating messages:** scheduled announcements can repeat every 1, 2, 3, 6 or 12 hours, as well as daily or weekly.
+- **Temporary bans:** `/ban duration:7d` and the ban lifts by itself, logged as a case.
+- **Modmail:** members DM the bot to reach staff; it opens a private thread in the staff channel. Staff reply there, `//` lines are staff notes, **Close** and **Block** buttons.
+- **Highlights:** `/highlight add pizza` and you get a DM when someone says it (not while you're chatting there, one DM per channel per 5 minutes).
+- **Translate:** right-click a message → Apps → **Translate**, in your Discord language, only you see it.
+- **Bluesky, Kick and Mastodon:** `/feed add provider:bluesky` posts new Bluesky posts (not replies or reposts), `provider:kick` announces when a Kick channel goes live, and `provider:mastodon` follows a Mastodon account. None of them need keys. (TikTok and Instagram don't let bots read posts without logging in, so they can't be followed reliably.)
+- **Twitch live alerts:** `/feed add provider:twitch` after the bot owner adds free Twitch keys with `/feed twitch-keys`.
+
+**Verification**
+- **Captcha** (optional): switch on "Captcha" in the member settings and pressing **Verify me** shows a picture of a short code to type in. It stops bot accounts. 3 tries per code; look-alike letters (0/O, 1/I) are never used.
+
+**Tickets**
+- **Staff applications:** `/ticket type add` has an **application** option. Those tickets get **Accept application** and **Deny application** buttons (with a reason for the staff log and an optional message for the member), and an accepted member can automatically get a role you pick.
+- **Ratings:** when staff close a ticket, the member gets 1 to 5 star buttons by DM. Ratings go to the ticket log, and `/ticket stats` shows the average. Switch it off with "Ask the ticket owner for a rating" in the settings.
+
+**Custom commands**
+- **More power in replies:** `{random: pizza | tacos | sushi}` picks one, `{number: 1-100}` rolls a number, `{if: {arg1} = yes | Great! | Oh no}` answers differently (also `!=`, `contains`, or just "was something typed"), `{arg1}` to `{arg9}` are the words typed after the command, plus `{uses}`, `{membercount}` and `{date}`. Blocks work inside blocks. What members type is always plain text, so nobody can sneak commands in. `/tags use` takes words after the command too.
+
+**Role menus**
+- **Limits:** `/rolemenu create` has **max** (the most roles one member can pick from that menu), **needs** (only members with a certain role can use it, for example a level role) and **hours** (roles from it are taken away after that long, for event or "looking to play" roles). `/rolemenu limits` changes them on a menu you already posted.
+
+**Levels**
+- **XP boosts:** `/xp boost add` gives a role or channel more (or less) XP, from ×0.1 to ×5, for example ×1.5 for server Boosters or ×2 in an events channel. A member gets their best role boost, times the boost of the channel or category they're in. Works for message, voice and reaction XP.
+
+**Rank cards you can style**
+- Press **🎨 Customise** under your own `/rank` card to pick a theme (Dark, Light, Midnight, Sunset, Forest, Ocean or Candy), two colours, and a background picture (upload it to Discord, then copy its link; links from other sites aren't allowed). Staff can switch background pictures off.
+
+**Music**
+- A **Queue** button on the player: the whole list, pick a song to **Play next** or **Remove**, **Shuffle**, and **Repeat** one song or the whole queue. Members manage their own songs; the DJ role and staff manage everyone's.
+- **Spotify playlists and albums:** paste one and its songs go in the queue (as many as the queue limits allow, up to the first 100). Each song is found on YouTube when its turn comes, so adding a big playlist is quick. Needs media links switched on, like single Spotify songs.
+- **BandLab links play** (`bandlab.com/post/…` and `bandlab.com/track/…`), with the song name, artist and length, straight from BandLab's own song file. Like YouTube and Spotify, they need media links switched on in the server.
+- **More sites work:** when yt-dlp can't read a link, Good Boy looks in the page itself for its song (the audio a site shares for link previews, or an audio player on the page). Share links that redirect are followed.
+- Links to an audio file **without** .mp3 in the address (download links, for example) now play too, even with media links off.
+- **Fixed:** songs from links and radio stations stopped after about 15 seconds when the site was slow or the song was long, because the time limit for the site to answer kept running while the song played. Now it only covers the site answering, so songs play to the end and radio keeps going.
+- **Fixed:** a long song (like a whole soundtrack as one YouTube link) could stop partway through after the music was paused for a while, because the site dropped the idle connection. Songs from YouTube and other sites now play from their own address, so the player reconnects by itself. As a backup, a song that stops well before its end carries on from where it stopped.
+- **Fixed:** .m4a songs, including uploaded ones, were silent. They are now read as a whole file before they play.
+- The "media links are off" message now says exactly how the bot owner turns them on.
+
+**Critters** (new module: Good Boy's own collecting game)
+- **52 original critters** across 8 elements (fire, water, leaf, spark, stone, frost, shadow and sky), from common to 4 legendaries, each with its own drawn picture. About 1 in 400 is ✨ **Sparkly**.
+- **Wild critters appear while people chat** (about every 30 messages, at most one every 90 seconds). The first to press **Catch** and type its name keeps it. **Hint** shows a few letters. Staff pick the channels with `/critters here`.
+- `/critters list`, `info` (picture and stats), `dex` (your collection), `buddy` (your buddy gains XP while you chat), `rename`, `trade` (swap one of yours for one of theirs; both agree), `battle` (buddies fight, with element advantages; the winner gets XP) and `release` (let one go for coins).
+
+**Counting and word chain** (new module)
+- `/counting here` turns a channel into a **counting** channel: count up one at a time (simple sums like `12+1` count too), nobody goes twice in a row, a mistake starts again from 1, and the best run is kept. If someone deletes the latest number, the bot says what comes next.
+- `/counting words-here` starts a **word chain**: each word starts with the last letter of the one before, with no repeats.
+- `/counting stats` shows the current runs, records and top players.
+
+**Server backup** (new module)
+- `/backup create` saves the server's roles (with their permissions and colours), categories, channels and channel permissions. The last 10 are kept, and one is made automatically every week (a setting).
+- `/backup restore` shows what's missing compared to a backup, then puts back only that. It never deletes or changes anything that's still there. Restoring needs Administrator.
+- `/backup download` gives you the backup as a file. There's also a Backups page in the dashboard with a **Back up now** button.
+- Messages and members can't be backed up: Discord doesn't let bots restore those.
+
+**Economy**
+- **`/shop`:** staff add roles (for good, or for a number of hours) and collectible items (optionally used up, with a message when used, and optional limited stock) with **Add item**. Members buy from a menu. A **Streak Shield** is always for sale. Items go into an **Inventory**.
+- **Starter items in every shop** (staff can change their prices, take them out, or bring them back from the dashboard): 🍀 **Lucky charm** (+30% fishing luck for an hour), 💼 **Work boost** (+50% from `/work` for 24 hours), 🦴 **Pet treat** (makes your pet happier and less hungry right away), and 🎟️ **Lottery tickets**: everything spent on tickets is the prize, and one winner is drawn every Monday (the winner gets a DM, and it can be announced in a channel you pick).
+- **`/work`:** do a job once an hour for 50 to 200 coins (all three numbers are settings), with Good Boy-style jobs like walking dogs and baking biscuits.
+- **`/rob`** (off until a server turns it on): a 45% chance to take 10–35% of someone's wallet, otherwise you pay them a fine. Coins in the bank can't be stolen, there's a cooldown, and nobody can be robbed twice in a row within 2 hours. A **Padlock** from the shop stops the next robbery and the robber pays you instead.
+- **`/pet`:** adopt a pet (puppy, kitten, bunny, hamster, fox, owl, turtle, or a pricey dragon), feed and play with it. A fed, happy pet levels up and adds up to +25% to `/work`. Pets never die; neglected ones just stop helping.
+- **Coin events** while people chat (a setting, about every 150 messages): a bag of coins for whoever grabs it first, or a chest shared between everyone who presses in 30 seconds.
+- **`/bank`:** deposit and withdraw. Coins in the bank are safe from bets and purchases, and earn **1% interest a day** (up to 1,000 a day; both are settings).
+
+**Arcade: six new games** (in `/arcade`, each with a bet form, and each can be switched off in the games settings)
+- 🗼 **Tower:** climb 8 floors picking one of 3 doors; one hides a trap. Cash out any time, up to about 20x at the top.
+- 💣 **Wires:** 5 wires, one is the bomb. Every safe cut pays more; cash out any time.
+- 🔢 **Bingo:** a 3×3 card and up to 10 draws. A line within 5 draws pays 4x, within 7 pays 2x, within 10 pays 1.1x.
+- 🃏 **Memory:** flip cards to match 8 pairs. 6 or fewer mistakes pay 2x.
+- 🪢 **Hangman:** guess the word (a letter, or the whole word if you're brave). Fewer wrong guesses pay more.
+- ❓ **Trivia:** one question, 4 answers, 20 seconds. Categories: general, science, geography, games and anime.
+
+**Fun** (new module)
+- `/fun 8ball`, `/fun dice` (up to 10 dice with up to 1000 sides), `/fun ship` (how well two members match, always the same for the same two people) and `/fun topic` (something to talk about).
+
+**Fishing**
+- **New rods system.** Every rod now has a **perk** and **home places** where it's stronger (more luck, pull and line). Some examples: Cinderspine's line never snaps in Cinder Vents and Emberfall Caldera, Quicksilver makes fish bite much faster, Voidreach finds 2.5× more Corrupted fish, and Wyrmspine makes legendary and mythical fish fight 40% less. An older rod can be the best pick for its own places.
+- **Upgrade rods from ★1 to ★5** on the new **Rods** page in `/fish`. Each star costs coins plus fish from your bag (common, then uncommon, rare and epic fish). Mutated fish are never used. Stars add pull, luck, line and, at ★3 and ★5, a wider zone.
+- **Rods you earn, not buy:**
+  - **Keepsake rods:** catch every fish in a place to earn that place's own rod.
+  - **Sunken rods:** a rare catch in Ironwreck Graveyard is an old rod instead of a fish. There are three to find (the Anchorchain Rod makes it 3× as likely).
+  - **Challenge rods:** the Streakline Rod for a 7-day challenge streak, the Taskmaster Rod for 10 weekly challenges, and the Grand Angler Rod for a 30-day streak.
+- **Endgame rods** at levels 2800, 3200 and 3600, and **Leviathan's Oath**, the Mythic rod at level 4000: at home in every place, +20% XP, and its line never snaps.
+- Your rods' stars and perks show when you pick a rod to cast with.
+- **Fixed:** casting could say "You already have a fish on the line" with nothing showing. That happened when the fish had already swum off, or when the fishing message was dismissed or didn't arrive. Now a fish that swam off is cleared and you just cast; one that's still on the line is shown to you again so you can reel it in.
+
+**AutoMod**
+- **Scam and phishing link filter**, on by default: fake Discord and Steam sites (like dlscord-gift.com or steamcommunlty.com) and "free Nitro" style bait links are deleted and the sender is timed out. These usually come from hacked accounts, so the message tells them how to secure it. Your allowed-links list never lets these through.
+
+**Moderation**
+- **Warnings can lead to a kick or ban:** set "Auto-kick at this many warnings" and "Auto-ban at this many warnings" in the moderation settings (both off until you set them). The existing timeout every N warnings still works. Applies to warnings from `/warn`, the dashboard and AutoMod.
+
+**Dashboard and phone app**
+- New pages for the 3.1 features: **Shop** (add items, change prices and stock, remove), **XP boosts** (add, change, remove), **Role menus** (most roles at once, who can use them, how long roles last, delete), **Critter collectors** plus a button to make a critter appear, and **Ticket ratings** with a chart.
+- Pages can now have an **Add** form, on the computer and on the phone (Tools tab), and rows on the phone can be tapped for their actions.
+
+**Windows app: dashboard link**
+- **Already use Tailscale Funnel for something else?** Pick port 8443 or 10000 for Good Boy (Funnel allows three: 443, 8443 and 10000), and your other service on 443 is left alone.
+- **Use your own address:** paste an https address you've pointed at the dashboard (your own reverse proxy or tunnel). Good Boy checks it really reaches this dashboard, then uses it for the dashboard, the phone app and Discord sign-in, and keeps it after restarts.
+
+**Always online**
+- New guide, [docs/ALWAYS-ONLINE.md](docs/ALWAYS-ONLINE.md): keep Good Boy online when your PC is off, on a Raspberry Pi, a small cloud server or a spare computer.
+- `bash deploy/install-linux.sh` sets it all up on Raspberry Pi OS, Ubuntu or Debian: Node, the bot, your token, and a service that starts the bot at boot and restarts it after a crash. It can also load your data exported from the Windows app (`npm run import-data` does that too).
+- A `Dockerfile` and `docker-compose.yml` for people who use Docker.
+
+**Privacy**
+- The privacy page lists what the new features keep (families, roleplay counts, giveaway entries, invites, highlight words) and what is sent elsewhere (Translate to Google, Tenor and Twitch only when set up).
+
 ## 3.0.7
 **Fix: the Windows app could open to a white window. Updates are visible from the dashboard.**
 

@@ -18,7 +18,16 @@ export const DEFAULTS = Object.freeze({
   shareAuto: false,        // keep the public dashboard link on: checked at every start and fixed if it went off
   lastSeenVersion: '',     // the app version last opened (for What's new)
   keepAwake: false,        // stop the computer sleeping while the bot runs (the screen can still turn off)
+  sharePort: 443,          // 3.1: the Funnel port (443, 8443 or 10000), for people whose Funnel already uses 443
+  customLink: '',          // 3.1: an https address the person set up themselves (their own proxy or tunnel)
 });
+export const FUNNEL_PORTS = [443, 8443, 10000];
+/** An https address that is safe to use as the dashboard link (no paths, no private addresses). */
+export function cleanCustomLink(raw) {
+  let u; try { u = new URL(String(raw ?? '').trim()); } catch { return ''; }
+  if (u.protocol !== 'https:' || u.username || u.password || /^(localhost|127\.|10\.|192\.168\.|0\.)/.test(u.hostname)) return '';
+  return `${u.origin}`;
+}
 const CLOSE = ['minimize', 'quit'];
 const THEMES = ['system', 'light', 'dark'];
 
@@ -40,6 +49,8 @@ export function normalize(raw) {
     autoRestartForUpdates: bool(r.autoRestartForUpdates, DEFAULTS.autoRestartForUpdates),
     shareAuto: bool(r.shareAuto, DEFAULTS.shareAuto),
     keepAwake: bool(r.keepAwake, DEFAULTS.keepAwake),
+    sharePort: FUNNEL_PORTS.includes(Number(r.sharePort)) ? Number(r.sharePort) : DEFAULTS.sharePort,
+    customLink: cleanCustomLink(r.customLink),
     lastSeenVersion: typeof r.lastSeenVersion === 'string' && /^[0-9A-Za-z.+-]{0,32}$/.test(r.lastSeenVersion) ? r.lastSeenVersion : DEFAULTS.lastSeenVersion,
   };
 }

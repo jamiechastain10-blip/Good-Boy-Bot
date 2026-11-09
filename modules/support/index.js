@@ -68,6 +68,8 @@ const ctxs = (globalThis[Symbol.for('goodboy.support.ctxs')] ??= new Map());
 const api = {
   /** Is this channel an open or closed ticket? Other modules use it (Levels gives no XP in tickets). */
   isTicket(guildId, channelId) { return !!ctxs.get(guildId)?.data.get(`ticket:${channelId}`); },
+  /** 3.1: the ticket owner's 1-5 star rating, from the buttons in their DM. Returns the text to show them. */
+  rate(guildId, number, userId, stars) { const c = ctxs.get(guildId); if (!c) throw new UserError('Tickets are off in that server now.'); return rateTicket(c, Number(number), userId, Number(stars)); },
   /** `owner` is the add-on's module name; the format only applies in servers where that add-on is enabled. */
   registerTranscriptFormat(name, fn, owner) { if (!/^[a-z0-9-]{2,20}$/.test(name) || typeof fn !== 'function') throw new Error('bad format'); formats.set(name, { fn, owner }); },
   formats,
@@ -142,9 +144,12 @@ const controlEmbed = (t) => {
     .setDescription(`Opened by <@${t.opener}> ${ts(t.createdAt)}\nStaff will be with you shortly.`)
     .addFields({ name: 'Status', value: t.claimedBy ? `Claimed by <@${t.claimedBy}>` : 'Waiting for staff', inline: true }, { name: 'Urgency', value: u.label, inline: true });
   for (const a of t.answers ?? []) if (a.a) e.addFields({ name: truncate(a.q, 250), value: truncate(a.a, 1000) });
-  if (t.decision) e.addFields({ name: `Appeal ${t.decision.result}`, value: truncate(t.decision.message || 'The staff team has made a decision.', 500) });
+  if (t.decision) e.addFields({ name: `${t.decision.word ?? 'Appeal'} ${t.decision.result}`, value: truncate(t.decision.message || 'The staff team has made a decision.', 500) });
   return e;
 };
+/** Appeals and staff applications both get a staff decision (3.1 adds applications). */
+const decides = (cat) => !!(cat?.appeal || cat?.application);
+const decisionWord = (cat) => (cat?.application ? 'Application' : 'Appeal');
 const controlRows = (t, cat) => {
   const rows = [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('ticket:claim').setLabel(t.claimedBy ? 'Unclaim' : 'Claim').setStyle(ButtonStyle.Primary).setEmoji('🙋'),
@@ -152,9 +157,9 @@ const controlRows = (t, cat) => {
     new ButtonBuilder().setCustomId('ticket:prio').setLabel('Priority').setStyle(ButtonStyle.Secondary).setEmoji('🚦'),
     new ButtonBuilder().setCustomId('ticket:transcript').setLabel('Transcript').setStyle(ButtonStyle.Secondary).setEmoji('📄'),
   )];
-  if (cat?.appeal && !t.decision) rows.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('ticket:appeal:approve').setLabel('Approve appeal').setStyle(ButtonStyle.Success).setEmoji('✅'),
-    new ButtonBuilder().setCustomId('ticket:appeal:deny').setLabel('Deny appeal').setStyle(ButtonStyle.Danger).setEmoji('⛔'),
+  if (decides(cat) && !t.decision) rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('ticket:appeal:approve').setLabel(cat.application ? 'Accept application' : 'Approve appeal').setStyle(ButtonStyle.Success).setEmoji('✅'),
+    new ButtonBuilder().setCustomId('ticket:appeal:deny').setLabel(cat.application ? 'Deny application' : 'Deny appeal').setStyle(ButtonStyle.Danger).setEmoji('⛔'),
   ));
   return rows;
 };
@@ -415,12 +420,38 @@ async function closeTicket(ctx, channel, ticket, closer, { kind, form = null, ou
   else if (why) e.addFields({ name: 'Reason', value: truncate(why, 900) });
   if (form?.followup) e.addFields({ name: '⏭️ Follow-up needed', value: truncate(form.followup, 300) });
   if (outcome) e.addFields({ name: 'Report outcome', value: outcome === 'inconclusive' ? 'Inconclusive - the watch-log entry stays open' : `Marked **${outcome}** on the watch log`, inline: true });
-  if (ticket.decision) e.addFields({ name: `Appeal ${ticket.decision.result}`, value: truncate(ticket.decision.reason, 500), inline: true });
+  if (ticket.decision) e.addFields({ name: `${ticket.decision.word ?? 'Appeal'} ${ticket.decision.result}`, value: truncate(ticket.decision.reason, 500), inline: true });
   await logTo(ctx, { embeds: [e], files: file ? [file] : [] });
   if (file && ctx.config.get('dmTranscript')) {
     const user = await ctx.client.users.fetch(ticket.opener).catch(() => null);
     await user?.send({ content: `Transcript of your ticket ${numberTag(ticket)} in **${truncate(ctx.guild.name, 60)}**:`, files: [file] }).catch(() => {});
   }
+  // 3.1: ask the member how it went (not for auto-closed tickets or ones they closed themselves).
+  if (ctx.config.get('askRating') && kind !== 'auto' && closer.id !== ticket.opener) {
+    const user = await ctx.client.users.fetch(ticket.opener).catch(() => null);
+    await user?.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('How did we do?').setDescription(`Your ticket ${numberTag(ticket)} in **${truncate(ctx.guild.name, 60)}** was closed. How happy are you with the help you got?`)],
+      components: [ratingRow(ctx.guildId, ticket.number)] }).catch(() => {});
+  }
+}
+
+// ------------------------------------------------------------------ ratings (3.1)
+export const ratingRow = (guildId, number) => new ActionRowBuilder().addComponents([1, 2, 3, 4, 5].map((n) =>
+  new ButtonBuilder().setCustomId(`rate:${guildId}:${number}:${n}`).setLabel('⭐'.repeat(n)).setStyle(n >= 4 ? ButtonStyle.Success : n <= 2 ? ButtonStyle.Danger : ButtonStyle.Secondary)));
+async function rateTicket(ctx, number, userId, stars) {
+  if (!(stars >= 1 && stars <= 5)) throw new UserError('Pick 1 to 5 stars.');
+  const row = ctx.sql.get('SELECT opener_id, claimed_by FROM support_history WHERE guild_id = ? AND number = ?', ctx.guildId, number);
+  if (!row || row.opener_id !== userId) throw new UserError("That isn't your ticket.");
+  const key = `rating:${number}`;
+  if (ctx.data.get(key)) return 'You already rated this ticket. Thank you!';
+  ctx.data.set(key, { stars, by: userId, staff: row.claimed_by ?? null, at: Date.now() });
+  await logTo(ctx, { embeds: [new EmbedBuilder().setColor(stars >= 4 ? 0x57f287 : stars <= 2 ? 0xed4245 : 0xf1c40f).setTitle(`${'⭐'.repeat(stars)} rating · ticket #${String(number).padStart(4, '0')}`)
+    .setDescription(`From <@${userId}>${row.claimed_by ? ` · handled by <@${row.claimed_by}>` : ''}`).setTimestamp()] }).catch(() => {});
+  return `Thanks! You gave ${'⭐'.repeat(stars)}.`;
+}
+/** Average rating and count over the last `days` days. */
+export function ratingSummary(ratings, now = Date.now(), days = 30) {
+  const list = ratings.filter((r) => now - r.at <= days * 86400000);
+  return { count: list.length, avg: list.length ? Math.round((list.reduce((a, r) => a + r.stars, 0) / list.length) * 10) / 10 : null };
 }
 
 /** The popup staff must fill in to close a ticket. Report tickets pick an outcome first (a button), so it is never typed. */
@@ -546,26 +577,34 @@ async function onComponent(ctx, i) {
 
   // ---- appeal decisions (required reason)
   if (action === 'appeal') {
-    if (!staff) throw new UserError('Only staff can decide appeals.');
-    if (!cat?.appeal) throw new UserError('This is not an appeal.');
+    if (!staff) throw new UserError('Only staff can decide appeals and applications.');
+    if (!decides(cat)) throw new UserError('This is not an appeal or application.');
     if (ticket.decision) throw new UserError('A decision has already been made.');
-    return i.showModal(modalFrom(`ticket:af:${forms.put({ by: i.user.id, kind: 'appeal', result: arg === 'approve' ? 'approved' : 'denied', channelId: i.channelId })}`,
-      arg === 'approve' ? 'Approve this appeal' : 'Deny this appeal', [REASON('Why? (kept in the staff log)'), { id: 'message', label: 'Message to the member (optional)', style: 'paragraph', required: false, max: 600 }]));
+    const app = !!cat.application;
+    return i.showModal(modalFrom(`ticket:af:${forms.put({ by: i.user.id, kind: 'appeal', result: arg === 'approve' ? (app ? 'accepted' : 'approved') : 'denied', channelId: i.channelId })}`,
+      arg === 'approve' ? (app ? 'Accept this application' : 'Approve this appeal') : (app ? 'Deny this application' : 'Deny this appeal'), [REASON('Why? (kept in the staff log)'), { id: 'message', label: 'Message to the member (optional)', style: 'paragraph', required: false, max: 600 }]));
   }
   if (action === 'af') {
     const f = forms.take(arg, i.user.id);
-    if (!staff) throw new UserError('Only staff can decide appeals.');
+    if (!staff) throw new UserError('Only staff can decide appeals and applications.');
     if (ticket.decision) throw new UserError('A decision has already been made.');
+    const word = decisionWord(cat);
     const get = getter(i);
     const reason = String(get('reason')).trim();
     if (!reason) throw new UserError('A reason is required for an appeal decision.');
-    ticket.decision = { result: f.result, reason: truncate(reason, 800), message: String(get('message')).trim() || null, by: i.user.id, at: Date.now() };
+    ticket.decision = { word, result: f.result, reason: truncate(reason, 800), message: String(get('message')).trim() || null, by: i.user.id, at: Date.now() };
     saveTicket(ctx, i.channelId, ticket);
-    await i.reply({ content: `Appeal ${f.result}. Your reason is in the staff log.`, flags: EPH });
-    await i.channel.send({ content: `<@${ticket.opener}>`, embeds: [new EmbedBuilder().setColor(f.result === 'approved' ? 0x57f287 : 0xed4245).setTitle(`Appeal ${f.result}`)
-      .setDescription(ticket.decision.message ? truncate(ticket.decision.message, 1500) : 'The staff team has reviewed your appeal.').setFooter({ text: `Decided by ${i.user.tag}` })], allowedMentions: { users: [ticket.opener] } });
+    // An accepted application can come with a role (set on the ticket type).
+    let roleNote = '';
+    if (f.result === 'accepted' && cat?.role) {
+      const m = await i.guild.members.fetch(ticket.opener).catch(() => null);
+      roleNote = await m?.roles.add(cat.role, `Application accepted by ${i.user.tag}`).then(() => `\nThey got <@&${cat.role}>.`).catch(() => `\nI couldn't give them <@&${cat.role}> (my role must be above it).`) ?? '\nThey are no longer in the server, so no role was given.';
+    }
+    await i.reply({ content: `${word} ${f.result}. Your reason is in the staff log.${roleNote}`, flags: EPH, allowedMentions: { parse: [] } });
+    await i.channel.send({ content: `<@${ticket.opener}>`, embeds: [new EmbedBuilder().setColor(f.result === 'denied' ? 0xed4245 : 0x57f287).setTitle(`${word} ${f.result}`)
+      .setDescription(ticket.decision.message ? truncate(ticket.decision.message, 1500) : `The staff team has reviewed your ${word.toLowerCase()}.`).setFooter({ text: `Decided by ${i.user.tag}` })], allowedMentions: { users: [ticket.opener] } });
     await refreshControl(ctx, i.channel, ticket);
-    return logTo(ctx, { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`Appeal ${f.result} · ticket ${numberTag(ticket)}`).setDescription(`By <@${i.user.id}> for <@${ticket.opener}>\n**Reason:** ${truncate(reason, 900)}`).setTimestamp()] }, { staffOnly: true });
+    return logTo(ctx, { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`${word} ${f.result} · ticket ${numberTag(ticket)}`).setDescription(`By <@${i.user.id}> for <@${ticket.opener}>\n**Reason:** ${truncate(reason, 900)}`).setTimestamp()] }, { staffOnly: true });
   }
 }
 
@@ -710,8 +749,11 @@ async function ticketCommand(ctx, i) {
     const questions = (i.options.getString('questions') ?? '').split('|').map((q) => q.trim()).filter(Boolean).slice(0, 5).map((q) => truncate(q, 45));
     const catId = i.options.getChannel('category')?.id;
     if (catId && ctx.guild.channels.cache.get(catId)?.type !== ChannelType.GuildCategory) throw new UserError('That channel is not a category.');
-    ctx.data.set('types', [...list, { id, label, emoji: i.options.getString('emoji')?.trim().slice(0, 40) || undefined, questions, categoryId: catId }]);
-    return i.reply({ content: `Added ticket type **${label}**${questions.length ? ` with ${questions.length} form question(s)` : ''}. Post a panel with \`/ticket panel\`.`, flags: EPH });
+    const application = !!i.options.getBoolean('application');
+    const role = i.options.getRole('role')?.id ?? null;
+    if (role && !application) throw new UserError('A role is given when an application is accepted, so turn on `application` too.');
+    ctx.data.set('types', [...list, { id, label, emoji: i.options.getString('emoji')?.trim().slice(0, 40) || undefined, questions, categoryId: catId, application, role }]);
+    return i.reply({ content: `Added ticket type **${label}**${questions.length ? ` with ${questions.length} form question(s)` : ''}${application ? `. It's an application: staff get **Accept** and **Deny** buttons${role ? `, and accepted members get <@&${role}>` : ''}` : ''}. Post a panel with \`/ticket panel\`.`, flags: EPH, allowedMentions: { parse: [] } });
   }
 
   if (sub === 'setup') return ticketSetup(ctx, i);
@@ -736,6 +778,7 @@ async function ticketCommand(ctx, i) {
     return i.reply({ flags: EPH, embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('Ticket stats').addFields(
       { name: 'Open now', value: String(open), inline: true }, { name: 'Opened (all time)', value: String(s.opened ?? 0), inline: true }, { name: 'Closed (all time)', value: String(s.closed ?? 0), inline: true },
       { name: `Last ${days} days`, value: `${sum.total} ticket(s) · first reply ${dur(sum.avgFirstResponseMs)} · to close ${dur(sum.avgResolutionMs)}\n${sum.autoClosed} auto-closed · ${sum.withoutNotes} closed without notes`, },
+      ...(() => { const r = ratingSummary(ctx.data.list('rating:').map((x) => x.value), Date.now(), days); return r.count ? [{ name: 'Ratings', value: `⭐ **${r.avg}** out of 5 from ${r.count} member${r.count === 1 ? '' : 's'}`, inline: true }] : []; })(),
       ...(cats ? [{ name: 'By category', value: truncate(cats, 900) }] : []))] });
   }
 
@@ -779,7 +822,7 @@ async function ticketCommand(ctx, i) {
       .addFields({ name: 'Category', value: `${cat?.emoji ?? ''} ${ticket.typeLabel}`, inline: true }, { name: 'Urgency', value: urgencyOf(ticket).label, inline: true }, { name: 'Opened by', value: `<@${ticket.opener}> ${ts(ticket.createdAt)}`, inline: true });
     if (ticket.report) e.addFields({ name: 'Reported person', value: `${ticket.report.id ? `<@${ticket.report.id}> (\`${ticket.report.id}\`)` : ''} ${ticket.report.name ?? ''}`.trim() });
     if (ticket.priorityLog?.length) e.addFields({ name: 'Priority changes', value: truncate(ticket.priorityLog.slice(-5).map((p) => `${p.from} → ${p.to} by <@${p.by}>: ${truncate(p.reason, 120)}`).join('\n'), 900) });
-    if (ticket.decision) e.addFields({ name: `Appeal ${ticket.decision.result}`, value: truncate(ticket.decision.reason, 500) });
+    if (ticket.decision) e.addFields({ name: `${ticket.decision.word ?? 'Appeal'} ${ticket.decision.result}`, value: truncate(ticket.decision.reason, 500) });
     e.addFields({ name: 'Watch log', value: matches.length ? truncate(describeMatches(matches, earlier), 1000) : 'No matches.' });
     return i.reply({ embeds: [e], flags: EPH, allowedMentions: NOPING });
   }
@@ -931,6 +974,7 @@ export default {
     { key: 'unfoundedRetentionDays', type: 'number', label: 'Delete entries marked unfounded after N days (0 = same as above)', default: 30, min: 0, max: 3650 },
     { key: 'transcriptFormat', type: 'select', label: 'Transcript format', description: 'html needs the support-html-transcripts add-on', options: ['txt', 'html'], default: 'txt' },
     { key: 'dmTranscript', type: 'toggle', label: 'DM the transcript to the ticket owner', default: true },
+    { key: 'askRating', type: 'toggle', label: 'Ask the ticket owner for a 1-5 star rating when staff close their ticket', default: true },
     { key: 'deleteDelaySeconds', type: 'number', label: 'Seconds before a deleted ticket vanishes', default: 5, min: 1, max: 60 },
     { key: 'archiveTickets', type: 'toggle', label: 'Keep every ticket message and file in the archive on this computer', default: true },
   ],
@@ -983,7 +1027,9 @@ export default {
             .addStringOption((o) => o.setName('label').setDescription('Name, e.g. Event help').setRequired(true).setMaxLength(40))
             .addStringOption((o) => o.setName('emoji').setDescription('Emoji for the button'))
             .addStringOption((o) => o.setName('questions').setDescription('Form questions separated by | (max 5)'))
-            .addChannelOption((o) => o.setName('category').setDescription('Category for this type\'s channels')))
+            .addChannelOption((o) => o.setName('category').setDescription('Category for this type\'s channels'))
+            .addBooleanOption((o) => o.setName('application').setDescription('A staff application: staff get Accept and Deny buttons'))
+            .addRoleOption((o) => o.setName('role').setDescription('Give this role when an application is accepted')))
           .addSubcommand((s) => s.setName('remove').setDescription('Remove a type').addStringOption((o) => o.setName('id').setDescription('Type id (see list)').setRequired(true)))
           .addSubcommand((s) => s.setName('list').setDescription('List types')))
         .addSubcommandGroup((g) => g.setName('watch').setDescription('(Staff) The watch log of reported people')
@@ -1027,6 +1073,13 @@ export default {
   },
   tasks: [{ name: 'maintenance', everyMs: 600000, run: maintenance }],
   views: {
+    async ratings(ctx) {
+      const list = ctx.data.list('rating:').map(({ key, value }) => ({ number: Number(key.slice(7)), ...value })).sort((a, b) => b.at - a.at);
+      const name = (id) => (id ? ctx.guild?.members.cache.get(id)?.displayName ?? id : '—');
+      const sum = ratingSummary(list, Date.now(), 30);
+      return { rows: list.slice(0, 100).map((r) => ({ id: String(r.number), number: `#${String(r.number).padStart(4, '0')}`, stars: '⭐'.repeat(r.stars), member: name(r.by), staff: name(r.staff), when: when(r.at) })),
+        charts: list.length ? [{ title: `Ratings (last 30 days: ${sum.avg ?? '—'} average from ${sum.count})`, bars: [1, 2, 3, 4, 5].map((n) => ({ label: `${n} star${n === 1 ? '' : 's'}`, short: '⭐'.repeat(n), value: list.filter((r) => r.stars === n).length })) }] : [] };
+    },
     /**
      * The ticket archive: every ticket, newest first. Query: search (words in any message), status (open|closed),
      * type, staff (who closed or claimed it), reported (an id), page.
@@ -1105,6 +1158,8 @@ export default {
     },
   },
   panels: [
+    { id: 'ratings', title: 'Ticket ratings', view: 'ratings', permission: 'support.staff', empty: 'No ratings yet. Members are asked for one when staff close their ticket.',
+      columns: [{ key: 'number', label: 'Ticket' }, { key: 'stars', label: 'Rating' }, { key: 'member', label: 'From' }, { key: 'staff', label: 'Handled by' }, { key: 'when', label: 'When' }] },
     { id: 'archive', title: 'Ticket archive', view: 'archive', pageViews: ['archiveTicket'], permission: 'support.staff', private: true, kind: 'ticket-archive',
       description: 'Every ticket with its messages and files, read like the Discord chat it came from.', empty: 'No tickets yet.',
       columns: [{ key: 'number', label: '#' }, { key: 'type', label: 'Type' }, { key: 'status', label: 'Status' }, { key: 'messages', label: 'Messages' }] },

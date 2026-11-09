@@ -39,7 +39,7 @@ export function findCategory(id, custom = []) {
   const built = CATEGORIES.find((c) => c.id === id);
   if (built) return built;
   const t = custom.find((c) => c.id === id);
-  return t ? { id: t.id, emoji: t.emoji ?? '🎫', label: t.label, urgency: 'normal', custom: true, questions: t.questions ?? [], categoryId: t.categoryId } : null;
+  return t ? { id: t.id, emoji: t.emoji ?? '🎫', label: t.label, urgency: 'normal', custom: true, questions: t.questions ?? [], categoryId: t.categoryId, application: !!t.application, role: t.role ?? null } : null;
 }
 
 /** Evidence uploads: every form ends with this (Discord allows up to 10 files). */

@@ -1,0 +1,12 @@
+# Basic Ghost Labs - Good Boy: `docker compose up -d` (see docs/ALWAYS-ONLINE.md)
+services:
+  goodboy:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DASHBOARD_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:3000:3000"   # the dashboard, on this machine only; put a tunnel or proxy in front for a public link
+    volumes:
+      - ./data:/app/data

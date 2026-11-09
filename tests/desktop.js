@@ -619,7 +619,7 @@ export default async function ({ test }) {
     // the app: one setup button, the link back on at every start, the phone code opens the phone page
     const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
     for (const k of ["ipcMain.handle('gb:share-setup'", "step('install'", "step('login'", "step('funnel'", "step('discord'", 'openTailscale(l.link ?? st.link)', 'openTailscale(on.link)', 'if (isTailscaleLink(u)) shell.openExternal(u)']) assert.ok(main.includes(k), k);
-    assert.match(main, /if \(!smokeDir && settings\.shareAuto\) \{ setTimeout\(\(\) => keepShared\(\)/);
+    assert.match(main, /if \(!smokeDir && \(settings\.shareAuto \|\| settings\.customLink\)\) \{ setTimeout\(\(\) => keepShared\(\)/);
     assert.match(main, /const phoneLink = \(url\) => `\$\{url\}\/app\?pair=1`/);
     assert.match(main, /powerSaveBlocker\.start\('prevent-app-suspension'\)/);
     const { normalize: norm } = await import('../desktop/lib/settings.js');
@@ -630,6 +630,23 @@ export default async function ({ test }) {
     const act = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'basicghostlabs', 'goodboy', 'MainActivity.java'), 'utf8');
     assert.match(act, /Connect to this bot\?/); assert.match(act, /cleanBase\(d\.getQueryParameter\("url"\)\)/);
     assert.match(fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8'), /android:scheme="goodboy" android:host="pair"/);
+  });
+
+  await test('share dashboard (3.1): another Funnel port for people whose Funnel already uses 443, and their own https address (checked, no paths or private addresses)', async () => {
+    const { normalize, cleanCustomLink, FUNNEL_PORTS } = await import('../desktop/lib/settings.js');
+    assert.deepEqual(FUNNEL_PORTS, [443, 8443, 10000]);
+    assert.equal(normalize({ sharePort: 8443 }).sharePort, 8443); assert.equal(normalize({ sharePort: 1234 }).sharePort, 443);
+    assert.equal(cleanCustomLink('https://bot.example.com/some/path?x=1'), 'https://bot.example.com');
+    assert.equal(cleanCustomLink('http://bot.example.com'), '', 'https only');
+    assert.equal(cleanCustomLink('https://127.0.0.1:3000'), ''); assert.equal(cleanCustomLink('https://user:pw@bot.example.com'), '');
+    assert.equal(normalize({ customLink: 'https://x.example.org/a' }).customLink, 'https://x.example.org');
+    const calls = [];
+    const exec = (bin, args, o, cb) => { calls.push(args.join(' ')); const out = args[0] === 'status' ? JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'pc.tail1.ts.net.' } }) : args[0] === 'funnel' && args[1] === 'status' ? JSON.stringify({ Web: { 'pc.tail1.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:9999' } } }, 'pc.tail1.ts.net:8443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3000' } } } }, AllowFunnel: { 'pc.tail1.ts.net:443': true, 'pc.tail1.ts.net:8443': true } }) : ''; cb(null, out, ''); };
+    const sh = new Share({ execFile: exec, exists: () => true, platform: 'linux' }); sh.bin = 'tailscale';
+    const st = await sh.status(3000, 8443);
+    assert.deepEqual([st.state, st.url], ['on', 'https://pc.tail1.ts.net:8443'], 'our dashboard on 8443, someone else\'s thing on 443');
+    assert.equal((await sh.status(3000, 443)).state, 'off', 'the 443 entry belongs to the other service');
+    await sh.off(8443); assert.ok(calls.includes('funnel --https=8443 off'), 'only our port is turned off');
   });
 
   await test('share dashboard: finds Tailscale, turns on a public https link for the dashboard port only, explains each thing that is missing, and opens only Tailscale pages', async () => {
@@ -653,7 +670,7 @@ export default async function ({ test }) {
     const ask = await sh.on(3000); assert.equal(ask.ok, false); assert.equal(ask.state, 'approve'); assert.equal(ask.link, 'https://login.tailscale.com/f/funnel?node=nXYZ');
     ts.allowed = true;
     assert.deepEqual(await sh.on(3000), { ok: true, url: 'https://basic-pc.tail1234.ts.net' });
-    assert.ok(ts.calls.includes('funnel --bg --yes http://127.0.0.1:3000'), 'only the dashboard port is shared');
+    assert.ok(ts.calls.includes('funnel --bg --yes --https=443 http://127.0.0.1:3000'), 'only the dashboard port is shared');
     assert.equal((await sh.status(3000)).state, 'on'); assert.equal((await sh.status(4000)).state, 'off', 'a different port is not mistaken for ours');
     assert.deepEqual(await sh.off(), { ok: true }); assert.equal((await sh.status(3000)).state, 'off');
     assert.deepEqual(shareSettings('https://basic-pc.tail1234.ts.net'), { DASHBOARD_BASE_URL: 'https://basic-pc.tail1234.ts.net', DASHBOARD_TRUST_PROXY: '1' });
@@ -791,7 +808,7 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     assert.match(main, /if \(url && url\.startsWith\('https:\/\/discord\.com\/'\)\) shell\.openExternal\(url\)/);
     const pre = fs.readFileSync(path.join(root, 'desktop', 'preload.cjs'), 'utf8');
     const exposed = [...pre.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
-    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'moduleAdd', 'moduleSet', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'levels', 'openDashboardBrowser', 'dashShow', 'dashBounds', 'dashHide', 'dashReload', 'onGoto', 'onDash', 'updateCheck', 'updateInstall', 'updateLater', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'onShareStep', 'verifyToken', 'whatsNew', 'logError'].sort());
+    assert.deepEqual(exposed, ['brandApply', 'brandCustom', 'brandStatus', 'chooseFolder', 'chooseNode', 'chrome', 'copy', 'licApply', 'moduleAdd', 'moduleSet', 'modules', 'onLog', 'onState', 'openDashboard', 'openLink', 'recheck', 'restart', 'saveSettings', 'setupFind', 'setupFinish', 'setupImport', 'setupPick', 'setupSave', 'setupSecret', 'start', 'state', 'stop', 'summary', 'takeover', 'dataExport', 'dataImport', 'levelsExport', 'levelsMerge', 'levels', 'openDashboardBrowser', 'dashShow', 'dashBounds', 'dashHide', 'dashReload', 'onGoto', 'onDash', 'updateCheck', 'updateInstall', 'updateLater', 'updateOpen', 'shareState', 'shareOn', 'shareOff', 'shareLink', 'shareSetup', 'sharePort', 'shareCustom', 'onShareStep', 'verifyToken', 'whatsNew', 'logError'].sort());
     assert.ok(!/privateKey|createLicense|generateKeyPair|signModule|gb:lic-create|gb:module-sign/.test(main), 'licences and module signatures are made only in Licence Studio, never in the app');
     assert.ok(!readEdition({ edition: 'owner' }).features.includes('licenses'), 'not even the Owner version makes licences');
     assert.match(main, /function addContextMenu\(wc\)/); assert.equal((main.match(/addContextMenu\((win\.webContents|wc)\);/g) ?? []).length, 2, 'right-click works in the app and in the dashboard');

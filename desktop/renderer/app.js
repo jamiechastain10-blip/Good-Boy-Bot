@@ -364,14 +364,23 @@ function shareGroup() {
   const setupBtn = (label) => el('div', { class: 'row' }, el('button', { class: 'btn', disabled: SH.busy, onclick: runShareSetup }, SH.busy ? 'Setting up...' : label));
   if (!st) rows.push(head('Dashboard link', 'Checking...'));
   else if (st.state === 'on') {
-    rows.push(head('Your dashboard link', st.auto ? 'Works from anywhere while this computer and Good Boy are on. Turns itself back on at every start.' : 'Works from anywhere while this computer and Good Boy are on.', ['tag ok', 'Shared']),
+    rows.push(head('Your dashboard link', st.custom ? 'Your own address. Good Boy uses it for the dashboard, the phone app and Discord sign-in.' : st.auto ? 'Works from anywhere while this computer and Good Boy are on. Turns itself back on at every start.' : 'Works from anywhere while this computer and Good Boy are on.', ['tag ok', st.custom ? 'Your address' : 'Shared']),
       el('div', { class: 'row' }, el('div', { class: 'copyrow' }, el('code', { class: 'key' }, st.url), el('button', { class: 'btn quiet', onclick: async () => { await gb.copy(st.url); toast('Link copied.'); } }, 'Copy'))),
       SH.qr ? el('div', { class: 'row qrrow' }, el('img', { class: 'qr', src: SH.qr, alt: 'QR code for the phone app', width: '180', height: '180' }),
         el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Pair your phone'), el('span', { class: 'meta' }, 'Scan with your phone\'s camera. iPhone: open it in Safari, then Share > Add to Home Screen. Android: tap "Open in the Good Boy app".'))) : null,
       opt('keepAwake', 'Keep this computer awake while the bot runs'),
-      el('div', { class: 'row' }, el('button', { class: 'btn quiet', disabled: SH.busy, onclick: async () => { const r = await act(() => gb.shareOff()); toast(r.ok ? 'Stopped sharing. The dashboard is on this computer only again.' : r.error, !r.ok); SH.steps = null; refreshShare(true); } }, 'Stop sharing')));
-  } else rows.push(head('A link that works from anywhere', st.state === 'off' && st.url ? `Your link will be ${st.url}` : 'Use the dashboard and the phone app from anywhere. One button sets it all up with Tailscale (free); you only sign in once.', ['tag off', 'Off']),
-    setupBtn(st.state === 'missing' ? 'Set up' : 'Turn on'));
+      el('div', { class: 'row' }, el('button', { class: 'btn quiet', disabled: SH.busy, onclick: async () => { const r = await act(() => gb.shareOff()); toast(r.ok ? 'Stopped sharing. The dashboard is on this computer only again.' : r.error, !r.ok); SH.steps = null; refreshShare(true); } }, st.custom ? 'Stop using my address' : 'Stop sharing')));
+  } else {
+    rows.push(head('A link that works from anywhere', st.state === 'off' && st.url ? `Your link will be ${st.url}` : 'Use the dashboard and the phone app from anywhere. One button sets it all up with Tailscale (free); you only sign in once.', ['tag off', 'Off']),
+      setupBtn(st.state === 'missing' ? 'Set up' : 'Turn on'));
+    // 3.1: for people who already use Tailscale Funnel, or have their own address.
+    const port = el('select', { 'aria-label': 'Funnel port' }, [443, 8443, 10000].map((p) => el('option', { value: String(p), selected: p === (st.sharePort ?? 443) ? '' : null }, p === 443 ? '443 (normal)' : String(p))));
+    port.addEventListener('change', async () => { const r = await act(() => gb.sharePort(Number(port.value))); toast(r.ok ? `Good Boy will use Funnel port ${port.value}.` : r.error, !r.ok); refreshShare(true); });
+    const own = el('input', { type: 'url', placeholder: 'https://bot.example.com', 'aria-label': 'Your own dashboard address' });
+    rows.push(el('div', { class: 'row inset' }, el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Already use Tailscale Funnel?'), el('span', { class: 'meta' }, 'Funnel can share up to three things (ports 443, 8443 and 10000). Pick a free one for Good Boy.')), port),
+      el('div', { class: 'row inset' }, el('div', { class: 'two' }, el('span', { class: 'lab' }, 'Or use your own address'), el('span', { class: 'meta' }, `An https address you point at this computer's dashboard (${S.url ?? 'http://127.0.0.1:3000'}). It's checked before it's used.`)),
+        own, el('button', { class: 'btn quiet', disabled: SH.busy, onclick: async () => { const r = await act(() => gb.shareCustom(own.value)); if (r.ok) { SH.manual = r.redirectAdded ? null : r.redirectUri; SH.qr = r.qr ?? SH.qr; } toast(r.ok ? 'Good Boy uses your address now.' : r.error, !r.ok); refreshShare(true); } }, 'Use it')));
+  }
   if (SH.fix && !SH.steps) rows.push(el('div', { class: 'row' }, el('span', { class: 'meta' }, SH.fix.text), el('button', { class: 'btn quiet', onclick: () => gb.shareLink(SH.fix.link) }, 'Open the page')));
   return [el('div', { class: 'section-title' }, 'Dashboard link'), el('div', { class: 'group' }, rows), st?.state !== 'on' || SH.busy ? shareSteps() : null,
     SH.manual ? el('div', { class: 'redirect' }, el('b', {}, 'Add this to your bot\'s Redirects'), el('p', {}, 'Discord only lets you log in from addresses on the Redirects list. Copy it, open the OAuth2 page, click Add Redirect, paste, then Save Changes.'),

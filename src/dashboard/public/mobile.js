@@ -228,6 +228,46 @@ function daily(points, hourMs, from, how) {
 
 // ---------------------------------------------------------------- moderation (3.0.6)
 const MOD_ACTIONS = { warn: ['Warn', 'warned'], timeout: ['Time out', 'timed out'], untimeout: ['Remove timeout', 'no longer timed out'], kick: ['Kick', 'kicked'], ban: ['Ban', 'banned'] };
+/** 3.1: one input for a form field (text, number, paragraph, select, role or channel). */
+function fieldInput(f, id) {
+  const opt = (v, l) => h('option', { value: v }, l);
+  if (f.type === 'select') return h('select', { id }, (f.options ?? []).map((o) => opt(o.value, o.label)));
+  if (f.type === 'role') return h('select', { id }, opt('', f.optional ? '(none)' : 'Choose a role…'), (S.guild?.roles ?? []).map((r) => opt(r.id, '@' + r.name)));
+  if (f.type === 'channel') return h('select', { id }, opt('', f.optional ? '(none)' : 'Choose a channel…'), (S.guild?.channels ?? []).map((c) => opt(c.id, (c.type === 4 ? '📁 ' : '# ') + c.name)));
+  if (f.type === 'paragraph') return h('textarea', { id, maxlength: f.max ?? 1000, placeholder: f.placeholder ?? '' });
+  return h('input', { id, inputmode: f.type === 'number' ? 'decimal' : 'text', placeholder: f.placeholder ?? '' });
+}
+/** A panel's "Add" form as a bottom sheet. */
+function formSheet(m, form) {
+  const inputs = form.fields.map((f, k) => ({ f, el: fieldInput(f, `ff-${k}`) }));
+  const go = h('button', { class: 'btn' }, form.okLabel ?? 'Add');
+  const close = openSheet(form.label, form.hint ? h('p', { class: 'sub' }, form.hint) : null,
+    h('div', { class: 'group' }, inputs.map(({ f, el }, k) => h('div', { class: 'field' }, h('label', { for: `ff-${k}` }, f.label), el))), go);
+  go.addEventListener('click', async () => {
+    const body = Object.fromEntries(inputs.map(({ f, el }) => [f.key, f.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value]));
+    if (inputs.some(({ f, el }) => !f.optional && f.type !== 'select' && !String(el.value).trim())) return toast('Fill in every field that isn\'t optional.', true);
+    go.disabled = true;
+    try { await act(m.name, form.action, body); toast(form.done ?? 'Added'); close(); show(S.tab); } catch (e) { toast(e.message, true); go.disabled = false; }
+  });
+}
+/** A row's actions (edit a number, remove...) as a bottom sheet. */
+function rowSheet(m, p, r) {
+  const who = r.name ?? r.id;
+  const items = (p.rowActions ?? []).map((a, k) => {
+    const input = a.prompt ? fieldInput({ type: a.prompt === 'select' ? 'select' : a.prompt, options: a.options, placeholder: a.placeholder }, `ra-${k}`) : null;
+    if (input && a.current != null && r[a.current] != null) input.value = r[a.current];
+    const btn = h('button', { class: a.danger ? 'btn danger' : 'btn' }, a.label);
+    btn.addEventListener('click', async () => {
+      if (!input && !confirm(`${a.label} · ${who}\n\n${a.confirm ?? 'Are you sure?'}`)) return;
+      const body = { id: r.id, userId: r.id };
+      if (input) { if (!String(input.value).trim()) return toast('Fill it in first.', true); body[a.field] = a.prompt === 'number' ? Number(input.value) : input.value; }
+      btn.disabled = true;
+      try { await act(m.name, a.action, body); toast(a.done ?? 'Done'); close(); show(S.tab); } catch (e) { toast(e.message, true); btn.disabled = false; }
+    });
+    return h('div', { class: 'field' }, input ? [h('label', { for: `ra-${k}` }, a.hint ?? a.label), input] : null, btn);
+  });
+  const close = openSheet(String(who), h('div', { class: 'group' }, items));
+}
 function modSheet({ userId = null, name = null, action = 'warn', after = null } = {}) {
   const f = { action, minutes: 60, deleteDays: 0 };
   const who = userId ? null : h('input', { id: 'm-who', inputmode: 'numeric', placeholder: 'User ID (long-press them in Discord, Copy User ID)' });
@@ -374,8 +414,12 @@ const PAGES = {
     for (const { m, p } of panels) {
       const d = await viewOf(m.name, p.view).catch(() => ({ rows: [] }));
       const cols = (p.columns ?? []).slice(0, 3);
-      out.push(h('div', { class: 'section' }, p.title), h('div', { class: 'group' }, (d.rows ?? []).length ? d.rows.slice(0, 25).map((r) => h('div', { class: 'row' }, h('div', { class: 'two' }, h('b', {}, String(r[cols[0]?.key] ?? '')), h('small', {}, cols.slice(1).map((c) => r[c.key]).filter((x) => x != null && x !== '').join(' · ')))))
-        : [h('div', { class: 'row' }, h('small', { class: 'muted' }, p.empty ?? 'Nothing here yet.'))]));
+      const acts = p.rowActions ?? [];
+      const line = (r) => [h('div', { class: 'two' }, h('b', {}, String(r[cols[0]?.key] ?? '')), h('small', {}, cols.slice(1).map((c) => r[c.key]).filter((x) => x != null && x !== '').join(' · ')))];
+      out.push(h('div', { class: 'section' }, p.title),
+        p.addForm ? h('button', { class: 'btn', style: { margin: '0 0 8px' }, onclick: () => formSheet(m, p.addForm) }, p.addForm.label) : null,
+        h('div', { class: 'group' }, (d.rows ?? []).length ? d.rows.slice(0, 25).map((r) => (acts.length ? rowBtn({ onclick: () => rowSheet(m, p, r) }, ...line(r)) : h('div', { class: 'row' }, ...line(r))))
+          : [h('div', { class: 'row' }, h('small', { class: 'muted' }, p.empty ?? 'Nothing here yet.'))]));
     }
     return out;
   },

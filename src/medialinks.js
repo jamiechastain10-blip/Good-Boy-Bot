@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
  *
  * Media links for music (3.0.6), an opt-in add-on: OFF unless the bot owner turns it on themselves. When on, links from
- * YouTube, SoundCloud and the other sites yt-dlp understands play in voice, and Spotify track links are matched to the
+ * YouTube, SoundCloud, BandLab and the other sites yt-dlp or a page read understands play in voice, and Spotify track links are matched to the
  * same song on YouTube (Spotify's own audio can't be played by anything outside Spotify).
  *
  * Playing audio from these sites breaks their terms of service. That is why this is off by default, why only the bot
@@ -48,11 +48,111 @@ export function parseSpotifyPage(html) {
 }
 export async function spotifyTrack(raw, { fetchFn = globalThis.fetch } = {}) {
   const id = spotifyTrackId(raw);
-  if (!id) throw new UserError('Only Spotify song links work (open.spotify.com/track/...). Albums and playlists are not supported yet.');
+  if (!id) throw new UserError('Use a Spotify song, playlist or album link (open.spotify.com/track/..., /playlist/... or /album/...). Artists, podcasts and liked songs are not supported.');
   const r = await fetchFn(`https://open.spotify.com/track/${id}`, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GoodBoyBot)' }, signal: AbortSignal.timeout(10000) }).catch(() => null);
   const info = r?.ok ? parseSpotifyPage(await r.text()) : null;
   if (!info) throw new UserError("Couldn't read that Spotify link. Check it's a song link and try again.");
   return { ...info, link: `https://open.spotify.com/track/${id}` };
+}
+
+// ------------------------------------------------------------------ Spotify playlists and albums
+/** A Spotify playlist or album link: { kind, id } or null. */
+export function spotifyListId(raw) {
+  const u = cleanLink(raw); if (!u || !/(^|\.)spotify\.com$/i.test(u.hostname)) return null;
+  const m = /\/(playlist|album)\/([A-Za-z0-9]{10,40})/.exec(u.pathname);
+  return m ? { kind: m[1], id: m[2] } : null;
+}
+/** The songs on Spotify's public embed page: { name, tracks: [{ title, artist, seconds }] } or null. */
+export function parseSpotifyEmbed(html) {
+  const m = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(String(html ?? ''));
+  let e; try { e = JSON.parse(m?.[1] ?? '').props.pageProps.state.data.entity; } catch { return null; }
+  const tracks = (Array.isArray(e?.trackList) ? e.trackList : [])
+    .filter((t) => t?.title && t.isPlayable !== false && (t.entityType ?? 'track') === 'track')
+    .map((t) => ({ title: String(t.title).slice(0, 200), artist: String(t.subtitle ?? '').replace(/ /g, ' ').split(/,\s*/)[0].slice(0, 100), seconds: Math.round(Number(t.duration) / 1000) || null }));
+  return tracks.length ? { name: String(e.name ?? e.title ?? 'Spotify playlist').slice(0, 100), tracks } : null;
+}
+export async function spotifyList(raw, { fetchFn = globalThis.fetch } = {}) {
+  const l = spotifyListId(raw); if (!l) return null;
+  const r = await fetchFn(`https://open.spotify.com/embed/${l.kind}/${l.id}`, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GoodBoyBot)' }, signal: AbortSignal.timeout(10000) }).catch(() => null);
+  const list = r?.ok ? parseSpotifyEmbed(await r.text()) : null;
+  if (!list) throw new UserError(`Couldn't read that Spotify ${l.kind}. Check it's public and try again.`);
+  return { ...list, kind: l.kind, link: `https://open.spotify.com/${l.kind}/${l.id}` };
+}
+/** The YouTube search used to play a Spotify song. */
+export const spotifySearch = (t) => `ytsearch1:${t.artist} ${t.title} audio`;
+
+// ------------------------------------------------------------------ BandLab
+// BandLab pages are drawn in the browser, so neither yt-dlp nor a page read always finds the song. BandLab's own public
+// API (the one its website uses) gives each song's mixdown as a plain .m4a file, which plays like any audio link.
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+export const isBandLab = (raw) => { const u = cleanLink(raw); return !!u && /(^|\.)bandlab\.com$/i.test(u.hostname); };
+/** API addresses to try for a BandLab link: /post/<id>, /track/<id>, /embed/?id=<id>, ?revId= ... */
+export function bandlabTargets(raw) {
+  const u = cleanLink(raw); if (!u || !isBandLab(raw)) return [];
+  const api = 'https://www.bandlab.com/api/v1.3/';
+  const id = UUID.exec(u.pathname)?.[0] ?? UUID.exec(u.searchParams.get('id') ?? '')?.[0];
+  if (!id) return [];
+  const kind = /^\/post\//i.test(u.pathname) ? ['posts'] : /^\/(track|song)s?\//i.test(u.pathname) ? ['songs', 'posts'] : ['posts', 'songs'];
+  return kind.map((k) => `${api}${k}/${id}`);
+}
+/** The song in a BandLab post or song reply: { title, artist, seconds, url } or null. */
+export function parseBandLab(d) {
+  const rev = d?.revision ?? null;
+  const file = rev?.mixdown?.file;
+  if (!file || !/^https:\/\/[^/]*bandlab\.com\//i.test(file)) return null;
+  const title = rev.song?.name ?? d.name ?? rev.title ?? 'BandLab song';
+  const artist = rev.creator?.name ?? d.author?.name ?? d.creator?.name ?? '';
+  return { title: String(title).slice(0, 200), artist: String(artist).slice(0, 100), seconds: Math.round(Number(rev.mixdown.duration)) || null, url: file };
+}
+export async function bandlabTrack(raw, { fetchFn = globalThis.fetch } = {}) {
+  const targets = bandlabTargets(raw);
+  if (!targets.length) throw new UserError('Use a BandLab song or post link (bandlab.com/post/... or bandlab.com/track/...). Albums and playlists are not supported yet.');
+  let busy = false;
+  for (const t of targets) {
+    const r = await fetchFn(t, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GoodBoyBot)', Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }).catch(() => null);
+    if (r?.status === 406 || r?.status === 429) busy = true;
+    if (!r?.ok) continue;
+    const song = parseBandLab(await r.json().catch(() => null));
+    if (song) return { ...song, page: cleanLink(raw).href, site: 'BandLab' };
+  }
+  throw new UserError(busy ? 'BandLab is busy right now. Try again in a minute.' : "Couldn't find a song in that BandLab link. Check it's public and it's a song (not a video or text post).");
+}
+
+// ------------------------------------------------------------------ any other page
+const attr = (tag, name) => decode(new RegExp(`${name}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag)?.[1]);
+/**
+ * Finds a playable audio file in a web page: the audio tags sites add for link previews (og:audio, twitter:player:stream),
+ * a JSON-LD contentUrl, an <audio>/<source> tag, or any link to an audio file. Returns { url, title } or null.
+ */
+export function audioFromPage(html, base) {
+  const h = String(html ?? '');
+  const abs = (x) => { try { const u = new URL(decode(x), base); return /^https?:$/.test(u.protocol) && !PRIVATE.test(u.hostname) ? u.href : null; } catch { return null; } };
+  const found = [];
+  for (const p of ['og:audio:secure_url', 'og:audio:url', 'og:audio', 'twitter:player:stream']) { const v = meta(h, p); if (v) found.push(v); }
+  for (const m of h.matchAll(/"contentUrl"\s*:\s*"([^"]+)"/gi)) found.push(m[1].replace(/\\\//g, '/'));
+  for (const m of h.matchAll(/<(?:audio|source)\b[^>]*>/gi)) { const v = attr(m[0], 'src'); if (v) found.push(v); }
+  for (const m of h.matchAll(/https?:(?:\\?\/){2}[^\s"'<>()]+?\.(?:mp3|ogg|oga|opus|wav|flac|m4a|aac)(?:\?[^\s"'<>()]*)?(?=["'<>\s)])/gi)) found.push(m[0].replace(/\\\//g, '/'));
+  const url = found.map(abs).find((u) => u && (AUDIO_EXT.test(new URL(u).pathname) || /og:audio|twitter:player:stream/.test(h)));
+  if (!url) return null;
+  const title = meta(h, 'og:title') || decode(/<title[^>]*>([^<]*)<\/title>/i.exec(h)?.[1]) || null;
+  return { url, title: title ? title.slice(0, 200) : null };
+}
+/**
+ * Opens a link and works out what to play. { audio: true, url } when the link itself is an audio file (even without
+ * .mp3 in its name); { url, title } when the page has one; null otherwise. Redirects are followed (share links),
+ * but never into a private address. onlyAudioFiles skips reading pages.
+ */
+export async function probeLink(raw, { fetchFn = globalThis.fetch, onlyAudioFiles = false } = {}) {
+  const u = cleanLink(raw); if (!u) return null;
+  const r = await fetchFn(u.href, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GoodBoyBot)', Accept: 'text/html,audio/*;q=0.9,*/*;q=0.5' }, redirect: 'follow', signal: AbortSignal.timeout(10000) }).catch(() => null);
+  if (!r?.ok) return null;
+  const final = cleanLink(r.url || u.href); if (!final) { r.body?.cancel?.().catch?.(() => {}); return null; }
+  const type = String(r.headers?.get?.('content-type') ?? '').toLowerCase();
+  if (/^audio\/|^application\/ogg/.test(type)) { r.body?.cancel?.().catch?.(() => {}); return { audio: true, type, url: final.href, title: decodeURIComponent(final.pathname.split('/').pop() || '').replace(AUDIO_EXT, '') || null }; }
+  if (onlyAudioFiles || !/html|xml/.test(type)) { r.body?.cancel?.().catch?.(() => {}); return null; }
+  const html = (await r.text().catch(() => '')).slice(0, 3e6);
+  const hit = audioFromPage(html, final.href);
+  return hit ? { ...hit, page: final.href } : (final.href !== u.href ? { redirect: final.href } : null);
 }
 
 // ------------------------------------------------------------------ yt-dlp
@@ -110,6 +210,21 @@ export async function lookup(bin, input, { spawnFn, maxSeconds = 3 * 3600 } = {}
   const seconds = Number(j.duration) || null;
   if (seconds && seconds > maxSeconds) throw new UserError(`That's too long (over ${Math.round(maxSeconds / 3600)} hours).`);
   return { title: String(j.track ?? j.title ?? 'Song').slice(0, 200), artist: String(j.artist ?? j.uploader ?? j.channel ?? '').slice(0, 100), seconds, page: j.webpage_url ?? input, site: String(j.extractor_key ?? j.extractor ?? 'web').replace(/:.*/, '') };
+}
+/**
+ * The audio's own web address for a page (asked for when the song starts, because these addresses expire), so ffmpeg can
+ * play it, reconnect when the site drops the connection (long pauses do that) and start part way in. Null when the site
+ * only gives something ffmpeg can't open by address; then the song is streamed through yt-dlp instead.
+ */
+export async function directAudio(bin, page, { spawnFn } = {}) {
+  const r = await run(bin, ['-J', '--no-playlist', '--no-warnings', '-f', 'bestaudio/best', page], { spawnFn, timeoutMs: 45000 });
+  if (r.code !== 0) return null;
+  let j; try { j = JSON.parse(r.out); } catch { return null; }
+  if (Array.isArray(j.entries)) j = j.entries.find(Boolean);
+  const url = j?.url, protocol = String(j?.protocol ?? 'https');
+  if (!/^https?:\/\//i.test(url ?? '') || !/^(https?|m3u8(_native)?)$/i.test(protocol)) return null;
+  const headers = Object.fromEntries(Object.entries(j.http_headers ?? {}).filter(([k, v]) => /^[\w-]+$/.test(k) && typeof v === 'string' && !/[\r\n]/.test(v)));
+  return { url, headers, seconds: Number(j.duration) || null };
 }
 /** Starts streaming the audio of a looked-up page. Returns { stream, stop }. */
 export function stream(bin, page, { spawnFn = realSpawn } = {}) {

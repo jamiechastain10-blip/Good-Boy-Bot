@@ -376,6 +376,32 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.equal(w.mm.ctx('1', 'member-management').data.get('verify:count'), 1);
   });
 
+  await test('captcha (3.1): with it on, Verify shows a code picture; wrong codes use up 3 tries; the right code verifies', async () => {
+    const CAP = await import('../src/captcha.js');
+    assert.equal(CAP.makeCode().length, 5); assert.doesNotMatch(CAP.makeCode(() => 0) + CAP.makeCode((n) => n - 1), /[0O1IL5S2Z8B]/, 'no look-alike letters');
+    assert.ok(CAP.codeMatches(' xe9 j7 ', 'XE9J7')); assert.ok(!CAP.codeMatches('XE9J', 'XE9J7'));
+    const w = await vWorld(); await w.setup();
+    w.mm.setSetting('1', 'member-management', 'verifyCaptcha', true);
+    const newbie = w.person('capnewbie');
+    const first = w.ix({ command: undefined, customId: 'verify:go', member: newbie }); await w.mm.handleComponent(first);
+    assert.match(JSON.stringify(first.replies[0]), /verify:enter/, 'asks for the code');
+    assert.ok(!newbie.roles.cache.has('r-verified'), 'not verified yet');
+    const store = globalThis[Symbol.for('goodboy.verify.captchas')];
+    const code = store.get(`1:${newbie.id}`).code;
+    const submit = async (typed) => { const i = w.ix({ command: undefined, customId: 'verify:code', member: newbie }); i.isModalSubmit = () => true; i.fields = { getTextInputValue: () => typed }; await w.mm.handleComponent(i); return JSON.stringify(i.replies); };
+    assert.match(await submit('WRONG'), /2 tries left/);
+    assert.ok(!newbie.roles.cache.has('r-verified'));
+    assert.match(await submit(code.toLowerCase()), /verified/);
+    assert.ok(newbie.roles.cache.has('r-verified'), 'the right code (any case) verifies');
+    const other = w.person('capother');
+    await w.mm.handleComponent(w.ix({ command: undefined, customId: 'verify:go', member: other }));
+    const sub2 = async (typed) => { const i = w.ix({ command: undefined, customId: 'verify:code', member: other }); i.isModalSubmit = () => true; i.fields = { getTextInputValue: () => typed }; await w.mm.handleComponent(i); return JSON.stringify(i.replies); };
+    await sub2('AAAAA'); await sub2('AAAAA');
+    assert.match(await sub2('AAAAA'), /last try/);
+    assert.match(await sub2(store.get(`1:${other.id}`)?.code ?? 'gone'), /ran out|Verify me/, 'a new code is needed after 3 wrong tries');
+    assert.ok(!other.roles.cache.has('r-verified'));
+  });
+
   await test('setup refuses roles that are unsafe or out of reach, with the reason', async () => {
     const w = await vWorld();
     assert.match(await w.setup({ role: w.role('admin-role', { pos: 3, dangerous: true }) }), /powerful permissions/);
@@ -2053,6 +2079,37 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.ok(viaSlash.modal, '/ticket priority also asks for the reason first');
   });
 
+  await test('staff applications (3.1): a custom type marked as an application gets Accept/Deny; accepting gives its role; closing asks the member for a rating, which lands in the log and stats', async () => {
+    const w = await tkWorld();
+    const g = w.mm.ctx('1', 'support');
+    g.data.set('types', [{ id: 'mod-app', label: 'Moderator application', questions: ['Why do you want to help?'], application: true, role: 'r-mod' }]);
+    const m = w.person('applicant');
+    const added = []; m.roles.add = async (id) => { added.push(id); };
+    const { ch } = await w.open(m, 'mod-app', { q0: 'I like helping' });
+    const labels = ch.sent[0].components.flatMap((r) => r.components.map((b) => b.data.label));
+    assert.ok(labels.includes('Accept application') && labels.includes('Deny application'));
+    const pop = await w.press(w.staff, 'ticket:appeal:approve', ch);
+    assert.match(pop.modal.data.title, /Accept this application/);
+    const done = await w.submit(w.staff, pop.modal.data.custom_id, { reason: 'Great answers', message: 'Welcome to the team!' }, ch);
+    assert.equal(w.ticket(ch).decision.result, 'accepted');
+    assert.deepEqual(added, ['r-mod'], 'the role is given');
+    assert.match(done.text(), /Application accepted/);
+    assert.match(everything(ch), /Application accepted/);
+    // Ratings: staff close it, the member gets 1-5 star buttons by DM.
+    await w.closeAsStaff(ch);
+    const dm = m.user.sent.find((x) => JSON.stringify(x).includes('How did we do'));
+    assert.ok(dm, 'the member is asked');
+    const n = w.ticket(ch).number;
+    assert.match(JSON.stringify(dm), new RegExp(`rate:1:${n}:5`));
+    const api = g.api('support');
+    await assert.rejects(Promise.resolve().then(() => api.rate('1', n, 'someone-else', 5)), /isn't your ticket/);
+    assert.match(await api.rate('1', n, m.id, 4), /⭐⭐⭐⭐/);
+    assert.match(await api.rate('1', n, m.id, 1), /already rated/, 'once only');
+    assert.match(everything(w.log), /⭐⭐⭐⭐ rating/);
+    const S = await import('../modules/support/index.js');
+    assert.deepEqual(S.ratingSummary([{ stars: 4, at: Date.now() }, { stars: 5, at: Date.now() }, { stars: 1, at: 0 }]), { count: 2, avg: 4.5 }, 'old ratings drop out');
+  });
+
   await test('appeals: staff approve or deny with a required reason; the member sees only the message meant for them', async () => {
     const w = await tkWorld();
     const m = w.person('appealer');
@@ -2470,7 +2527,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     assert.equal(d.access, 'panel');
     for (const k of ['channels', 'roles', 'stats', 'corePermissions']) assert.equal(d[k], undefined, `${k} is withheld`);
     const names = Object.fromEntries(d.modules.map((m) => [m.name, m.panels.map((p) => p.id)]));
-    assert.deepEqual(names.support?.sort(), ['archive', 'tickets', 'watch'], 'support panels default to moderators');
+    assert.deepEqual(names.support?.sort(), ['archive', 'ratings', 'tickets', 'watch'], 'support panels default to moderators');
     assert.deepEqual(names.moderation, ['cases'], 'moderators see the history (3.0.1); the AutoMod panel needs moderation.automod, which defaults to admins');
     assert.equal(d.modules.some((m) => 'settings' in m || 'values' in m || 'permissions' in m), false);
     for (const [method, p, body] of [['POST', gp('/modules/moderation/settings'), { key: 'logChannel', value: null }], ['POST', gp('/modules/support/disable'), {}], ['POST', gp('/permissions'), { key: 'dashboard.access', roles: [] }], ['GET', gp('/logs')]]) {

@@ -14,6 +14,7 @@
 import crypto from 'node:crypto';
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits as P, MessageFlags, ChannelType } from 'discord.js';
 import { UserError, fillTemplate, progressBar, truncate, ts, SNOWFLAKE } from '../../src/util.js';
+import { formModal, readForm } from '../../src/modalkit.js';
 
 const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
@@ -46,13 +47,36 @@ export function xpAllowed(ctx, channel) {
   return true;
 }
 
+// ------------------------------------------------------------------ XP boosts (3.1)
+/**
+ * Boosts multiply XP: the best role boost a member has, times the boost of the channel (or its category, or a thread's
+ * channel). Stored as [{ kind: 'role'|'channel', id, mult }]. Exported for tests.
+ */
+export function xpBoost(boosts, { roleIds = [], channelIds = [] } = {}) {
+  const list = Array.isArray(boosts) ? boosts : [];
+  const roles = list.filter((b) => b.kind === 'role' && roleIds.includes(b.id)).map((b) => b.mult);
+  const r = roles.length ? Math.max(...roles) : 1;
+  // The most specific place wins: a channel's own boost, else its category's.
+  const c = channelIds.map((id) => list.find((b) => b.kind === 'channel' && b.id === id)?.mult).find((m) => m != null) ?? 1;
+  return Math.round(r * c * 100) / 100;
+}
+/** The ids that count as "where": the channel, a thread's channel, and the category. Most specific first. */
+function placeIds(ctx, channel) {
+  if (!channel) return [];
+  const base = channel.isThread?.() ? (ctx.guild?.channels?.cache?.get(channel.parentId) ?? channel) : channel;
+  return [...new Set([channel.id, base.id, base.parentId ?? base.parent?.id].filter(Boolean))];
+}
+const memberRoles = (m) => [...(m?.roles?.cache?.keys?.() ?? [])];
+const boostFor = (ctx, member, channel) => xpBoost(ctx.data.get('xpBoosts'), { roleIds: memberRoles(member), channelIds: placeIds(ctx, channel) });
+const boosted = (n, mult) => Math.max(0, Math.round(n * mult));
+
 // ------------------------------------------------------------------ XP from messages
 async function onMessage(ctx, message) {
   if (!message.guild || message.author.bot || message.system || !message.member) return;
   if (!xpAllowed(ctx, message.channel)) return;
   const cooldown = ctx.config.get('xpCooldownSeconds') * 1000;
   const lo = ctx.config.get('xpMin'), hi = Math.max(lo, ctx.config.get('xpMax'));
-  const gained = lo + Math.floor(Math.random() * (hi - lo + 1));
+  const gained = boosted(lo + Math.floor(Math.random() * (hi - lo + 1)), boostFor(ctx, message.member, message.channel));
   let before = null, after = null, counted = false;
 
   ctx.data.update(userKey(message.author.id), (r) => {
@@ -85,7 +109,8 @@ async function onReaction(ctx, reaction, user, now = Date.now()) {
   if (!msg?.guildId) return;
   if (msg.author?.id && msg.author.id === user.id) return; // your own message
   if (!xpAllowed(ctx, msg.channel ?? ctx.guild?.channels?.cache?.get(msg.channelId))) return;
-  const amount = Number(ctx.config.get('reactionXpAmount')) || 0;
+  const reactMember = ctx.guild?.members?.cache?.get(user.id);
+  const amount = boosted(Number(ctx.config.get('reactionXpAmount')) || 0, boostFor(ctx, reactMember, msg.channel ?? ctx.guild?.channels?.cache?.get(msg.channelId)));
   const cooldown = (Number(ctx.config.get('reactionXpCooldownSeconds')) || 60) * 1000;
   if (amount <= 0) return;
   let before = null, after = null;
@@ -161,7 +186,7 @@ export async function voiceTick(ctx, now = Date.now()) {
       if (cur.voiceDay !== day) { cur.voiceDay = day; cur.voiceToday = 0; }
       if (cap > 0 && cur.voiceToday >= cap) return cur; // reached today's limit
       before = levelOf(cur.xp).level;
-      cur.xp += per; cur.voiceToday += 1; cur.voiceMinutes = (cur.voiceMinutes ?? 0) + 1;
+      cur.xp += boosted(per, boostFor(ctx, vs.member, vs.channel ?? ctx.guild?.channels?.cache?.get(vs.channelId))); cur.voiceToday += 1; cur.voiceMinutes = (cur.voiceMinutes ?? 0) + 1;
       after = levelOf(cur.xp).level;
       return cur;
     }, fresh());
@@ -201,11 +226,41 @@ async function rankCmd(ctx, i) {
   const r = rec(ctx, user.id);
   const { level, into, needed } = levelOf(r.xp);
   const pos = ranking(ctx, 'xp').findIndex((x) => x.id === user.id) + 1;
+  // 3.1: a rank card picture when the canvas package is there (text below otherwise).
+  if (ctx.config.get('rankCards') !== false) {
+    const { rankCard } = await import('../../src/rankcard.js');
+    const style = ctx.data.get(`card:${user.id}`) ?? {};
+    const png = await rankCard({ name: i.guild?.members?.cache?.get(user.id)?.displayName ?? user.globalName ?? user.username, avatarUrl: user.displayAvatarURL?.({ extension: 'png', size: 256, forceStatic: true }), level, into, needed, rank: pos || null, xp: r.xp, messages: r.messages,
+      accent: style.accent, accent2: style.accent2, theme: style.theme, background: ctx.config.get('cardBackgrounds') !== false ? style.background : null }).catch(() => null);
+    if (png) return i.reply({ files: [{ attachment: png, name: 'rank.png' }], allowedMentions: NOPING,
+      components: user.id === i.user.id ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`rankstyle:open:${i.user.id}`).setLabel('Customise').setEmoji('🎨').setStyle(ButtonStyle.Secondary))] : [] });
+  }
   const e = new EmbedBuilder().setColor(0x5865f2).setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
     .setTitle(`Level ${level}`)
     .setDescription(`${progressBar(into, needed, 16)}\n${into} / ${needed} XP to level ${level + 1}`)
     .addFields({ name: 'Rank', value: pos ? `#${pos}` : '—', inline: true }, { name: 'Total XP', value: String(r.xp), inline: true }, { name: 'Messages', value: String(r.messages), inline: true }, { name: 'Reputation', value: String(r.rep), inline: true });
   await i.reply({ embeds: [e], allowedMentions: NOPING });
+}
+
+// 3.1: members style their own rank card.
+async function rankStyle(ctx, i) {
+  const [, step, owner] = i.customId.split(':');
+  if (owner && owner !== i.user.id) throw new UserError('That is someone else\'s card. Run `/rank` for your own.');
+  const { THEMES, okBackground, okHex } = await import('../../src/rankcard.js');
+  const cur = ctx.data.get(`card:${i.user.id}`) ?? {};
+  const fields = [
+    { id: 'theme', kind: 'select', label: 'Theme', value: cur.theme ?? 'dark', options: Object.entries(THEMES).map(([value, t]) => ({ label: t.label, value })) },
+    { id: 'accent', label: 'Main colour (hex, like #6b93ff)', required: false, max: 7, value: cur.accent ?? '' },
+    { id: 'accent2', label: 'Second colour (hex, like #b07cff)', required: false, max: 7, value: cur.accent2 ?? '' },
+    ...(ctx.config.get('cardBackgrounds') !== false ? [{ id: 'background', label: 'Background picture link (optional)', required: false, max: 400, value: cur.background ?? '', placeholder: 'Upload a picture in Discord, then Copy Link' }] : []),
+  ];
+  if (step === 'open') return i.showModal(formModal(`rankstyle:save:${i.user.id}`, 'Your rank card', fields));
+  const v = readForm(i, fields);
+  for (const k of ['accent', 'accent2']) if (v[k] && !okHex(v[k])) throw new UserError(`"${v[k]}" isn't a colour. Use a hex code like #6b93ff.`);
+  if (v.background && !okBackground(v.background)) throw new UserError('The background has to be a picture uploaded to Discord (right-click it, Copy Link). Links from other sites are not allowed.');
+  const next = { theme: v.theme || 'dark', accent: v.accent || null, accent2: v.accent2 || null, background: v.background || null };
+  ctx.data.set(`card:${i.user.id}`, next);
+  return i.reply({ content: '🎨 Saved! Run `/rank` to see your new card.', flags: MessageFlags.Ephemeral });
 }
 
 const BOARD_TITLES = { xp: 'XP', rep: 'Reputation', messages: 'Messages' };
@@ -459,6 +514,29 @@ async function statsCmd(ctx, i) {
   await i.reply({ embeds: [e], allowedMentions: NOPING });
 }
 
+async function xpBoostCmd(ctx, i) {
+  const sub = i.options.getSubcommand();
+  const list = [...(ctx.data.get('xpBoosts') ?? [])];
+  const label = (b) => (b.kind === 'role' ? `<@&${b.id}>` : ctx.guild.channels.cache.get(b.id)?.type === ChannelType.GuildCategory ? `📁 ${ctx.guild.channels.cache.get(b.id).name}` : `<#${b.id}>`);
+  if (sub === 'list') {
+    return i.reply({ content: `**XP boosts**\n${list.map((b) => `${label(b)} · **×${b.mult}**`).join('\n') || 'None yet. Add one with `/xp boost add`.'}\n-# A member gets their best role boost, times the boost of the channel they're in.`, flags: EPH, allowedMentions: NOPING });
+  }
+  const role = i.options.getRole('role'), ch = i.options.getChannel('channel');
+  if (!role === !ch) throw new UserError('Pick a role or a channel (one of them).');
+  const kind = role ? 'role' : 'channel', id = (role ?? ch).id;
+  const rest = list.filter((b) => !(b.kind === kind && b.id === id));
+  if (sub === 'remove') {
+    if (rest.length === list.length) throw new UserError('That has no boost.');
+    ctx.data.set('xpBoosts', rest);
+    return i.reply({ content: `Removed the boost for ${label({ kind, id })}.`, flags: EPH, allowedMentions: NOPING });
+  }
+  const mult = Math.round(Number(i.options.getNumber('multiplier', true)) * 100) / 100;
+  if (!(mult >= 0.1 && mult <= 5)) throw new UserError('Use a multiplier from 0.1 to 5 (for example 1.5 for 50% more XP).');
+  if (rest.length >= 25) throw new UserError('You can have up to 25 boosts.');
+  ctx.data.set('xpBoosts', [...rest, { kind, id, mult }]);
+  return i.reply({ content: `🚀 ${label({ kind, id })} now earns **×${mult}** XP.`, flags: EPH, allowedMentions: NOPING });
+}
+
 async function xpIgnoreCmd(ctx, i) {
   const sub = i.options.getSubcommand();
   const list = [...(ctx.config.get('noXpChannels') ?? [])];
@@ -480,6 +558,8 @@ export default {
   version: '1.3.0',
   description: 'XP & levels with role rewards, reputation (can go negative), leaderboards and server stats.',
   settings: [
+    { key: 'rankCards', type: 'toggle', label: '/rank shows a picture card (text if pictures are off)', default: true },
+    { key: 'cardBackgrounds', type: 'toggle', label: 'Members can put their own picture behind their rank card', default: true },
     { key: 'xpMin', type: 'number', label: 'XP per message (min)', default: 15, min: 1, max: 500 },
     { key: 'xpMax', type: 'number', label: 'XP per message (max)', default: 25, min: 1, max: 500 },
     { key: 'xpCooldownSeconds', type: 'number', label: 'Seconds between XP gains', default: 60, min: 5, max: 3600 },
@@ -568,9 +648,19 @@ export default {
             .addChannelOption((o) => o.setName('channel').setDescription('A channel or a category').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice, ChannelType.GuildCategory, ChannelType.GuildForum)))
           .addSubcommand((s) => s.setName('remove').setDescription('Give XP there again')
             .addChannelOption((o) => o.setName('channel').setDescription('A channel or a category').setRequired(true)))
-          .addSubcommand((s) => s.setName('list').setDescription('Where XP is switched off'))),
+          .addSubcommand((s) => s.setName('list').setDescription('Where XP is switched off')))
+        .addSubcommandGroup((g) => g.setName('boost').setDescription('More (or less) XP for some roles or channels')
+          .addSubcommand((s) => s.setName('add').setDescription('Set a boost (e.g. 1.5 for Boosters)')
+            .addNumberOption((o) => o.setName('multiplier').setDescription('1.5 = 50% more XP, 2 = double, 0.5 = half').setRequired(true).setMinValue(0.1).setMaxValue(5))
+            .addRoleOption((o) => o.setName('role').setDescription('A role (or pick a channel)'))
+            .addChannelOption((o) => o.setName('channel').setDescription('A channel or category (or pick a role)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice, ChannelType.GuildCategory, ChannelType.GuildForum)))
+          .addSubcommand((s) => s.setName('remove').setDescription('Remove a boost')
+            .addRoleOption((o) => o.setName('role').setDescription('The role'))
+            .addChannelOption((o) => o.setName('channel').setDescription('The channel or category')))
+          .addSubcommand((s) => s.setName('list').setDescription('All XP boosts'))),
       async execute(ctx, i) {
         if (i.options.getSubcommandGroup(false) === 'ignore') return xpIgnoreCmd(ctx, i);
+        if (i.options.getSubcommandGroup(false) === 'boost') return xpBoostCmd(ctx, i);
         const user = i.options.getUser('user', true);
         if (user.bot) throw new UserError('Bots have no XP.');
         const amount = i.options.getSubcommand() === 'set' ? i.options.getInteger('amount', true) : 0;
@@ -606,8 +696,14 @@ export default {
       },
     },
   ],
-  components: [{ prefix: 'rep:', execute: repComponent }],
+  components: [{ prefix: 'rep:', execute: repComponent }, { prefix: 'rankstyle:', execute: rankStyle }],
   views: {
+    async boosts(ctx) {
+      return { rows: (ctx.data.get('xpBoosts') ?? []).map((b) => {
+        const name = b.kind === 'role' ? `@${ctx.guild?.roles.cache.get(b.id)?.name ?? 'deleted role'}` : `${ctx.guild?.channels.cache.get(b.id)?.type === 4 ? '📁 ' : '#'}${ctx.guild?.channels.cache.get(b.id)?.name ?? 'deleted channel'}`;
+        return { id: `${b.kind}:${b.id}`, name, kind: b.kind === 'role' ? 'Role' : 'Channel', mult: `×${b.mult}`, multRaw: b.mult };
+      }) };
+    },
     /** For the phone app: the leaderboard with names and pictures. */
     async levels(ctx) {
       const all = ranking(ctx, 'xp').filter((x) => x.xp > 0);
@@ -627,6 +723,29 @@ export default {
     },
   },
   actions: {
+    async 'boost-add'(ctx, body) {
+      const role = body.role || null, ch = body.channel || null;
+      if (!role === !ch) throw new UserError('Pick a role or a channel (one of them).');
+      const mult = Math.round(Number(body.mult) * 100) / 100;
+      if (!(mult >= 0.1 && mult <= 5)) throw new UserError('Use a multiplier from 0.1 to 5.');
+      const kind = role ? 'role' : 'channel', id = role ?? ch;
+      const rest = (ctx.data.get('xpBoosts') ?? []).filter((b) => !(b.kind === kind && b.id === id));
+      if (rest.length >= 25) throw new UserError('You can have up to 25 boosts.');
+      ctx.data.set('xpBoosts', [...rest, { kind, id, mult }]);
+      return { kind, id, mult };
+    },
+    async 'boost-set'(ctx, body) {
+      const [kind, id] = String(body.id).split(':');
+      const mult = Math.round(Number(body.mult) * 100) / 100;
+      if (!(mult >= 0.1 && mult <= 5)) throw new UserError('Use a multiplier from 0.1 to 5.');
+      ctx.data.set('xpBoosts', (ctx.data.get('xpBoosts') ?? []).map((b) => (b.kind === kind && b.id === id ? { ...b, mult } : b)));
+      return { kind, id, mult };
+    },
+    async 'boost-remove'(ctx, body) {
+      const [kind, id] = String(body.id).split(':');
+      ctx.data.set('xpBoosts', (ctx.data.get('xpBoosts') ?? []).filter((b) => !(b.kind === kind && b.id === id)));
+      return { kind, id };
+    },
     // Levels box in the dashboard: give, take or reset XP, then hand out any level rewards that now apply.
     async 'xp-give'(ctx, body) { return changeXp(ctx, body.userId, (xp) => xp + intIn(body.value, 1, 10000000, 'The XP to give')); },
     async 'xp-take'(ctx, body) { return changeXp(ctx, body.userId, (xp) => Math.max(0, xp - intIn(body.value, 1, 10000000, 'The XP to take'))); },
@@ -675,6 +794,16 @@ export default {
       { action: 'rep-reset', label: 'Reset', confirm: 'Set this member\'s reputation back to 0?', danger: true, done: 'Reset' }],
     globalActions: [{ action: 'rep-reset-all', label: 'Reset everyone', confirmWord: 'RESET', confirm: 'Set everyone\'s reputation back to 0. A backup is made first.' }],
     recentColumns: [{ key: 'when', label: 'When' }, { key: 'kind', label: 'Type' }, { key: 'change', label: 'Change' }, { key: 'target', label: 'Member' }, { key: 'by', label: 'By' }, { key: 'reason', label: 'Reason' }],
+  }, {
+    id: 'boosts', title: 'XP boosts', view: 'boosts', permission: 'community.manage',
+    description: 'More (or less) XP for some roles or channels. A member gets their best role boost, times the boost of the channel they are in.',
+    empty: 'No boosts yet. For example, give server Boosters ×1.5.',
+    columns: [{ key: 'name', label: 'Role or channel' }, { key: 'kind', label: 'Kind' }, { key: 'mult', label: 'Boost' }],
+    rowActions: [{ action: 'boost-set', label: 'Change', prompt: 'number', field: 'mult', current: 'multRaw', hint: 'From 0.1 to 5 (1.5 = 50% more XP).', done: 'Boost saved' },
+      { action: 'boost-remove', label: 'Remove', confirm: 'Remove this boost?', danger: true, done: 'Removed' }],
+    addForm: { action: 'boost-add', label: 'Add boost', hint: 'Pick a role or a channel (not both).', done: 'Boost added', fields: [
+      { key: 'role', label: 'Role', type: 'role', optional: true }, { key: 'channel', label: 'Or a channel / category', type: 'channel', optional: true },
+      { key: 'mult', label: 'Boost (0.1 to 5, e.g. 1.5)', type: 'number' }] },
   }],
   events: {
     messageCreate: onMessage,

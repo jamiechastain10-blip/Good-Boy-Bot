@@ -20,7 +20,9 @@ import * as C from '../../src/casino.js';
 import * as F from '../../src/fishing.js';
 import * as PONG from '../../src/pong.js';
 import * as CH from '../../src/fishchallenges.js';
-import { UserError, sleep } from '../../src/util.js';
+import { makeMinigames, GAMES as MINI } from './minigames.js';
+import { TRIVIA_CATEGORIES } from '../../src/minigames.js';
+import { UserError, sleep, truncate } from '../../src/util.js';
 import { emoji as EM, emojiRef } from '../../src/emojis.js';
 import * as ART from '../../src/gameart.js';
 
@@ -102,6 +104,9 @@ const dropSession = (ctx, id) => ctx.sql.run('DELETE FROM games_sessions WHERE i
 function activeSession(ctx, userId, kind) {
   return ctx.sql.get('SELECT id FROM games_sessions WHERE guild_id = ? AND user_id = ? AND kind = ? AND updated_at > ?', ctx.guildId, userId, kind, Date.now() - SESSION_MAX_MS);
 }
+
+// 3.1 arcade games (Tower, Wires, Bingo, Memory, Hangman, Trivia): modules/games/minigames.js
+const mini = makeMinigames({ saveSession, loadSession, dropSession, activeSession, eco: (ctx) => eco(ctx), money: (ctx, n) => money(ctx, n), record, sid, vis: (ctx) => vis(ctx) });
 
 // Signed "again" buttons: they carry a bet, so they use the same signature as popup tokens.
 const againId = (i, game, args) => packToken({ ns: 'gmx', step: 'a', form: game, owner: i.user.id, args: args.map(String) });
@@ -315,7 +320,7 @@ async function blackjackClick(ctx, i, id, action) {
 function profile(ctx, userId) {
   ctx.sql.run('INSERT OR IGNORE INTO games_fish_profile (guild_id, user_id) VALUES (?, ?)', ctx.guildId, userId);
   const p = ctx.sql.get('SELECT * FROM games_fish_profile WHERE guild_id = ? AND user_id = ?', ctx.guildId, userId);
-  return { ...p, rods: JSON.parse(p.rods), tackle: JSON.parse(p.tackle) };
+  return { ...p, rods: JSON.parse(p.rods), tackle: JSON.parse(p.tackle), stars: JSON.parse(p.rod_stars ?? '{}') };
 }
 const baitStock = (ctx, userId) => Object.fromEntries(ctx.sql.all('SELECT bait, qty FROM games_fish_bait WHERE guild_id = ? AND user_id = ? AND qty > 0', ctx.guildId, userId).map((r) => [r.bait, r.qty]));
 function useBait(ctx, userId, bait) {
@@ -337,15 +342,30 @@ function checkSetup(ctx, userId, { biome, rod, bait, tackle }) {
 }
 async function cast(ctx, i, setup, { update = false } = {}) {
   enabled(ctx, 'fishing');
-  if (activeSession(ctx, i.user.id, 'fish')) throw new UserError('You already have a fish on the line. Finish reeling it in first!');
+  // An older cast still open: if the fish already swam off (left alone after the bite), clear it and cast again;
+  // if it is really still on the line, show it again, since its message may have been dismissed or never arrived.
+  const open = activeSession(ctx, i.user.id, 'fish');
+  if (open) {
+    let old = null; try { old = loadSession(ctx, open.id, i.user.id, 'fish'); } catch { /* gone */ }
+    const now = Date.now();
+    if (!old || old.status !== 'reeling' || (F.bitten(old, now) && now - Math.max(old.lastAt ?? 0, old.biteAt ?? 0) > F.IDLE_MS)) dropSession(ctx, open.id);
+    else {
+      const msg = { ...(await reelMsg(ctx, old, open.id, { edit: update })), content: `${EM('bobber')} You still have a fish on the line from your last cast. Here it is, reel it in!`, allowedMentions: NOPING };
+      await (update ? i.update(msg) : i.reply({ ...msg, flags: EPH }));
+      scheduleBite(ctx, i, open.id, old);
+      return;
+    }
+  }
   const id = sid();
   let s;
   ctx.sql.transaction(() => {
     checkSetup(ctx, i.user.id, setup);
     useBait(ctx, i.user.id, setup.bait);
     const seed = randomInt(2 ** 31);
-    const fish = F.rollCatch(setup, F.seeded(seed ^ 0x5bd1e995));
-    s = F.startReel({ rod: setup.rod, tackle: setup.tackle, fish, seed, biteMs: globalThis[Symbol.for('goodboy.games.biteMs')], surges: globalThis[Symbol.for('goodboy.games.surges')] ?? true });
+    const stars = profile(ctx, i.user.id).stars[setup.rod] ?? 1;
+    const lucky = (ctx.api('economy')?.boostUntil?.(ctx.guildId, i.user.id, 'luck') ?? 0) > Date.now(); // 3.1: the shop's lucky charm
+    const fish = F.rollCatch({ ...setup, stars, bonusLuck: lucky ? 0.3 : 0 }, F.seeded(seed ^ 0x5bd1e995));
+    s = F.startReel({ rod: setup.rod, tackle: setup.tackle, fish, seed, stars, biome: setup.biome, biteMs: globalThis[Symbol.for('goodboy.games.biteMs')], surges: globalThis[Symbol.for('goodboy.games.surges')] ?? true });
     s.biome = setup.biome; s.bait = setup.bait;
     ctx.sql.run('UPDATE games_fish_profile SET casts = casts + 1, last_biome = ?, last_rod = ?, last_bait = ?, last_tackle = ? WHERE guild_id = ? AND user_id = ?',
       setup.biome, setup.rod, setup.bait, setup.tackle, ctx.guildId, i.user.id);
@@ -405,17 +425,42 @@ function reelButtons(id) {
     new ButtonBuilder().setCustomId(`gm:fr:${id}:cut`).setEmoji('✂️').setStyle(ButtonStyle.Danger))];
 }
 
+// ------------------------------------------------------------------ 3.1 rods: earning, stars
+/** Gives a member a rod they don't have. Returns a line to show, or null if they already had it. */
+function awardRod(ctx, userId, rodId) {
+  const p = profile(ctx, userId);
+  if (p.rods.includes(rodId)) return null;
+  ctx.sql.run('UPDATE games_fish_profile SET rods = ? WHERE guild_id = ? AND user_id = ?', JSON.stringify([...p.rods, rodId]), ctx.guildId, userId);
+  const r = F.rodById(rodId), pk = F.PERKS[r.perk];
+  ctx.live?.('activity', { icon: '🎁', text: `Someone earned the ${r.label}` });
+  return `🎁 **New rod: ${r.label}!** ${pk ? `${pk.emoji} ${pk.label}: ${pk.desc}.` : ''} Pick it when you cast.`;
+}
+/** Keepsake rod: when this catch completes a place's collection. */
+function collectionRod(ctx, userId, biome) {
+  const total = F.fishIn(biome).length;
+  const have = ctx.sql.get(`SELECT COUNT(*) AS n FROM games_fish_dex WHERE guild_id = ? AND user_id = ? AND species IN (${F.fishIn(biome).map(() => '?').join(',')})`, ctx.guildId, userId, ...F.fishIn(biome).map((f) => f.id)).n;
+  return have >= total ? awardRod(ctx, userId, `keep-${biome}`) : null;
+}
+/** Challenge rods due after a streak or weekly challenge. */
+function challengeRods(ctx, userId) {
+  const p = profile(ctx, userId);
+  return F.challengeRodsDue({ streak: liveStreak(p), weeklies: p.weeklies ?? 0, owned: p.rods }).map((r) => awardRod(ctx, userId, r.id)).filter(Boolean);
+}
+const sunkenRoll = () => (globalThis[Symbol.for('goodboy.games.sunkenRoll')] ?? Math.random)();
+
 /** Records a caught fish: bag, collection log, XP and profile records. Returns the level before and after. */
 function landFish(ctx, userId, s) {
   const c = s.fish, sp = F.FISH[c.species];
   const before = F.levelFromXp(profile(ctx, userId).xp).level;
-  const xp = F.catchXp(c, sp.biome);
+  const xp = F.catchXp(c, sp.biome, F.gearOf(s).perk);
+  const isNew = !ctx.sql.get('SELECT 1 FROM games_fish_dex WHERE guild_id = ? AND user_id = ? AND species = ?', ctx.guildId, userId, c.species);
   ctx.sql.run('INSERT INTO games_fish_bag (guild_id, user_id, species, rarity, mutation, giant, weight, value, biome, caught_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ctx.guildId, userId, c.species, c.rarity, c.mutation, c.giant ? 1 : 0, c.weight, c.value, sp.biome, Date.now());
   ctx.sql.run(`INSERT INTO games_fish_dex (guild_id, user_id, species, count, best_weight, first_at) VALUES (?, ?, ?, 1, ?, ?)
                ON CONFLICT(guild_id, user_id, species) DO UPDATE SET count = count + 1, best_weight = MAX(best_weight, excluded.best_weight)`, ctx.guildId, userId, c.species, c.weight, Date.now());
   ctx.sql.run('UPDATE games_fish_profile SET xp = xp + ?, caught = caught + 1, best_weight = MAX(best_weight, ?) WHERE guild_id = ? AND user_id = ?', xp, c.weight, ctx.guildId, userId);
   const challenges = progressChallenges(ctx, userId, { type: 'catch', fish: c });
+  if (isNew) { const keep = collectionRod(ctx, userId, sp.biome); if (keep) challenges.push(keep); }
   const after = F.levelFromXp(profile(ctx, userId).xp).level;
   return { xp, before, after, challenges };
 }
@@ -457,6 +502,7 @@ function progressChallenges(ctx, userId, event, now = Date.now()) {
     if (xp) ctx.sql.run('UPDATE games_fish_profile SET xp = xp + ? WHERE guild_id = ? AND user_id = ?', xp, ctx.guildId, userId);
     lines.push(`📜 **${row.period.startsWith('w:') ? 'Weekly challenge' : 'Challenge'} done:** ${CH.describe(row.spec, fmt)} · +${fmt(coins)}${xp ? ` · +${fmtNum(xp)} XP` : ''}`);
     if (row.period.startsWith('d:')) dailyFinished = true;
+    if (row.period.startsWith('w:')) { ctx.sql.run('UPDATE games_fish_profile SET weeklies = weeklies + 1 WHERE guild_id = ? AND user_id = ?', ctx.guildId, userId); lines.push(...challengeRods(ctx, userId)); }
   }
   if (dailyFinished && ctx.sql.get('SELECT COUNT(*) AS n FROM games_fish_challenges WHERE guild_id = ? AND user_id = ? AND period = ? AND done_at IS NULL', ctx.guildId, userId, dailyPeriod(now)).n === 0) {
     const p = profile(ctx, userId);
@@ -466,6 +512,7 @@ function progressChallenges(ctx, userId, event, now = Date.now()) {
     eco(ctx).credit(ctx.guildId, userId, bonus.coins, 'fishing challenge streak');
     ctx.sql.run('INSERT INTO games_fish_bait (guild_id, user_id, bait, qty) VALUES (?, ?, ?, ?) ON CONFLICT(guild_id, user_id, bait) DO UPDATE SET qty = qty + excluded.qty', ctx.guildId, userId, bonus.bait, bonus.baitQty);
     lines.push(`🔥 **All of today's challenges done!** Streak: ${streak} day${streak === 1 ? '' : 's'} · +${fmt(bonus.coins)} · +${bonus.baitQty} ${F.baitById(bonus.bait).label}`);
+    lines.push(...challengeRods(ctx, userId));
   }
   return lines;
 }
@@ -512,6 +559,11 @@ async function reelClick(ctx, i, id, action) {
     if (action === 'cut') Object.assign(s, { status: 'escaped', reason: 'cut' });
     else if (['left', 'right', 'reel', 'slack'].includes(action)) F.reelStep(s, action);
     if (s.status === 'reeling') return saveSession(ctx, id, i.user.id, 'fish', s);
+    // 3.1: in Ironwreck Graveyard a catch can be an old rod instead of a fish.
+    if (s.status === 'caught' && s.biome === 'wreck') {
+      const next = F.nextSunken(profile(ctx, i.user.id).rods);
+      if (next && sunkenRoll() < F.SUNKEN_CHANCE * (F.gearOf(s).perk === 'sunken' ? 3 : 1)) { s.status = 'salvaged'; s.salvage = awardRod(ctx, i.user.id, next.id); }
+    }
     if (s.status === 'caught') landed = landFish(ctx, i.user.id, s);
     dropSession(ctx, id);
   });
@@ -519,6 +571,10 @@ async function reelClick(ctx, i, id, action) {
 
   const b = F.biomeById(s.biome);
   const e = new EmbedBuilder().setTitle(`${b.emoji} ${b.label}`);
+  if (s.status === 'salvaged') {
+    e.setColor(0xc9a227).setDescription(`# ⚓\nYour line snagged on something heavy... it's not a fish, it's an **old rod** from one of the wrecks!\n${s.salvage}`);
+    return i.update({ ...withArt(e, null, { edit: true }), components: [afterCastRow(i)] });
+  }
   if (s.status === 'caught') {
     const r = F.rarityById(s.fish.rarity);
     if (['legendary', 'mythical'].includes(s.fish.rarity) || s.fish.mutation) {
@@ -576,6 +632,7 @@ function hubMessage(ctx, i) {
     pipe.button(i, 'cast', [], { label: 'Cast', emoji: '🎣', style: ButtonStyle.Success }),
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:bag`).setEmoji('🎒').setLabel('Bag').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:shop`).setEmoji('🛒').setLabel('Shop').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:rods`).setEmoji('🎣').setLabel('Rods').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:dex`).setEmoji('📖').setLabel('Collection').setStyle(ButtonStyle.Secondary),
     ...(quest ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:quests`).setEmoji('📜').setLabel('Challenges').setStyle(ButtonStyle.Secondary)] : []))], flags: EPH, allowedMentions: NOPING };
 }
@@ -631,21 +688,79 @@ function sellFish(ctx, userId, all) {
   return { total, lines };
 }
 
+const starText = (n) => '★'.repeat(n) + '☆'.repeat(F.MAX_STARS - n);
+const homeText = (r) => (r.perk === 'mythic' || r.perk === 'wanderer' ? 'every place' : (r.home ?? []).map((h) => `${F.biomeById(h).emoji} ${F.biomeById(h).label}`).join(', ') || 'none');
+/** Your rods: perks, home places, stars; and the rods you can still earn. */
+function rodsMessage(ctx, i) {
+  const p = profile(ctx, i.user.id);
+  const owned = F.RODS.filter((r) => p.rods.includes(r.id)).sort((a, b) => F.rodStats(b.id).power - F.rodStats(a.id).power);
+  const line = (r) => { const pk = F.PERKS[r.perk]; return `**${r.label}** ${starText(p.stars[r.id] ?? 1)}${pk ? ` · ${pk.emoji} ${pk.label}` : ''}`; };
+  const toEarn = F.RODS.filter((r) => r.earn && !p.rods.includes(r.id));
+  const keepsLeft = toEarn.filter((r) => r.earn.kind === 'collection').length;
+  const other = toEarn.filter((r) => r.earn.kind !== 'collection').map((r) => `🔒 **${r.label}** · ${F.earnText(r)}`);
+  const e = new EmbedBuilder().setColor(COLORS.fish).setTitle('🎣 Your rods')
+    .setDescription(truncate(owned.map(line).join('\n'), 3000))
+    .addFields({ name: 'Rods to earn', value: truncate([...other, keepsLeft ? `🏅 **${keepsLeft} Keepsake rods** · catch every fish in a place to earn its rod` : null].filter(Boolean).join('\n') || 'You have earned them all!', 1000) })
+    .setFooter({ text: 'Every rod has a perk and home places where it is stronger. Upgrade your favourites to ★5 with coins and fish.' });
+  const opts = owned.slice(0, 25).map((r) => new StringSelectMenuOptionBuilder().setLabel(truncate(r.label, 100)).setValue(r.id).setDescription(truncate(`${starText(p.stars[r.id] ?? 1)} · ${F.PERKS[r.perk]?.label ?? ''}`, 100)));
+  return { embeds: [e], components: [
+    new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`gm:frod:${i.user.id}`).setPlaceholder('Look at a rod or upgrade it...').addOptions(opts)),
+    new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:hub`).setEmoji('↩️').setLabel('Back').setStyle(ButtonStyle.Secondary))], allowedMentions: NOPING };
+}
+/** One rod: what it does, where it's strong, and what the next star costs. */
+function rodMessage(ctx, i, rodId, note) {
+  const p = profile(ctx, i.user.id);
+  if (!p.rods.includes(rodId)) throw new UserError('You don\'t own that rod.');
+  const r = F.rodById(rodId), stars = p.stars[rodId] ?? 1, st = F.rodStats(rodId, { stars }), pk = F.PERKS[r.perk];
+  const home = F.rodStats(rodId, { stars, biome: (r.home ?? [])[0] ?? (r.perk === 'mythic' || r.perk === 'wanderer' ? 'bay' : null) });
+  const cost = F.upgradeCost(rodId, stars);
+  const have = cost ? ctx.sql.get('SELECT COUNT(*) AS n FROM games_fish_bag WHERE guild_id = ? AND user_id = ? AND sold = 0 AND rarity = ? AND mutation IS NULL', ctx.guildId, i.user.id, cost.rarity).n : 0;
+  const coins = eco(ctx).wallet(ctx.guildId, i.user.id).coins;
+  const e = new EmbedBuilder().setColor(COLORS.fish).setTitle(`🎣 ${r.label} ${starText(stars)}`)
+    .setDescription([note, pk ? `${pk.emoji} **${pk.label}:** ${pk.desc}` : null, `🏠 **Home:** ${homeText(r)}`, `-# ${F.earnText(r)}`].filter(Boolean).join('\n'))
+    .addFields(
+      { name: 'Anywhere', value: `Luck +${Math.round(st.luck * 100)}% · zone ${st.control} · power ${st.power} · line ${st.line}` },
+      ...(home.home ? [{ name: 'At home', value: `Luck +${Math.round(home.luck * 100)}% · zone ${home.control} · power ${home.power} · line ${home.line}` }] : []),
+      { name: cost ? `Next: ${starText(stars + 1)}` : 'Fully upgraded', value: cost ? `${money(ctx, cost.coins)} (you have ${money(ctx, coins)})\n${cost.fish} ${F.rarityById(cost.rarity).label} fish from your bag (you have ${have}; mutated fish are never used)` : 'This rod is at ★5.' });
+  const row = new ActionRowBuilder().addComponents(
+    ...(cost ? [new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:up-${rodId}`).setEmoji('⬆️').setLabel(`Upgrade to ★${stars + 1}`).setStyle(ButtonStyle.Success).setDisabled(coins < cost.coins || have < cost.fish)] : []),
+    new ButtonBuilder().setCustomId(`gm:fh:${i.user.id}:rods`).setEmoji('↩️').setLabel('All rods').setStyle(ButtonStyle.Secondary));
+  return { embeds: [e], components: [row], allowedMentions: NOPING };
+}
+/** Spends coins and the cheapest matching fish to add a star. Returns a line to show. */
+function upgradeRod(ctx, userId, rodId) {
+  let out;
+  ctx.sql.transaction(() => {
+    const p = profile(ctx, userId);
+    if (!p.rods.includes(rodId)) throw new UserError('You don\'t own that rod.');
+    const stars = p.stars[rodId] ?? 1, cost = F.upgradeCost(rodId, stars);
+    if (!cost) throw new UserError('That rod is already at ★5.');
+    const fish = ctx.sql.all('SELECT id FROM games_fish_bag WHERE guild_id = ? AND user_id = ? AND sold = 0 AND rarity = ? AND mutation IS NULL ORDER BY value ASC LIMIT ?', ctx.guildId, userId, cost.rarity, cost.fish);
+    if (fish.length < cost.fish) throw new UserError(`You need ${cost.fish} ${F.rarityById(cost.rarity).label} fish in your bag (not mutated). You have ${fish.length}.`);
+    eco(ctx).debit(ctx.guildId, userId, cost.coins, `upgraded ${F.rodById(rodId).label}`);
+    ctx.sql.run(`UPDATE games_fish_bag SET sold = 1 WHERE id IN (${fish.map(() => '?').join(',')})`, ...fish.map((f) => f.id));
+    ctx.sql.run('UPDATE games_fish_profile SET rod_stars = ? WHERE guild_id = ? AND user_id = ?', JSON.stringify({ ...p.stars, [rodId]: stars + 1 }), ctx.guildId, userId);
+    out = `⬆️ **Upgraded to ${starText(stars + 1)}!**`;
+  });
+  return out;
+}
+
 function shopMessage(ctx, i, note) {
   const p = profile(ctx, i.user.id);
   const lv = F.levelFromXp(p.xp).level;
   const stock = baitStock(ctx, i.user.id);
   const coins = eco(ctx).wallet(ctx.guildId, i.user.id).coins;
   // Only the rods that matter now: the best one owned, the ones for sale, and the next two to unlock.
-  const best = Math.max(...F.RODS.map((r, k) => (p.rods.includes(r.id) ? k : 0)));
-  const locked = F.RODS.filter((r) => r.level > lv).slice(0, 2).map((r) => r.id);
-  const rodLines = F.RODS.filter((r, k) => r.price && (k === best || (!p.rods.includes(r.id) && r.level <= lv) || locked.includes(r.id))).slice(-8).map((r) => `${p.rods.includes(r.id) ? '✅' : r.level > lv ? '🔒' : '▫️'} **${r.label}** · ${fmtNum(r.price)} · lv ${r.level} · luck +${Math.round(r.luck * 100)}% · zone ${r.control}`);
+  const SHOP = F.RODS.filter((r) => !r.earn);
+  const best = Math.max(...SHOP.map((r, k) => (p.rods.includes(r.id) ? k : 0)));
+  const locked = SHOP.filter((r) => r.level > lv).slice(0, 2).map((r) => r.id);
+  const rodLines = SHOP.filter((r, k) => r.price && (k === best || (!p.rods.includes(r.id) && r.level <= lv) || locked.includes(r.id))).slice(-8).map((r) => `${p.rods.includes(r.id) ? '✅' : r.level > lv ? '🔒' : '▫️'} **${r.label}** · ${fmtNum(r.price)} · lv ${r.level} · luck +${Math.round(r.luck * 100)}% · zone ${r.control}${F.PERKS[r.perk] ? ` · ${F.PERKS[r.perk].emoji} ${F.PERKS[r.perk].label}` : ''}`);
   const tackleLines = F.TACKLE.filter((t) => t.price).map((t) => `${p.tackle.includes(t.id) ? '✅' : '▫️'} **${t.label}** · ${fmtNum(t.price)} · ${t.desc}`);
   const baitLines = F.BAITS.filter((b) => b.price).map((b) => `🪱 **${b.label}** · ${fmtNum(b.price)} each · luck +${Math.round(b.luck * 100)}%${b.corruption ? ' · draws corruption' : ''} · you have ${stock[b.id] ?? 0}`);
   const e = new EmbedBuilder().setColor(COLORS.fish).setTitle('🛒 Tackle shop').setDescription([note, `You have ${money(ctx, coins)}`].filter(Boolean).join('\n'))
     .addFields({ name: 'Rods', value: rodLines.join('\n') }, { name: 'Tackle (kept forever)', value: tackleLines.join('\n') }, { name: 'Bait (one per cast)', value: baitLines.join('\n') });
   const options = [
-    ...F.RODS.filter((r) => r.price && !p.rods.includes(r.id) && r.level <= lv).map((r) => ({ label: `${r.label} (${fmtNum(r.price)})`, value: `rod-${r.id}`, emoji: '🎣' })),
+    ...F.RODS.filter((r) => r.price && !r.earn && !p.rods.includes(r.id) && r.level <= lv).map((r) => ({ label: `${r.label} (${fmtNum(r.price)})`, value: `rod-${r.id}`, emoji: '🎣' })),
     ...F.TACKLE.filter((t) => t.price && !p.tackle.includes(t.id)).map((t) => ({ label: `${t.label} (${fmtNum(t.price)})`, value: `tackle-${t.id}`, emoji: '🧰' })),
     ...F.BAITS.filter((b) => b.price).map((b) => ({ label: `${b.label} (${fmtNum(b.price)} each)`, value: `bait-${b.id}`, emoji: '🪱', description: 'Choose how many in a form' })),
   ].slice(-25);
@@ -663,7 +778,7 @@ function buyItem(ctx, userId, value, qty = 1) {
   let label;
   ctx.sql.transaction(() => {
     if (kind === 'rod') {
-      const r = F.RODS.find((x) => x.id === id && x.price);
+      const r = F.RODS.find((x) => x.id === id && x.price && !x.earn);
       if (!r) throw new UserError('That rod is not for sale.');
       if (p.rods.includes(id)) throw new UserError('You already own that rod.');
       if (r.level > F.levelFromXp(p.xp).level) throw new UserError(`That rod needs fishing level ${r.level}.`);
@@ -732,6 +847,9 @@ async function hubClick(ctx, i, owner, view) {
   if (view === 'dex') return i.update(dexMessage(ctx, i));
   if (view.startsWith('dex-')) return i.update(dexMessage(ctx, i, view.slice(4)));
   if (view === 'quests') return i.update(challengesMessage(ctx, i));
+  if (view === 'rods') return i.update(rodsMessage(ctx, i));
+  if (view.startsWith('rod-')) return i.update(rodMessage(ctx, i, view.slice(4)));
+  if (view.startsWith('up-')) { const note = upgradeRod(ctx, i.user.id, view.slice(3)); return i.update(rodMessage(ctx, i, view.slice(3), note)); }
   if (view === 'hub') { const { flags, ...m } = hubMessage(ctx, i); return i.update(m); }
   if (view === 'sellall' || view === 'sellcommon') {
     const got = sellFish(ctx, i.user.id, view === 'sellall');
@@ -762,6 +880,14 @@ const pipe = createPipeline({
       fields: (ctx) => [betField(ctx)],
       async submit(ctx, i, v) { return runSlots(ctx, i, takeBet(ctx, i.user.id, v.bet, 'slots bet')); },
     },
+    ...Object.fromEntries(Object.entries(MINI).map(([game, g]) => [game, {
+      title: `${g.label}: set your bet`, permission: 'games.play', color: 0x6b93ff,
+      button: { label: 'Set bet', emoji: g.emoji, style: ButtonStyle.Success },
+      precheck: (ctx, i) => { enabled(ctx, game); if (activeSession(ctx, i.user.id, game)) throw new UserError(`You already have a ${g.label} game going. Finish it first!`); },
+      intro: (ctx, i) => betIntro(ctx, i, `\n${g.emoji} **${g.label}:** ${g.blurb}.`),
+      fields: (ctx) => [betField(ctx), ...(game === 'trivia' ? [{ id: 'category', kind: 'select', label: 'Category', value: 'any', options: Object.entries(TRIVIA_CATEGORIES).map(([value, label]) => ({ label, value })) }] : [])],
+      async submit(ctx, i, v) { return mini.start(ctx, i, game, takeBet(ctx, i.user.id, v.bet, `${g.label} bet`), { category: v.category }); },
+    }])),
     coinflip: {
       title: 'Coin flip: set your bet', permission: 'games.play', color: COLORS.coinflip,
       button: { label: 'Set bet', emoji: '🪙', style: ButtonStyle.Success },
@@ -794,7 +920,9 @@ const pipe = createPipeline({
           { id: 'biome', kind: 'select', label: 'Where to fish', value: F.biomeById(last.biome).level <= lv ? last.biome : 'bay',
             options: F.BIOMES.filter((b) => b.level <= lv).map((b) => ({ label: `${b.label}`, value: b.id, description: b.blurb })) },
           { id: 'rod', kind: 'select', label: 'Rod', value: last.rod,
-            options: F.RODS.filter((r) => p.rods.includes(r.id)).map((r) => ({ label: r.label, value: r.id, description: `Luck +${Math.round(r.luck * 100)}% · zone ${r.control} · power ${r.power} · line ${r.line}` })) },
+            // Discord shows 25 options at most: your last rod and your strongest ones.
+            options: F.RODS.filter((r) => p.rods.includes(r.id)).sort((a, b) => (b.id === last.rod) - (a.id === last.rod) || F.rodStats(b.id, { stars: p.stars[b.id] }).power - F.rodStats(a.id, { stars: p.stars[a.id] }).power).slice(0, 25)
+              .map((r) => ({ label: `${r.label} ${'★'.repeat(p.stars[r.id] ?? 1)}`.slice(0, 100), value: r.id, description: `${F.PERKS[r.perk] ? `${F.PERKS[r.perk].emoji} ${F.PERKS[r.perk].label} · ` : ''}home: ${homeText(r)}`.slice(0, 100) })) },
           { id: 'bait', kind: 'select', label: 'Bait', value: last.bait !== 'none' && stock[last.bait] ? last.bait : 'none',
             options: F.BAITS.filter((b) => b.id === 'none' || stock[b.id] > 0).map((b) => ({ label: b.id === 'none' ? b.label : `${b.label} (${stock[b.id]} left)`, value: b.id, description: b.id === 'none' ? 'Free, no bonus' : `Luck +${Math.round(b.luck * 100)}%` })) },
           { id: 'tackle', kind: 'select', label: 'Tackle', value: p.tackle.includes(last.tackle) ? last.tackle : 'none',
@@ -824,9 +952,12 @@ async function gameClick(ctx, i) {
   if (kind === 'fr') return reelClick(ctx, i, a, b);
   if (kind === 'fh') return hubClick(ctx, i, a, b);
   if (kind === 'fs') return shopSelect(ctx, i, a);
+  if (kind === 'frod') { if (a !== i.user.id) throw new UserError('Those rods belong to someone else. Run `/fish` for your own.'); return i.update(rodMessage(ctx, i, i.values?.[0])); }
   if (kind === 'fsel') return sellSelect(ctx, i, a);
   if (kind === 'fdx') { if (a !== i.user.id) throw new UserError('That collection belongs to someone else. Run `/fish` for your own.'); return i.update(dexMessage(ctx, i, i.values?.[0] ?? null)); }
   if (kind === 'ar') return arcadeClick(ctx, i, a);
+  if (kind === 'mg') return mini.click(ctx, i, a, b);
+  if (kind === 'mgh') return mini.guess(ctx, i, a);
   if (kind === 'pg') return pongClick(ctx, i, a, b);
   throw new UserError('That button is no longer active.');
 }
@@ -912,6 +1043,7 @@ const ARCADE = [['slots', '🎰', 'Slots'], ['blackjack', '🃏', 'Blackjack'], 
 async function arcadeClick(ctx, i, game) {
   if (game === 'fish') { enabled(ctx, 'fishing'); return i.reply(hubMessage(ctx, i)); }
   if (game === 'pong') return startPong(ctx, i);
+  if (game in MINI) return pipe.open(ctx, i, game);
   if (!ARCADE.some(([g]) => g === game)) throw new UserError('That game is not available.');
   return pipe.open(ctx, i, game);
 }
@@ -920,10 +1052,13 @@ function arcadePanel(ctx) {
     .setDescription(`Pick a game. Each button opens a private form just for you.\n\n🎰 **Slots** · jackpot pool ${money(ctx, pool(ctx))}\n🃏 **Blackjack** · pays 3 to 2\n🪙 **Coin flip** · ${C.COINFLIP_PAYOUT}x\n🎣 **Fishing** · ${F.BIOMES.length} places, ${Object.keys(F.FISH).length} fish to collect`)
     .setFooter({ text: 'Play money only. Coins cannot be bought or cashed out.' });
   const games = new ActionRowBuilder().addComponents(ARCADE.map(([g, emoji, label]) => new ButtonBuilder().setCustomId(`gm:ar:${g}`).setEmoji(emoji).setLabel(label).setStyle(ButtonStyle.Primary)));
+  const minis = Object.entries(MINI).filter(([g]) => ctx.config.get(`${g}Enabled`)).map(([g, m]) => new ButtonBuilder().setCustomId(`gm:ar:${g}`).setEmoji(m.emoji).setLabel(m.label).setStyle(ButtonStyle.Primary));
   const extra = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('econ:daily:panel').setEmoji('🎁').setLabel('Daily').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('econ:top:panel').setEmoji('🏆').setLabel('Leaderboard').setStyle(ButtonStyle.Secondary));
-  return { embeds: [e], components: [games, extra], allowedMentions: NOPING };
+  const miniRows = []; for (let k = 0; k < minis.length; k += 5) miniRows.push(new ActionRowBuilder().addComponents(minis.slice(k, k + 5)));
+  if (minis.length) e.setDescription(`${e.data.description}\n${Object.entries(MINI).filter(([g]) => ctx.config.get(`${g}Enabled`)).map(([, m]) => `${m.emoji} **${m.label}** · ${m.blurb}`).join('\n')}`);
+  return { embeds: [e], components: [games, ...miniRows, extra].slice(0, 5), allowedMentions: NOPING };
 }
 
 // ------------------------------------------------------------------ module
@@ -946,6 +1081,7 @@ export default {
     { key: 'coinflipEnabled', type: 'toggle', label: 'Coin flip', default: true },
     { key: 'fishingEnabled', type: 'toggle', label: 'Fishing', default: true },
     { key: 'pongEnabled', type: 'toggle', label: 'Pong', default: true },
+    ...Object.entries(MINI).map(([g, m]) => ({ key: `${g}Enabled`, type: 'toggle', label: m.label, default: true })),
     { key: 'fishChallenges', type: 'toggle', label: 'Fishing challenges (3 daily and 1 weekly, with coin and XP rewards)', default: true },
     { key: 'minBet', type: 'number', label: 'Smallest bet', default: 10, min: 1, max: 1000000 },
     { key: 'maxBet', type: 'number', label: 'Biggest bet', default: 50000, min: 1, max: 100000000 },
@@ -983,6 +1119,10 @@ export default {
             progress INTEGER NOT NULL DEFAULT 0, seen TEXT NOT NULL DEFAULT '[]', done_at INTEGER, PRIMARY KEY (guild_id, user_id, period, slot));
           ALTER TABLE games_fish_profile ADD COLUMN streak INTEGER NOT NULL DEFAULT 0;
           ALTER TABLE games_fish_profile ADD COLUMN streak_day TEXT;`,
+  }, {
+    id: 3, // 3.1: rod stars, and weekly challenges finished (for the Taskmaster rod)
+    sql: `ALTER TABLE games_fish_profile ADD COLUMN rod_stars TEXT NOT NULL DEFAULT '{}';
+          ALTER TABLE games_fish_profile ADD COLUMN weeklies INTEGER NOT NULL DEFAULT 0;`,
   }],
   commands: [
     gameCommand('slots', 'Spin the slots (opens a bet form)', 'slots'),

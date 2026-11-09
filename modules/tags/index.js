@@ -9,11 +9,14 @@
  *   starts      the message starts with it: "how do i join"
  *   contains    the trigger appears as a word or phrase anywhere in the message
  *
- * Replies can use {user} {username} {server} {channel} {args}. Replies never ping anyone (no @everyone tricks).
+ * Replies can use {user} {username} {server} {channel} {args}, and since 3.1 {arg1}..{arg9}, {uses}, {membercount},
+ * {date}, {random: a | b}, {number: 1-100} and {if: {arg1} = yes | then | else} (see src/tagscript.js).
+ * Replies never ping anyone (no @everyone tricks).
  * Each one has a cooldown per channel, and can be limited to some channels.
  */
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
-import { UserError, truncate, fillTemplate } from '../../src/util.js';
+import { UserError, truncate } from '../../src/util.js';
+import { runTagScript, argVars } from '../../src/tagscript.js';
 
 const EPH = MessageFlags.Ephemeral;
 const NOPING = { parse: [] };
@@ -46,10 +49,10 @@ export function matchMessage(text, list, prefixes) {
   return null;
 }
 
-export function render(c, vars) {
-  const text = fillTemplate(c.response, vars);
+export function render(c, vars, rand = Math.random) {
+  const text = runTagScript(c.response, vars, rand) || '\u200b';
   if (!c.title) return { content: truncate(text, 2000), allowedMentions: NOPING };
-  const e = new EmbedBuilder().setTitle(truncate(fillTemplate(c.title, vars), 256)).setDescription(truncate(text, 4000));
+  const e = new EmbedBuilder().setTitle(truncate(runTagScript(c.title, vars, rand), 256) || '\u200b').setDescription(truncate(text, 4000));
   if (c.color) e.setColor(c.color);
   return { embeds: [e], allowedMentions: NOPING };
 }
@@ -63,7 +66,8 @@ function onCooldown(ctx, c, channelId) {
   return false;
 }
 
-const varsFor = (ctx, member, user, channel, args) => ({ user: `<@${user.id}>`, username: member?.displayName ?? user.username, server: ctx.guild?.name ?? '', channel: channel ? `<#${channel.id}>` : '', args: args ?? '' });
+const varsFor = (ctx, member, user, channel, args, uses = 0) => ({ user: `<@${user.id}>`, username: member?.displayName ?? user.username, server: ctx.guild?.name ?? '', channel: channel ? `<#${channel.id}>` : '',
+  membercount: ctx.guild?.memberCount ?? '', date: new Date().toISOString().slice(0, 10), uses, ...argVars(args) });
 
 async function onMessage(ctx, m) {
   if (!m.guildId || m.author?.bot || m.webhookId) return;
@@ -72,9 +76,10 @@ async function onMessage(ctx, m) {
   const c = hit.cmd;
   if (c.channels?.length && !c.channels.includes(m.channelId) && !c.channels.includes(m.channel?.parentId)) return;
   if (onCooldown(ctx, c, m.channelId)) return;
-  ctx.data.set(keyOf(c.name), { ...c, uses: (c.uses ?? 0) + 1 });
+  const uses = (c.uses ?? 0) + 1;
+  ctx.data.set(keyOf(c.name), { ...c, uses });
   if (c.deleteTrigger && c.trigger === 'command') await m.delete().catch(() => {});
-  await ctx.queue(() => m.channel.send(render(c, varsFor(ctx, m.member, m.author, m.channel, hit.args)))).catch((e) => ctx.log.warn(`Custom command ${c.name}: ${e.message}`));
+  await ctx.queue(() => m.channel.send(render(c, varsFor(ctx, m.member, m.author, m.channel, hit.args, uses)))).catch((e) => ctx.log.warn(`Custom command ${c.name}: ${e.message}`));
 }
 
 /** Add or replace one (also used by /migrate). */
@@ -109,7 +114,9 @@ async function tagsCmd(ctx, i) {
   if (sub === 'use') {
     const c = ctx.data.get(keyOf(i.options.getString('name', true)));
     if (!c) throw new UserError('There is no custom command with that name. See `/tags list`.');
-    return i.reply(render(c, varsFor(ctx, i.member, i.user, i.channel, '')));
+    const uses = (c.uses ?? 0) + 1;
+    ctx.data.set(keyOf(c.name), { ...c, uses });
+    return i.reply(render(c, varsFor(ctx, i.member, i.user, i.channel, i.options.getString('args') ?? '', uses)));
   }
   if (!ctx.perms.check(i.member, 'tags.manage')) throw new UserError("You don't have permission for that (`tags.manage`).");
   if (sub === 'add') {
@@ -142,10 +149,10 @@ export default {
     permission: 'tags.use',
     data: new SlashCommandBuilder().setName('tags').setDescription('Custom commands and auto-replies')
       .addSubcommand((s) => s.setName('list').setDescription('Every custom command'))
-      .addSubcommand((s) => s.setName('use').setDescription('Post a custom command here').addStringOption((o) => o.setName('name').setDescription('Which one').setRequired(true)))
+      .addSubcommand((s) => s.setName('use').setDescription('Post a custom command here').addStringOption((o) => o.setName('name').setDescription('Which one').setRequired(true)).addStringOption((o) => o.setName('args').setDescription('Words after the command, for {args} and {arg1}').setMaxLength(500)))
       .addSubcommand((s) => s.setName('add').setDescription('Add or change a custom command (staff)')
         .addStringOption((o) => o.setName('name').setDescription('Its name, e.g. rules (used as ?rules)').setRequired(true).setMaxLength(32))
-        .addStringOption((o) => o.setName('response').setDescription('What the bot replies. {user} {username} {server} {channel} {args}').setRequired(true).setMaxLength(2000))
+        .addStringOption((o) => o.setName('response').setDescription('Reply. {user} {args} {arg1} {random: a | b} {number: 1-6} {if: {arg1} = x | yes | no}').setRequired(true).setMaxLength(2000))
         .addStringOption((o) => o.setName('trigger').setDescription('When it replies').addChoices({ name: 'command (?name)', value: 'command' }, { name: 'whole message is the phrase', value: 'exact' }, { name: 'message starts with the phrase', value: 'starts' }, { name: 'message contains the phrase', value: 'contains' }))
         .addStringOption((o) => o.setName('phrase').setDescription('The phrase for auto-replies (empty = the name)').setMaxLength(100))
         .addStringOption((o) => o.setName('embed_title').setDescription('Optional: reply in a box with this title').setMaxLength(256))
