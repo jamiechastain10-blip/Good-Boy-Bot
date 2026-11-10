@@ -29,6 +29,7 @@ const ICON = {
   tickets: 'M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z',
   tools: 'M14 6a4 4 0 0 0-5 5l-6 6 2 2 6-6a4 4 0 0 0 5-5l-2 2-2-2z',
   moderation: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z',
+  music: 'M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
 };
 function icon(name) { const s = document.createElementNS(SVG, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', ICON[name]); s.append(p); return s; }
 function toast(msg, bad = false) { const t = document.getElementById('toast'); t.textContent = msg; t.className = `show${bad ? ' bad' : ''}`; clearTimeout(toast.t); toast.t = setTimeout(() => { t.className = ''; }, 3200); }
@@ -120,10 +121,11 @@ document.getElementById('server').addEventListener('click', () => {
 const canModerate = () => (S.guild?.modules ?? []).some((m) => m.name === 'moderation' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'cases')));
 const canWorkTickets = () => (S.guild?.modules ?? []).some((m) => m.name === 'support' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'tickets')));
 const hasArchive = () => (S.guild?.modules ?? []).some((m) => m.name === 'support' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'archive')));
+const hasMusic = () => (S.guild?.modules ?? []).some((m) => m.name === 'music' && (S.guild.access === 'admin' ? m.enabled : (m.panels ?? []).some((p) => p.id === 'player')));
 /** Admins get the full set; people with dashboard tools get Home, Tickets (if they may see them) and their tools. */
 function tabsFor() {
-  if (S.guild?.access !== 'admin') return [['home', 'Home'], ...(hasArchive() ? [['tickets', 'Tickets']] : []), ...(canModerate() ? [['moderation', 'Moderation']] : []), ['tools', 'Tools']];
-  return [['home', 'Home'], ...(hasArchive() || canWorkTickets() ? [['tickets', 'Tickets']] : []), ['moderation', 'Moderation'], ['levels', 'Levels'], ['modules', 'Modules']];
+  if (S.guild?.access !== 'admin') return [['home', 'Home'], ...(hasArchive() ? [['tickets', 'Tickets']] : []), ...(canModerate() ? [['moderation', 'Moderation']] : []), ...(hasMusic() ? [['music', 'Music']] : []), ['tools', 'Tools']];
+  return [['home', 'Home'], ...(hasArchive() || canWorkTickets() ? [['tickets', 'Tickets']] : []), ['moderation', 'Moderation'], ...(hasMusic() ? [['music', 'Music']] : []), ['levels', 'Levels'], ['modules', 'Modules']];
 }
 function renderTabs() {
   tabsEl.hidden = false;
@@ -132,6 +134,7 @@ function renderTabs() {
   tabsEl.replaceChildren(...tabs.map(([id, label]) => h('button', { 'aria-current': S.tab === id ? 'page' : null, onclick: () => show(id) }, icon(id), label)));
 }
 async function show(tab) {
+  if (tab !== 'music') window.GBMusic?.unmount();
   S.tab = tab; renderTabs(); window.scrollTo(0, 0);
   view.replaceChildren(h('p', { class: 'center muted' }, 'Loading…'));
   try { view.replaceChildren(...[await PAGES[tab]()].flat(Infinity).filter((x) => x != null && x !== false)); }
@@ -352,11 +355,18 @@ const needs = (mod, what) => [h('div', { class: 'group' }, h('div', { class: 'ro
 
 const PAGES = {
   whatsnew: () => whatsNewPage(),
+  // 3.1.2: the same music player as the dashboard (music.js), with its own live connection
+  music() {
+    const box = h('div', { class: 'gbm-phone' });
+    if (!window.GBMusic) return [h('h1', {}, 'Music'), h('p', { class: 'sub' }, 'The music player did not load. Pull down to refresh.')];
+    setTimeout(() => GBMusic.mount(box, { gid: S.gid, api, toast, admin: S.guild.access === 'admin', ownLive: true, openSettings: () => { GBMusic.unmount(); const m = S.guild.modules.find((x) => x.name === 'music'); if (m) moduleSettingsPage(m); } }), 0);
+    return [box];
+  },
   async home() {
     if (S.guild.access !== 'admin') {
       const panels = S.guild.modules.flatMap((m) => (m.panels ?? []).map((p) => ({ m, p })));
       return [h('h1', {}, 'Home'), h('p', { class: 'sub' }, `${S.guild.guild?.name ?? 'This server'} · your role gives you these tools.`),
-        h('div', { class: 'group' }, panels.map(({ m, p }) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show(p.id === 'archive' ? 'tickets' : 'tools') },
+        h('div', { class: 'group' }, panels.map(({ m, p }) => h('button', { class: 'row', style: { width: '100%', border: 0, background: 'none', textAlign: 'left' }, onclick: () => show(p.id === 'archive' ? 'tickets' : p.kind === 'music-player' ? 'music' : 'tools') },
           h('div', { class: 'two' }, h('b', {}, p.title), h('small', {}, pretty(m.name))), h('span', { class: 'end muted' }, '›')))),
         h('p', { class: 'note' }, `Signed in as ${S.me.user.username}. `, h('a', { href: '/logout' }, 'Log out'))];
     }
@@ -409,7 +419,7 @@ const PAGES = {
   },
 
   async tools() {
-    const panels = S.guild.modules.flatMap((m) => (m.panels ?? []).filter((p) => p.id !== 'archive').map((p) => ({ m, p })));
+    const panels = S.guild.modules.flatMap((m) => (m.panels ?? []).filter((p) => p.id !== 'archive' && p.kind !== 'music-player').map((p) => ({ m, p })));
     const out = [h('h1', {}, 'Tools'), h('p', { class: 'sub' }, 'The tools your role gives you here.')];
     for (const { m, p } of panels) {
       const d = await viewOf(m.name, p.view).catch(() => ({ rows: [] }));

@@ -685,4 +685,4 @@ gb.state().then((s) => { S = s; logLines = s.logs ?? []; refreshSummary().catch(
 // Nothing drawn after a few seconds (no answer from the app): say so instead of leaving the window empty.
 setTimeout(() => { if (!document.getElementById('app')?.children.length) showCrash(new Error('The window got no answer from Good Boy. Reload, or quit from the tray icon and open Good Boy again.')); }, 8000);
 document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') { e.preventDefault(); location.reload(); } });
-setInterval(() => { if (S && !S.setupNeeded && document.visibilityState === 'visible') refreshSummary(); }, 30000);
+setInterval(() => { if (S && !S.setupNeeded && document.visibilityState === 'visible') refreshSummary(); }, 5000);

@@ -1,7 +1,7 @@
 {
   "name": "good-boy-desktop",
   "productName": "Good Boy",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "Good Boy desktop app - control panel for the Good Boy Discord bot (Windows and macOS)",
   "author": "Basic Ghost Labs",
   "private": true,

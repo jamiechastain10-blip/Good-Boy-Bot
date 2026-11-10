@@ -402,6 +402,9 @@ export class ModuleManager {
     }
     this.db.setConfig(guildId, name, key, value);
     publish(guildId, 'settings', { module: name, key });
+    // 3.1.2: a module can react to its own setting changing straight away (music applies a new volume to the song playing).
+    const live = this.active.get(guildId)?.get(name);
+    if (typeof live?.onSettingChange === 'function') { try { live.onSettingChange(this.ctx(guildId, name), key, value); } catch (e) { this.log.warn(`${name} onSettingChange: ${e.message}`); } }
     return value;
   }
 
