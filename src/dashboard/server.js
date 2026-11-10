@@ -9,6 +9,7 @@
  * message and a retry link, and a sanitized line (stage, HTTP status, Discord error code - never
  * secrets, codes or tokens) is written to the log. Visit /auth/diagnose to see the exact values to configure.
  */
+import { ART_HOSTS } from '../medialinks.js';
 import http from 'node:http';
 import { subscribe, publish, recentActivity } from '../live.js';
 import crypto from 'node:crypto';
@@ -22,6 +23,8 @@ import { readChangelog, whatsNew } from '../about.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(here, 'public');
 const STATIC = {
+  '/music.js': ['music.js', 'text/javascript; charset=utf-8'],
+  '/music.css': ['music.css', 'text/css; charset=utf-8'],
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/v3.js': ['v3.js', 'text/javascript; charset=utf-8'],
@@ -218,7 +221,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' https://cdn.discordapp.com ${ART_HOSTS.map((x) => `https://${x}`).join(' ')} data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'`);
 
     // Browsers treat localhost and 127.0.0.1 as different sites; keep everyone on the configured one so cookies line up.
     if (req.method === 'GET' && ['/', '/app', '/login', '/auth/diagnose'].includes(p) && requestHost(req) && requestHost(req) !== new URL(base).host) {
@@ -446,7 +449,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       return json(res, 200, statHistory ? statHistory.series(a.guild.id) : { from: Date.now(), hourMs: 3600000, members: [], messages: [], voice: [] });
     }
 
-    // ---- live updates (2.3): a stream of "something changed" events for one server, plus a pulse every 15 seconds
+    // ---- live updates (2.3): a stream of "something changed" events for one server, plus a pulse every 5 seconds (3.1.2, was 15)
     m = p.match(/^\/api\/guilds\/(\d+)\/live$/);
     if (m && req.method === 'GET') {
       const a = await authorize(req, res, m[1], { level: 'panel' }); if (!a) return;
@@ -466,7 +469,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
       write('hello', { activity: recentActivity(a.guild.id), at: Date.now() });
       pulse();
       const stop = subscribe(a.guild.id, (e) => write(e.type, { ...e.data, at: e.at }));
-      const timers = [setInterval(pulse, 15000), setInterval(() => { try { res.write(': keep-alive\n\n'); } catch { /* closed */ } }, 25000)];
+      const timers = [setInterval(pulse, 5000), setInterval(() => { try { res.write(': keep-alive\n\n'); } catch { /* closed */ } }, 25000)];
       const close = () => { stop(); timers.forEach(clearInterval); liveConns.set(sid, Math.max(0, (liveConns.get(sid) ?? 1) - 1)); };
       req.on('close', close);
       return;
@@ -582,7 +585,7 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         const risky = new Set(), safe = new Set();
         for (const d of manager.describeForGuild(a.guild.id)) for (const pn of d.panels ?? []) {
           if (!pn.permission) continue;
-          if (pn.private || pn.rowActions?.length || pn.globalActions?.length || pn.addForm) risky.add(pn.permission);
+          if (pn.private || pn.rowActions?.length || pn.globalActions?.length || pn.pageActions?.length || pn.addForm) risky.add(pn.permission);
           else if (d.enabled) safe.add(pn.permission);
         }
         for (const k of safe) if (!risky.has(k)) keys.add(k);

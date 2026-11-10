@@ -209,7 +209,29 @@ export async function lookup(bin, input, { spawnFn, maxSeconds = 3 * 3600 } = {}
   if (j.is_live) throw new UserError("Live streams can't be played. Add it as a radio station instead.");
   const seconds = Number(j.duration) || null;
   if (seconds && seconds > maxSeconds) throw new UserError(`That's too long (over ${Math.round(maxSeconds / 3600)} hours).`);
-  return { title: String(j.track ?? j.title ?? 'Song').slice(0, 200), artist: String(j.artist ?? j.uploader ?? j.channel ?? '').slice(0, 100), seconds, page: j.webpage_url ?? input, site: String(j.extractor_key ?? j.extractor ?? 'web').replace(/:.*/, '') };
+  return { title: String(j.track ?? j.title ?? 'Song').slice(0, 200), artist: String(j.artist ?? j.uploader ?? j.channel ?? '').slice(0, 100), seconds, page: j.webpage_url ?? input, site: String(j.extractor_key ?? j.extractor ?? 'web').replace(/:.*/, ''), ...(safeArt(j.thumbnail ?? bestThumb(j.thumbnails)) ? { art: safeArt(j.thumbnail ?? bestThumb(j.thumbnails)) } : {}) };
+}
+/**
+ * Cover pictures the dashboard may show (3.1.2). Only these picture servers are allowed, and the dashboard's page rules
+ * list the same ones, so a song can never make the dashboard load something from anywhere else.
+ */
+export const ART_HOSTS = ['i.ytimg.com', 'i1.sndcdn.com', 'usercontent.jamendo.com', 'i.scdn.co'];
+export function safeArt(raw) {
+  try { const u = new URL(String(raw ?? '')); return u.protocol === 'https:' && ART_HOSTS.includes(u.hostname) ? u.href.slice(0, 500) : null; } catch { return null; }
+}
+const bestThumb = (list) => (Array.isArray(list) ? [...list].filter((t) => t?.url).sort((a, b) => (Number(b.width) || 0) - (Number(a.width) || 0)).find((t) => safeArt(t.url))?.url ?? null : null);
+/** Search a site for songs (3.1.2, the dashboard's search box): the first few results, quickly, without opening each one. */
+export async function searchMany(bin, query, { spawnFn, limit = 8 } = {}) {
+  const q = String(query ?? '').replace(/[\r\n]/g, ' ').trim().slice(0, 100);
+  if (!q) return [];
+  const r = await run(bin, ['-J', '--flat-playlist', '--no-warnings', `ytsearch${limit}:${q}`], { spawnFn, timeoutMs: 30000 });
+  if (r.code !== 0) throw new UserError('The search did not work right now. Try again in a minute.');
+  let j; try { j = JSON.parse(r.out); } catch { return []; }
+  return (j.entries ?? []).filter((e) => e?.id && !e.live_status?.includes?.('live')).slice(0, limit).map((e) => ({
+    title: String(e.title ?? 'Song').slice(0, 200), artist: String(e.channel ?? e.uploader ?? '').slice(0, 100), seconds: Number(e.duration) || null,
+    page: /^https:\/\//.test(e.url ?? '') ? e.url : `https://www.youtube.com/watch?v=${encodeURIComponent(e.id)}`, site: 'Youtube',
+    art: safeArt(bestThumb(e.thumbnails)) ?? safeArt(`https://i.ytimg.com/vi/${encodeURIComponent(e.id)}/hqdefault.jpg`),
+  }));
 }
 /**
  * The audio's own web address for a page (asked for when the song starts, because these addresses expire), so ffmpeg can
@@ -230,4 +252,66 @@ export async function directAudio(bin, page, { spawnFn } = {}) {
 export function stream(bin, page, { spawnFn = realSpawn } = {}) {
   const child = spawnFn(bin, ['-f', 'bestaudio/best', '--no-playlist', '--no-warnings', '-q', '-o', '-', page], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
   return { stream: child.stdout, stop: () => { try { child.kill(); } catch { /* gone */ } } };
+}
+
+// ------------------------------------------------------------------ 3.1.2: playlists from other sites, and smooth playback
+/**
+ * A link to a whole playlist or album on a site Good Boy can read: { site, kind } or null.
+ * Spotify and Deezer are read from their public pages; the others through yt-dlp.
+ * A YouTube video link that also names a playlist (watch?v=...&list=...) counts only when `andVideos` is set (importing).
+ */
+export function listLink(raw, { andVideos = false } = {}) {
+  const u = cleanLink(raw); if (!u) return null;
+  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  if (spotifyListId(raw)) return { site: 'Spotify', kind: spotifyListId(raw).kind };
+  if (/(^|\.)deezer\.com$/.test(host) && /\/(playlist|album)\/\d+/.test(u.pathname)) return { site: 'Deezer', kind: /\/album\//.test(u.pathname) ? 'album' : 'playlist' };
+  if ((host === 'youtube.com') && u.searchParams.get('list') && (u.pathname === '/playlist' || andVideos)) return { site: 'YouTube', kind: 'playlist' };
+  if (host === 'soundcloud.com' && /^\/[^/]+\/sets\/[^/]+/.test(u.pathname)) return { site: 'SoundCloud', kind: 'playlist' };
+  if (/\.bandcamp\.com$/.test(u.hostname) && /^\/album\//.test(u.pathname)) return { site: 'Bandcamp', kind: 'album' };
+  return null;
+}
+export const MAX_LIST = 300;
+/** Deezer's public API: { name, kind, tracks: [{ title, artist, seconds }] }. Played by finding each song on YouTube. */
+export async function deezerList(raw, { fetchFn = globalThis.fetch } = {}) {
+  const m = /\/(playlist|album)\/(\d+)/.exec(cleanLink(raw)?.pathname ?? '');
+  if (!m) return null;
+  const r = await fetchFn(`https://api.deezer.com/${m[1]}/${m[2]}`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+  const j = r?.ok ? await r.json().catch(() => null) : null;
+  if (!j || j.error || !Array.isArray(j.tracks?.data)) throw new UserError(`Couldn't read that Deezer ${m[1]}. Check it's public and try again.`);
+  const tracks = j.tracks.data.filter((t) => t?.title).slice(0, MAX_LIST).map((t) => ({ title: String(t.title).slice(0, 200), artist: String(t.artist?.name ?? j.artist?.name ?? '').slice(0, 100), seconds: Number(t.duration) || null }));
+  if (!tracks.length) throw new UserError('That Deezer list has no songs that can be played.');
+  return { name: String(j.title ?? 'Deezer playlist').slice(0, 100), kind: m[1], tracks };
+}
+/** A YouTube, SoundCloud or Bandcamp playlist through yt-dlp, without opening every song: { name, kind, tracks: [{ title, artist, seconds, page }] }. */
+export async function siteList(bin, raw, { spawnFn } = {}) {
+  const l = listLink(raw, { andVideos: true });
+  if (!l) return null;
+  const r = await run(bin, ['-J', '--flat-playlist', '--no-warnings', '--playlist-end', String(MAX_LIST), cleanLink(raw).href], { spawnFn, timeoutMs: 90000 });
+  if (r.code !== 0) throw new UserError(`Couldn't read that ${l.site} ${l.kind}. Check it's public and try again.`);
+  let j; try { j = JSON.parse(r.out); } catch { throw new UserError(`Couldn't read that ${l.site} ${l.kind}.`); }
+  const page = (e) => (/^https:\/\//.test(e.url ?? '') ? e.url : /^https:\/\//.test(e.webpage_url ?? '') ? e.webpage_url : l.site === 'YouTube' && e.id ? `https://www.youtube.com/watch?v=${encodeURIComponent(e.id)}` : null);
+  const tracks = (j.entries ?? []).filter((e) => e && page(e) && !/\[(private|deleted) video\]/i.test(e.title ?? '')).slice(0, MAX_LIST)
+    .map((e) => ({ title: String(e.title ?? 'Song').slice(0, 200), artist: String(e.channel ?? e.uploader ?? e.artist ?? '').slice(0, 100), seconds: Number(e.duration) || null, page: page(e), site: l.site === 'YouTube' ? 'Youtube' : l.site,
+      art: safeArt(bestThumb(e.thumbnails)) ?? (l.site === 'YouTube' && e.id ? safeArt(`https://i.ytimg.com/vi/${encodeURIComponent(e.id)}/hqdefault.jpg`) : null) }));
+  if (!tracks.length) throw new UserError(`That ${l.site} ${l.kind} has no songs that can be played.`);
+  return { name: String(j.title ?? `${l.site} ${l.kind}`).slice(0, 100), kind: l.kind, tracks };
+}
+/**
+ * Downloads a song's audio to a file before it plays (3.1.2), so a slow or dropped connection can't make it skip.
+ * Returns the file's path. The caller deletes it once the song is done.
+ */
+export async function downloadAudio(bin, page, dir, { spawnFn, maxMB = 150, timeoutMs = 4 * 60000 } = {}) {
+  fs.mkdirSync(dir, { recursive: true });
+  const base = path.join(dir, `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const r = await run(bin, ['-f', 'bestaudio/best', '--no-playlist', '--no-warnings', '--no-progress', '--no-part', '--max-filesize', `${maxMB}M`, '-o', `${base}.%(ext)s`, '--no-simulate', '--print', 'after_move:filepath', page], { spawnFn, timeoutMs });
+  const file = r.out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).at(-1);
+  if (r.code !== 0 || !file || !path.resolve(file).startsWith(path.resolve(dir) + path.sep) || !fs.existsSync(file)) {
+    for (const f of fs.readdirSync(dir)) if (f.startsWith(path.basename(base))) fs.rm(path.join(dir, f), { force: true }, () => {});
+    throw new Error(/File is larger|max-filesize/i.test(r.err + r.out) ? `the song is over ${maxMB} MB` : 'the download did not work');
+  }
+  return file;
+}
+/** Removes downloaded songs left behind (the bot was closed mid-song). */
+export function sweepDownloads(dir, { olderThanMs = 6 * 3600000 } = {}) {
+  try { for (const f of fs.readdirSync(dir)) { if (!/^(dl|play)-\d+/.test(f)) continue; const p = path.join(dir, f); if (Date.now() - fs.statSync(p).mtimeMs > olderThanMs) fs.rmSync(p, { force: true }); } } catch { /* no folder yet */ }
 }

@@ -209,6 +209,7 @@ function startLive() {
   on('pulse', (d) => { state.pulse = d; paintPulse(); liveChip('on'); islandStatus(); });
   on('activity', (d) => { state.activity.unshift(d); state.activity.length = Math.min(state.activity.length, 30); paintFeed(true); islandStatus(); window.GB?.island.news(d.icon ?? '•', d.text); });
   on('data', (d) => refreshModule(d.module));
+  on('music', (d) => window.GBMusic?.update(d.state));
   on('modules', () => softReload());
   on('settings', () => softReload());
   on('feedback', () => { if (state.page === 'feedback') render(); else if (state.data?.access === 'admin') toast('💬 New feedback from a tester'); });
@@ -240,7 +241,7 @@ function paintFeed(fresh = false) {
     h('span', { class: 'feed-icon', 'aria-hidden': 'true' }, a.icon ?? '•'), h('span', { class: 'feed-text' }, a.text), h('time', {}, ago(a.at))))
     : h('li', { class: 'feed-empty' }, 'Quiet for now. Things that happen in the server appear here the moment they happen.'));
 }
-setInterval(() => paintFeed(), 30000); // keeps the "x min ago" labels current
+setInterval(() => paintFeed(), 5000); // keeps the "x min ago" labels current
 const pending = new Map();
 function refreshModule(mod) {
   clearTimeout(pending.get(mod));
@@ -277,7 +278,8 @@ function pages() {
   const mod = on('moderation');
   if (mod && (admin || hasPanel('moderation', 'automod') || hasPanel('moderation', 'cases'))) list.push({ id: 'automod', icon: '🛡', label: 'Moderation', group: '' });
   if (admin && on('games')) list.push({ id: 'arcade', icon: '🎮', label: 'Arcade', group: 'FUN' }, { id: 'fishing', icon: '🎣', label: 'Fishing', group: 'FUN' });
-  if (admin && on('music')) list.push({ id: 'module:music', icon: '🎵', label: 'Music', group: 'FUN' });
+  // 3.1.2: the music player (admins, and anyone given "Control the music and playlists from the dashboard")
+  if (on('music') && (admin || hasPanel('music', 'player'))) list.push({ id: 'music', icon: '🎵', label: 'Music', group: 'FUN' });
   if (admin) list.push({ id: 'logs', icon: '≡', label: 'Logs', group: 'BOT' });
   list.push({ id: 'settings', icon: '⚙', label: 'Settings', group: 'BOT' });
   // Reachable, but not in the sidebar: the other tools, and pages opened from Settings or Home.
@@ -314,6 +316,8 @@ function render() {
     h('button', { class: 'ghost', onclick: () => loadGuild() }, 'Show the latest')));
   app.append(h('div', { class: 'shell' }, side, workspace), feedbackButton());
   state.panels = new Map();
+  document.body.classList.toggle('gbm-open', current.id === 'music');
+  if (current.id !== 'music') window.GBMusic?.unmount();
 
   if (current.id === 'overview') renderHome(workspace);
   else if (current.id === 'modules') renderModules(workspace);
@@ -329,6 +333,7 @@ function render() {
   else if (current.id === 'arcade') renderGames(workspace, false);
   else if (current.id === 'fishing') renderGames(workspace, true);
   else if (current.id === 'feedback') renderFeedback(workspace);
+  else if (current.id === 'music') renderMusic(workspace);
   else if (current.id.startsWith('tool:')) renderTool(workspace, current.id.slice(5));
   if (state.live) { liveChip('on'); paintPulse(); paintFeed(); }
 }
@@ -518,12 +523,26 @@ async function renderAutomod(ws) {
   reload();
 }
 
+// ---------------------------------------------------------------- Music (3.1.2): the player page lives in music.js
+function renderMusic(ws) {
+  const box = h('div', {});
+  ws.append(box);
+  if (!window.GBMusic) { put(box, h('div', { class: 'card' }, h('p', { class: 'muted' }, 'The music player did not load. Refresh the page.'))); return; }
+  GBMusic.mount(box, { gid: state.gid, api, toast, admin: state.data.access === 'admin', openSettings: () => go('module:music') });
+  if (!state.panels.has('music')) state.panels.set('music', new Set());
+  const refresher = () => { if (!box.isConnected) { state.panels.get('music')?.delete(refresher); return; } GBMusic.refresh(); };
+  state.panels.get('music').add(refresher);
+}
+
 // ---------------------------------------------------------------- tools (panels)
 function renderTool(ws, name) {
   const m = state.data.modules.find((x) => x.name === name);
   if (!m) { ws.append(h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'That tool is not available.'))); return; }
   ws.append(h('div', { class: 'card' }, h('h3', {}, TITLE[name] ?? cap(name)), h('p', { class: 'muted' }, m.description || '')));
-  for (const panel of m.panels ?? []) ws.append(panel.kind === 'ticket-archive' ? h('div', {}, h('h3', { class: 'ta-title' }, panel.title), ticketArchive(m)) : panelBox(m, panel));
+  for (const panel of m.panels ?? []) {
+    if (panel.kind === 'music-player') { ws.append(h('div', { class: 'card' }, h('h3', {}, panel.title), h('p', { class: 'muted' }, panel.description ?? ''), h('button', { type: 'button', onclick: () => go('music') }, '🎵 Open the music player'))); continue; }
+    ws.append(panel.kind === 'ticket-archive' ? h('div', {}, h('h3', { class: 'ta-title' }, panel.title), ticketArchive(m)) : panelBox(m, panel));
+  }
 }
 
 /**

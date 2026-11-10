@@ -1,5 +1,50 @@
 # Changelog
 
+## 3.1.2
+**Music gets smoother sound, a volume control, search by song name, and a full music player on the dashboard and phone app, with playlists you make, keep and bring over from Spotify, YouTube and more.**
+
+<!-- members -->
+music got a glow up 🎶 songs shouldn't cut out any more, there's a volume control and a back button on the player, and you can just type a song name in Add music now. staff can make playlists on the dashboard (or bring them over from spotify and youtube), and you can pick one in Add music to play it
+<!-- /members -->
+
+**Smoother sound**
+- Songs no longer cut out for a moment. Each song is downloaded before it plays (and the next one or two while this one plays), played from the computer, then deleted. A slow connection can't make it skip, jumping around in a song is instant, and the next song is usually ready before this one ends.
+- Good Boy's sound is now made by ffmpeg, already part of Good Boy, instead of inside the bot itself, so a busy bot (drawing a rank card, say) can't make the music stutter.
+- The first song can take a few seconds to start. Radio is live, so it still plays as it comes. **Download each song before it plays** in the music settings turns this off.
+
+**Search by song name**
+- In **Add music**, type a song name (or paste a link) in one box. Good Boy shows what it found (YouTube when media links are on, free Jamendo music, your radio stations) and you pick one. If there's only one match it just plays.
+
+**Volume**
+- The music player in Discord has **🔉 Quieter** and **🔊 Louder** buttons (10% at a time) and shows the volume. It changes the song playing straight away. DJs and staff can change it, or anyone alone with the bot.
+- The volume stays where it was left: for the song playing, every song after it, after jumping around in a song, and the next time Good Boy plays (even after a restart). Changing **Volume (%)** in the music settings changes the song playing too (it used to wait for the next song). It now goes down to 0%.
+- A new volume picks the song up again at the same spot, a moment after the last click. Changed while paused, it's used when the song plays again.
+- **⏮ Back** on the player: back to the start of the song, or, in its first few seconds, the song before it.
+
+**The Music page (dashboard and phone app)**
+- A new **Music** page works like a music app: the song playing with its cover, a progress bar you can drag to jump around in the song, play/pause, skip, back, shuffle, repeat, and a volume slider.
+- **Up next**: drag songs to reorder them, play one now, move one to next, remove one, shuffle, clear, or save the whole queue as a playlist.
+- **Search**: YouTube (when the bot owner has turned on media links), free Jamendo music and your radio stations, all in one box. Paste a link too, including a whole Spotify playlist or album.
+- Not in voice yet? Pick a voice channel and press play; Good Boy joins it.
+- It updates live, so everyone watching sees the same thing, whether the change came from Discord or the dashboard.
+- Who can use it: admins, and the roles given **Control the music and playlists from the dashboard** (moderators by default) on the Permissions page.
+
+**Live every 5 seconds**
+- An open **Queue** list in Discord now keeps itself up to date (for 10 minutes): songs added, removed, moved or shuffled from Discord or the dashboard show up within 5 seconds.
+- The Discord player shows a progress bar that moves on every 5 seconds while a song plays.
+- The dashboard and phone app get the full player state every 5 seconds on top of the instant updates, and the dashboard's live numbers (members, in voice, ping) and the Windows app's overview now refresh every 5 seconds (they were 15 and 30).
+
+**Playlists**
+- Make playlists on the dashboard, add songs from search, a link, the queue or the ♥ on the song playing, drag to reorder, rename and delete. Up to 50 playlists per server and 300 songs each.
+- Play one (it takes over the queue), shuffle it, add it to the end of the queue, or start from any song in it.
+- In Discord, **Add music** has a new **Or play a saved playlist** choice. Members still have the usual songs-per-member limit; DJs don't.
+- **Import a playlist**: paste a link to a playlist or album from **Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp or Deezer** and it becomes a playlist here that you can change (up to 300 songs). Spotify and Deezer playlists can be brought over even while media links are off; they play once they're on.
+- In Discord, pasting a YouTube, SoundCloud, Bandcamp or Deezer playlist in **Add music** queues every song, like Spotify playlists already did.
+- Uploaded songs can't be kept in a playlist, because Good Boy deletes the file once it has played.
+
+**Fixes**
+- The Permissions page's **one-click tester access with every read-only box** no longer hands out boxes that have their own buttons (like AutoMod's settings page or the new music player). Those are still given out one at a time on the Permissions page.
+
 ## 3.1.1
 **Fixes fishing (`/fish` showed "Something went wrong") adds `/channel` to keep modules quiet in a channel, and lets the bot owner use their own art for roleplay and critters.**
 
