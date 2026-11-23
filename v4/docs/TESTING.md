@@ -149,3 +149,18 @@ Commands in the same area are behind one command that opens a private menu: `/mo
 ### 3o. Music joins your call
 - Join a voice channel on Discord, open the Music page: it says "You're in 🔊 <channel>. Press play and Good Boy joins you there." Press play on a song or playlist: the bot joins that call.
 - With the bot playing in another channel, move to a different call: **Move to my call** appears and moves the bot.
+
+### 3q. The installer (needs Windows)
+1. Run Good-Boy-4-Setup.exe on a PC with no Good Boy 4: no password prompt, it installs under `%LOCALAPPDATA%\Programs\Basic Ghost Labs\Good Boy`, the Start menu entry works, and Good Boy shows in Settings, Apps with the right version.
+2. Open Good Boy, then run the installer again without closing it: it finishes, the open copy keeps working, and the next start is the new version with no `.old` file left.
+3. Update from inside the app (3p), then check Settings, Apps shows the new version.
+4. Uninstall: shortcuts and the folder go; answer No to "delete your data" and confirm `%APPDATA%\Good Boy 4` is still there; install again and your levels are as they were.
+5. Install while a portable Good-Boy-4.exe is in Downloads: both read the same data and neither damages it.
+
+### 3p. Updating from inside the app (needs Windows and two real releases)
+1. Install Good Boy 4 at version N (for example 4.0.1) and publish a newer release N+1 (non-test, `v4.x`, with `Good-Boy-4.exe`).
+2. Open the app: within about 20 seconds Home shows "Good Boy N+1 is ready" and the Updates page shows the same. "Check again" works with no internet (a kind message, nothing changes).
+3. Press Update now: a progress bar fills, the window closes, and the app reopens on N+1 with the bot online again. Settings, levels and the token are as they were.
+4. Look in the folder holding the program: no `.part`, `.new` or `.old` files remain after the reopen.
+5. Break it on purpose: serve a release whose checksum is wrong. The update is refused with "does not match its checksum" and the running program is untouched.
+6. A web host running Good-Boy-4-no-window.exe gets the window-less file, not the launcher.

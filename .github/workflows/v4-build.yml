@@ -54,6 +54,18 @@ jobs:
           Copy-Item examples/emulator.exe "out/Good-Boy-game-preview.exe"
           Copy-Item good-boy.exe "out/Good-Boy-4.exe"
           Copy-Item goodboy.exe "out/Good-Boy-4-no-window.exe"
+      # The installer: installs for the current user only (no administrator password), so the program can update itself.
+      - name: Build the installer
+        working-directory: v4
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress | Out-Null
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $core = ($v -split '[-+]')[0]
+          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          & $nsis "-DPRODUCT=Good Boy" -DSLUG=GoodBoy4 -DEXE=Good-Boy-4.exe "-DVERSION=$core" "-DDATADIR=Good Boy 4" "-DSOURCE=$PWD\target\release\out\Good-Boy-4.exe" "-DICON=$PWD\crates\gb-launcher\icons\icon.ico" "-DOUT=$PWD\target\release\out\Good-Boy-4-Setup.exe" installer\product.nsi
+          if ($LASTEXITCODE -ne 0) { throw "The installer did not build." }
+          Get-Item target\release\out\Good-Boy-4-Setup.exe | Format-List Name, Length
       # The test build goes on this private repository's Releases page as a pre-release that each build replaces.
       # (Run downloads have a small storage allowance that fills up; Releases do not count against it.)
       - name: Keep the programs for the release job
@@ -63,6 +75,7 @@ jobs:
           name: Windows
           path: |
             v4/target/release/out/Good-Boy-4.exe
+            v4/target/release/out/Good-Boy-4-Setup.exe
             v4/target/release/out/Good-Boy-4-no-window.exe
           retention-days: 3
           if-no-files-found: error
@@ -75,7 +88,7 @@ jobs:
           gh release delete v4-test --yes --cleanup-tag --repo "${{ github.repository }}" 2>$null
           $global:LASTEXITCODE = 0
           Start-Sleep -Seconds 3
-          gh release create v4-test "v4/target/release/out/Good-Boy-4.exe" "v4/target/release/out/Good-Boy-4-no-window.exe" "v4/target/release/out/Good-Boy-game-preview.exe" --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease --title "Good Boy 4 test build" --notes "Test build of Good Boy 4. Good-Boy-4.exe is the launcher; Good-Boy-4-no-window.exe is for web hosts. Good-Boy-game-preview.exe opens a Discord look-alike page where every game runs on the real bot (double-click it)."
+          gh release create v4-test "v4/target/release/out/Good-Boy-4-Setup.exe" "v4/target/release/out/Good-Boy-4.exe" "v4/target/release/out/Good-Boy-4-no-window.exe" "v4/target/release/out/Good-Boy-game-preview.exe" --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease --title "Good Boy 4 test build" --notes "Test build of Good Boy 4. Good-Boy-4-Setup.exe installs it. Good-Boy-4.exe is the program on its own; Good-Boy-4-no-window.exe is for web hosts. Good-Boy-game-preview.exe opens a Discord look-alike page where every game runs on the real bot (double-click it)."
 
   release:
     needs: [windows]
@@ -110,7 +123,7 @@ jobs:
             echo "Version $v is already published, so nothing is changed. Raise the version in v4/Cargo.toml to publish a new one."
             exit 0
           fi
-          printf 'Good Boy %s\n\nThe rebuilt Good Boy. Installed copies of Good Boy 3 offer to move to it by themselves: your settings, levels, coins and licence come with you, and Good Boy 3 is put back if anything goes wrong.\n' "$v" > notes.md
-          gh release create "v$v" out/Good-Boy-4.exe out/Good-Boy-4-no-window.exe -R "$REPO" --title "Good Boy $v" --notes-file notes.md --latest=false $pre
+          printf 'Good Boy %s\n\nThe rebuilt Good Boy. Installed copies of Good Boy 3 offer to move to it by themselves: your settings, levels, coins and licence come with you, and Good Boy 3 is put back if anything goes wrong.\n\nNew here? Download Good-Boy-4-Setup.exe and run it. Good-Boy-4.exe is the same program without an installer (used by the move from Good Boy 3 and by web hosts), and Good-Boy-4-no-window.exe is for web hosts.\n' "$v" > notes.md
+          gh release create "v$v" out/Good-Boy-4-Setup.exe out/Good-Boy-4.exe out/Good-Boy-4-no-window.exe -R "$REPO" --title "Good Boy $v" --notes-file notes.md --latest=false $pre
           echo "Published https://github.com/$REPO/releases/tag/v$v"
 

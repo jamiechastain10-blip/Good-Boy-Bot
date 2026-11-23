@@ -16,6 +16,22 @@ use tauri::{Manager, State};
 type Held<'a> = State<'a, Arc<Desk>>;
 
 #[tauri::command]
+fn update_status(desk: Held) -> Value {
+    desk.update_status()
+}
+#[tauri::command]
+async fn update_check(desk: Held<'_>) -> Result<Value, String> {
+    desk.update_check().await
+}
+/// Downloads, checks and swaps in the update, starts the new program, and closes this one.
+#[tauri::command]
+async fn update_install(app: tauri::AppHandle, desk: Held<'_>) -> Result<Value, String> {
+    let out = desk.update_install().await?;
+    // the new program is already starting; closing this one lets it take over (only one copy may run)
+    app.exit(0);
+    Ok(out)
+}
+#[tauri::command]
 fn overview(desk: Held) -> Value {
     desk.overview()
 }
@@ -379,6 +395,13 @@ fn main() {
             std::process::exit(1);
         }
     };
+    // started by an update: wait for the program that started it to close, so the one-copy check does not turn this one away
+    if let Some(pid) = std::env::args().skip_while(|a| a != "--updated").nth(1).and_then(|p| p.parse::<u32>().ok()) {
+        gb_host::update::wait_for_exit(pid, 30);
+    }
+    // what an earlier update left behind (the replaced program) is removed
+    if let Ok(exe) = std::env::current_exe() { gb_host::update::clean_up(&exe); }
+    gb_host::update::note_version(env!("CARGO_PKG_VERSION"));
     let desk = Arc::new(Desk::new(folders));
     // started by the last Good Boy 3 to take over from it: `--from-v3 <handover file>`
     let handoff = std::env::args().skip_while(|a| a != "--from-v3").nth(1);
@@ -394,7 +417,7 @@ fn main() {
         }))
         .manage(desk)
         .invoke_handler(tauri::generate_handler![
-            overview, whatsnew, announce_restart, brand_status, brand_keep, brand_custom, prefs_set, licence_set, licence_refresh, setup_data, pulse, panel, panel_action, permissions, permission_set, role_menus, role_menu_delete, health, v3_status, v3_folder_set, v3_recopy, v3_check, token_test, token_save, token_forget, helpers_list, helper_add, helper_remove, secret_save, secret_forget, bot_start, bot_stop, bot_restart, servers, module_set, settings, setting_set, off_channels_set, ticket_view, ticket_transcript, commands_view, directory, command_run, images_view, greeting_image_set, greeting_image_clear, critters_view, critter_save, critter_remove, dashboard, cases, tickets, music_api, inactive_scan, inactive_view, inactive_kick, inactive_keep, economy, treasury_give, members_lookup, members_search, leavers, leaver_forget, ticket_action, shop, shop_save, shop_remove, boards, staff_action, activity, economy_reset, post_panel, panel_preview, backup_now, open
+            overview, update_status, update_check, update_install, whatsnew, announce_restart, brand_status, brand_keep, brand_custom, prefs_set, licence_set, licence_refresh, setup_data, pulse, panel, panel_action, permissions, permission_set, role_menus, role_menu_delete, health, v3_status, v3_folder_set, v3_recopy, v3_check, token_test, token_save, token_forget, helpers_list, helper_add, helper_remove, secret_save, secret_forget, bot_start, bot_stop, bot_restart, servers, module_set, settings, setting_set, off_channels_set, ticket_view, ticket_transcript, commands_view, directory, command_run, images_view, greeting_image_set, greeting_image_clear, critters_view, critter_save, critter_remove, dashboard, cases, tickets, music_api, inactive_scan, inactive_view, inactive_kick, inactive_keep, economy, treasury_give, members_lookup, members_search, leavers, leaver_forget, ticket_action, shop, shop_save, shop_remove, boards, staff_action, activity, economy_reset, post_panel, panel_preview, backup_now, open
         ])
         .setup(move |_app| {
             let prefs = at_start.prefs();
@@ -411,6 +434,15 @@ fn main() {
                 tokio::time::sleep(std::time::Duration::from_secs(45)).await;
                 loop {
                     if for_look.prefs().setup_done { let _ = for_look.brand_keep(false).await; }
+                    tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
+                }
+            });
+            // look for a newer Good Boy 4 a little after start, then every six hours; the Updates page and Home show what it finds
+            let for_update = at_start.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                loop {
+                    let _ = for_update.update_check().await;
                     tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
                 }
             });

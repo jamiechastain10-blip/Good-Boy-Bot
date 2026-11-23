@@ -1,0 +1,9 @@
+name: An idea
+description: Something you would like Good Boy to do.
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like, and what would it help you do?
+    validations: { required: true }

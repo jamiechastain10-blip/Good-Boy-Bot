@@ -34,6 +34,7 @@
     automod: 'M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6zM8 12l3 3 5-6',
     arcade: 'M6 8h12a3 3 0 0 1 3 3v3a3 3 0 0 1-5.500 1.700L15 15H9l-.5.700A3 3 0 0 1 3 14v-3a3 3 0 0 1 3-3zM8 10.500v3M6.500 12h3M16 11.500h.01M18 13h.01',
     fishing: 'M12 3v11a3.500 3.500 0 1 1-3.500-3.500M6 10.500h3',
+    updates: 'M12 4v11M7.500 10.500L12 15l4.500-4.500M5 19h14',
     whatsnew: 'M12 3l2.600 5.500 6 .8-4.400 4.200 1.100 6L12 16.600 6.700 19.500l1.100-6L3.400 9.300l6-.8z',
     leavers: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3',
     inactive: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
@@ -60,6 +61,7 @@
     cases: ['########', '#......#', '#.####.#', '#.#..#.#', '.#.##.#.', '.#....#.', '..#..#..', '...##...'],
     arcade: ['........', '.######.', '########', '#.####.#', '########', '.##..##.', '........', '........'],
     fishing: ['....#...', '....#...', '....#...', '....#...', '#...#...', '##..#..#', '.#####..', '..###...'],
+    updates: ['...##...', '..####..', '.######.', '...##...', '...##...', '...##...', '########', '........'],
     whatsnew: ['...##...', '...##...', '########', '.######.', '..####..', '.##..##.', '##....##', '........'],
     automod: ['########', '#......#', '#.#..#.#', '#..##..#', '#..##..#', '.#.##.#.', '..#..#..', '...##...'],
     economy: ['..####..', '.######.', '##.##.##', '##.##...', '.######.', '...##.##', '.######.', '..####..'],
@@ -136,7 +138,7 @@
     if (live.phase === 'problem') return ['bad', 'Stopped: needs attention'];
     return ['', 'Stopped'];
   }
-  async function refresh() { S.o = await call('overview'); theme(); return S.o; }
+  async function refresh() { S.o = await call('overview'); try { S.upd = await call('update_status'); } catch { /* an older host */ } theme(); return S.o; }
   /** A confirmation that sits where the button was, so nothing pops over the page. */
   function confirmInline(btn, question, yes, work) {
     const row = h('div', { class: 'btns' }, h('span', { class: 'small muted confirm-q' }, question),
@@ -190,7 +192,7 @@
       const input = h('input', { type: 'password', id: 'wtoken', autocomplete: 'off', spellcheck: 'false', placeholder: 'Paste the token here' });
       const save = (e) => busy(e.target, async () => { const who = await call('token_save', { token: input.value }); input.value = ''; S.who = who; await refresh(); next(3); });
       body = [copied, h('div', { class: 'head' }, h('h1', {}, 'Connect your bot'), h('p', { class: 'muted' }, 'Paste your bot\'s token. Good Boy checks it with Discord, then your computer keeps it safe.')),
-        h('p', { class: 'note warn' }, 'Use a separate test bot for this early build. Two programs cannot run the same bot at once, and this build replaces the bot\'s command list with its own shorter one.'),
+        h('p', { class: 'note warn' }, 'Two programs cannot run the same bot at once. If Good Boy 3 is running this bot, close it first, or this one cannot connect.'),
         o.token_saved ? h('p', { class: 'msg good' }, 'A bot token is already saved on this computer.') : null,
         h('div', { class: 'field' }, h('label', { for: 'wtoken' }, 'Bot token'), input, h('span', { class: 'hint' }, `Kept in ${o.secret_store}. It is never shown again.`)),
         h('div', { class: 'row' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => call('open', { what: 'developers' }).catch((e) => toast(e.message, true)) }, 'Open Discord\'s developer page'),
@@ -305,7 +307,9 @@
     const sub = live.phase === 'online' ? `In ${plural(live.servers, 'server', 'servers')} · online for ${ago(live.online_since_ms)}${live.start_took_ms != null ? ` · started in ${(live.start_took_ms / 1000).toFixed(1)} s` : ''}`
       : live.phase === 'starting' ? 'Connecting to Discord.'
       : !o.token_saved ? 'Add your bot\'s token to get going.' : 'The bot is offline until you start it.';
+    const upd = S.upd && S.upd.available ? h('div', { class: 'card note-card', role: 'status' }, h('div', { class: 'row' }, h('div', {}, h('b', {}, `Good Boy ${S.upd.available.version} is ready`), h('p', { class: 'muted small' }, 'A new version is out. It installs in a minute and keeps everything.')), h('button', { class: 'btn', type: 'button', onclick: () => go('updates') }, 'See update'))) : null;
     return [
+      upd,
       h('div', { class: 'hero', 'aria-label': 'Good Boy, a Discord bot by Basic Ghost Labs' },
         h('div', { class: 'hero-text' }, h('span', { class: 'hero-eyebrow' }, 'Discord bot'), h('h1', {}, h('span', {}, 'Good'), h('span', { class: 'hero-boy' }, 'Boy')),
           h('p', {}, 'Your server\'s best friend. Levels, tickets, moderation, music and games, in one bot you run yourself.'), h('small', {}, 'Basic Ghost Labs')),
@@ -1669,11 +1673,50 @@
       h('div', { class: 'card' }, h('h2', {}, 'Your data'), h('p', { class: 'muted small path' }, o.data_folder),
         h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, () => call('open', { what: 'data' })) }, 'Open folder'),
           h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, async () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); const file = await call('backup_now', { stamp: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` }); toast(`Backed up to ${file}`); }) }, 'Back up now'),
+          !window.GB.web ? h('button', { class: 'btn quiet', type: 'button', title: 'Use this if Good Boy 4 shows old levels or coins instead of what Good Boy 3 had', onclick: (e) => confirmInline(e.currentTarget, 'This puts Good Boy 3\'s data here in place of what this app holds now. What is here now is kept in a dated folder, not deleted. The bot is stopped for a moment.', 'Copy it again', async () => {
+            try { await call('bot_stop'); } catch { /* not running */ }
+            try { const r = await call('v3_recopy'); toast(r.kept ? `Copied Good Boy 3's data. The old data is kept in ${r.kept}` : 'Copied Good Boy 3\'s data.'); } catch (err) { toast(err.message || String(err), true); }
+            try { await call('bot_start'); } catch { /* the Home page says why */ }
+            await refresh(); draw();
+          }) }, 'Copy Good Boy 3\'s data again') : null,
           h('button', { class: 'btn quiet', type: 'button', onclick: () => { S.topic = 'data'; go('help'); } }, 'About backups'))),
     ];
   }
 
   /** What changed in this version, from the change notes that come with the program. */
+  /** Updates: what is installed, whether a newer Good Boy 4 is out, and one button to install it. */
+  function pageUpdates() {
+    const box = h('div', { class: 'stack' });
+    const mb = (n) => `${(n / 1048576).toFixed(0)} MB`;
+    const paint = () => {
+      const u = S.upd || {};
+      const a = u.available;
+      const can = !window.GB.web && u.can_install;
+      const bar = u.percent != null ? h('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': String(u.percent), 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('i', { style: `width:${u.percent}%` })) : null;
+      const install = (e) => busy(e.target, async () => {
+        S.upd = { ...u, percent: 0 }; paint();
+        const t = setInterval(async () => { try { S.upd = await call('update_status'); paint(); } catch { /* closing */ } }, 600);
+        try { await call('update_install'); toast('Updated. Good Boy is restarting.'); }
+        catch (err) { toast(err.message || String(err), true); }
+        finally { clearInterval(t); try { S.upd = await call('update_status'); } catch { /* closed */ } paint(); }
+      });
+      box.replaceChildren(
+        h('div', { class: 'card' },
+          h('h2', {}, a ? `Good Boy ${a.version} is ready` : 'Good Boy is up to date'),
+          h('p', { class: 'muted' }, a ? `You have ${u.current}. The update is ${mb(a.size)}, is checked against a checksum before it is used, and keeps your settings, data and token.` : `You have the newest version (${u.current}).`),
+          a && a.notes ? h('details', {}, h('summary', {}, 'What is in it'), h('pre', { class: 'small' }, a.notes.replace(/\*\*(.+?)\*\*/g, '$1'))) : null,
+          bar,
+          h('div', { class: 'btns' },
+            a && can ? h('button', { class: 'btn', type: 'button', disabled: u.percent != null, onclick: install }, 'Update now') : null,
+            h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, async () => { try { S.upd = await call('update_check'); } catch (err) { toast(err.message || String(err), true); } paint(); }) }, 'Check again')),
+          a && !can ? h('p', { class: 'muted small' }, window.GB.web ? 'To update, open Good Boy on the computer that runs the bot and press Update now there.' : 'This is a development build and does not update itself.') : null,
+          a && can ? h('p', { class: 'muted small' }, 'The bot is stopped for a moment while it updates, and starts again by itself.') : null),
+        h('p', { class: 'muted small' }, 'Good Boy looks for updates by itself a little after it opens, then every six hours.'));
+    };
+    paint();
+    call('update_check').then((r) => { S.upd = r; paint(); }, () => { /* the last answer stays */ });
+    return [h('div', { class: 'head' }, h('h1', {}, 'Updates'), h('p', { class: 'muted' }, 'Keep Good Boy 4 current without downloading anything.')), box];
+  }
   function pageWhatsNew() {
     const box = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));
     call('whatsnew').then((r) => {
@@ -1707,7 +1750,7 @@
   }
 
   // the same names and order as the Good Boy 3 dashboard, so nobody has to learn a new map
-  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'] };
+  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], updates: ['Updates', pageUpdates, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'] };
   function go(page) { S.page = page; draw(); document.querySelector('.main')?.scrollTo(0, 0); }
   // On the web some things stay on the computer (tokens, the move from Good Boy 3, this computer's settings), and only the
   // person who runs the bot sees the bot's own controls.

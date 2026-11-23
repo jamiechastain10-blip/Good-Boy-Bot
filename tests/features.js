@@ -3619,4 +3619,9 @@ export default async function runFeatureTests({ test, rejectsWith }) {
     walk(root);
     assert.deepEqual(hits, []);
   });
+  await test('the README download button points at the Good Boy 4 installer of the version in v4/Cargo.toml', () => {
+    const v = /^version = "(.*)"/m.exec(fs.readFileSync(path.join(root, 'v4', 'Cargo.toml'), 'utf8'))[1];
+    const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+    assert.ok(readme.includes(`releases/download/v${v}/Good-Boy-4-Setup.exe`), `README.md must link to v${v}'s Good-Boy-4-Setup.exe (raise the number there when raising the version)`);
+  });
 }

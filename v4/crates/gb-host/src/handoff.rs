@@ -19,6 +19,9 @@ pub struct Handoff {
     /// The backup Good Boy 3 made first (kept for 14 days, then removed).
     #[serde(default)]
     pub backup: String,
+    /// The folder Good Boy 3 keeps its data in (the one holding eclipse.db): this is the data that moves across.
+    #[serde(default)]
+    pub data: String,
 }
 
 /// Reads the handover and deletes the file, whatever it held (a token must not stay on disk).

@@ -15,6 +15,8 @@ use std::collections::BTreeMap;
 
 pub const API: &str = "https://discord.com/api/v10";
 pub const NAME: &str = "Good Boy";
+/// The version shown at the end of the description (the program's own).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DESCRIPTION: &str = "Good Boy by Basic Ghost Labs. A friendly all-in-one community bot: levels, moderation, tickets, announcements and more.";
 const AVATAR: &[u8] = include_bytes!("../../../launcher/brand/avatar.png");
 const BANNER: &[u8] = include_bytes!("../../../launcher/brand/banner.png");
@@ -83,7 +85,8 @@ pub fn missing(cur: &Current, applied: &Applied) -> Vec<&'static str> {
     if cur.banner.is_none() || cur.banner != applied.banner { out.push("banner"); }
     if cur.username != NAME { out.push("name"); }
     if cur.icon.is_none() || cur.icon != applied.icon { out.push("icon"); }
-    if !cur.description.starts_with(&DESCRIPTION[..40]) { out.push("description"); }
+    // the Good Boy text, ending in the line with this version (so each update refreshes the number Discord shows)
+    if !cur.description.starts_with(&DESCRIPTION[..40]) || !cur.description.trim_end().ends_with(&format!("{CREDIT_PREFIX}{VERSION}{CREDIT_SUFFIX}")) { out.push("description"); }
     out
 }
 
@@ -106,7 +109,7 @@ pub async fn apply(http: &reqwest::Client, base: &str, token: &str, parts: &[&st
         match patch("/applications/@me", json!({ "icon": data_uri(ICON, "image/png") })).await { Ok(a) => { applied.icon = a["icon"].as_str().map(str::to_string); results.insert("icon".into(), Ok(())); } Err(e) => { results.insert("icon".into(), Err(e)); } }
     }
     if want("description") {
-        results.insert("description".into(), patch("/applications/@me", json!({ "description": DESCRIPTION })).await.map(|_| ()));
+        results.insert("description".into(), patch("/applications/@me", json!({ "description": describe_with_credit(DESCRIPTION, VERSION) })).await.map(|_| ()));
     }
     (results, applied)
 }
@@ -123,6 +126,17 @@ pub fn describe_with_credit(text: &str, version: &str) -> String {
     let room = DESCRIPTION_MAX.saturating_sub(credit.chars().count() + if mine.is_empty() { 0 } else { 2 });
     if mine.chars().count() > room { mine = format!("{}…", mine.chars().take(room.saturating_sub(1)).collect::<String>().trim_end()); }
     if mine.is_empty() { credit } else { format!("{mine}\n\n{credit}") }
+}
+
+/// Sets the bot's description.
+pub async fn set_description(http: &reqwest::Client, base: &str, token: &str, text: &str) -> Result<(), String> {
+    send(http, base, token, reqwest::Method::PATCH, "/applications/@me", Some(json!({ "description": text }))).await.map(|_| ())
+}
+/// For a licensed bot: the description with its credit line brought up to `version`, or None when it already ends in that line.
+/// The owner's own words are never changed.
+pub fn credit_refresh(description: &str, version: &str) -> Option<String> {
+    let next = describe_with_credit(description, version);
+    (next.trim_end() != description.trim_end()).then_some(next)
 }
 
 /// A picture someone chose: its bytes and type.
@@ -160,6 +174,26 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[test]
+    fn a_licensed_bots_credit_line_is_brought_up_to_date_and_its_own_words_are_kept() {
+        let mine = "Why hello there! I'm Caine.";
+        let old = format!("{mine}\n\nGood Boy v3.2.1 · Basic Ghost Labs");
+        assert_eq!(credit_refresh(&old, "4.0.1").unwrap(), format!("{mine}\n\nGood Boy v4.0.1 · Basic Ghost Labs"));
+        assert!(credit_refresh(&format!("{mine}\n\nGood Boy v4.0.1 · Basic Ghost Labs"), "4.0.1").is_none(), "already current: nothing is sent");
+        assert_eq!(credit_refresh(mine, "4.0.1").unwrap(), format!("{mine}\n\nGood Boy v4.0.1 · Basic Ghost Labs"), "a missing line is added");
+    }
+    #[test]
+    fn the_free_look_description_ends_in_this_version_and_an_old_version_is_replaced() {
+        let d = describe_with_credit(DESCRIPTION, VERSION);
+        assert!(d.ends_with(&format!("Good Boy v{VERSION} · Basic Ghost Labs")) && d.chars().count() <= DESCRIPTION_MAX && d.starts_with("Good Boy by Basic Ghost Labs"));
+        let ok = Current { username: NAME.into(), avatar: Some("a1".into()), banner: Some("b1".into()), icon: Some("i1".into()), description: d };
+        let applied = Applied { avatar: Some("a1".into()), banner: Some("b1".into()), icon: Some("i1".into()) };
+        assert!(missing(&ok, &applied).is_empty());
+        let old = Current { description: describe_with_credit(DESCRIPTION, "3.9.9"), ..ok.clone() };
+        assert_eq!(missing(&old, &applied), vec!["description"], "a new version refreshes the number Discord shows");
+        let none = Current { description: DESCRIPTION.into(), ..ok };
+        assert_eq!(missing(&none, &applied), vec!["description"]);
+    }
+    #[test]
     fn the_credit_line_always_ends_the_description_and_the_text_fits() {
         assert_eq!(describe_with_credit("", "4.0.0"), "Good Boy v4.0.0 · Basic Ghost Labs");
         assert_eq!(describe_with_credit("My server's helper", "4.0.0"), "My server's helper\n\nGood Boy v4.0.0 · Basic Ghost Labs");
@@ -179,7 +213,7 @@ mod tests {
     #[test]
     fn missing_parts_are_found() {
         let applied = Applied { avatar: Some("a1".into()), banner: Some("b1".into()), icon: Some("i1".into()) };
-        let ok = Current { username: NAME.into(), avatar: Some("a1".into()), banner: Some("b1".into()), icon: Some("i1".into()), description: DESCRIPTION.into() };
+        let ok = Current { username: NAME.into(), avatar: Some("a1".into()), banner: Some("b1".into()), icon: Some("i1".into()), description: describe_with_credit(DESCRIPTION, VERSION) };
         assert!(missing(&ok, &applied).is_empty());
         let changed = Current { avatar: Some("other".into()), username: "Someone".into(), ..ok.clone() };
         assert_eq!(missing(&changed, &applied), vec!["avatar", "name"]);
@@ -224,7 +258,7 @@ mod tests {
         assert!(results.values().all(Result::is_ok), "{results:?}");
         assert!(applied.avatar.is_some() && applied.banner.is_some() && applied.icon.is_some());
         let now = current(&http, &base, "token").await.unwrap();
-        assert_eq!((now.username.as_str(), now.description.as_str()), (NAME, DESCRIPTION));
+        assert_eq!((now.username.as_str(), now.description.as_str()), (NAME, describe_with_credit(DESCRIPTION, VERSION).as_str()));
         assert!(missing(&now, &applied).is_empty(), "everything is in place");
         // somebody changes the picture: only the picture is put back
         fake.lock().unwrap().user["avatar"] = json!("someone-else");

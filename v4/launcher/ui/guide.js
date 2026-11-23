@@ -25,7 +25,7 @@ window.GBGuide = [
   { id: 'secret', title: 'The client secret', blocks: [
     ['p', 'The client secret is a second password for your application. It is used for "Sign in with Discord" on the phone and web dashboard. The bot itself runs without it.'],
     ['steps', ['On the Discord developer page, open your application, then OAuth2.', 'Press Reset Secret and copy it.', 'In this app, open Settings and press Add client secret (or Replace).', 'Paste it and press Save.']],
-    ['note', 'Signing in from a phone or browser is not in this test build yet. Saving the secret now means it is ready when it arrives.'],
+    ['note', 'With the secret saved, turn the web app on in Settings to sign in from a phone or another computer. The web address you give there must be added as a Redirect in the same OAuth2 page.'],
   ] },
   { id: 'invite', title: 'Invite the bot to a server', blocks: [
     ['steps', ['Open the Modules page.', 'Press Invite to a server. Your browser opens Discord\'s own invite page.', 'Pick the server and press Authorise. You need the Manage Server permission there.']],
@@ -120,7 +120,7 @@ window.GBGuide = [
     ['p', 'On first run Good Boy 4 looks for Good Boy 3 on this computer and offers to copy its data: servers, levels, coins, settings and your own art.'],
     ['list', ['Good Boy 3\'s data is only read, never changed. Good Boy 3 keeps working exactly as before.', 'Modules that Good Boy 4 has not rebuilt yet keep their settings and data, ready for when they arrive.']],
     ['p', 'Most people never do this by hand: Good Boy 3 shows a card when Good Boy 4 is out, then moves your server over by itself (backup, download, hand over the bot and licence, start Good Boy 4, remove Good Boy 3). If Good Boy 4 does not come up, Good Boy 3 is put back as it was. The backup is kept for 14 days.'],
-    ['note', 'Use a separate test bot for Good Boy 4 for now. Two programs cannot run the same bot at once, and this build replaces the bot\'s command list with its own shorter one.'],
+    ['note', 'Two programs cannot run the same bot at once. If Good Boy 3 is still running this bot, close it first.'],
   ] },
   { id: 'phone', title: 'Using Good Boy on your phone', blocks: [
     ['p', 'The same dashboard works in a browser and installs as an app on iPhone and Android. You and anyone with Manage Server in a server the bot is in can sign in with Discord (they only see their own servers). Tokens and the move from Good Boy 3 stay in the app on the computer.'],
@@ -130,7 +130,7 @@ window.GBGuide = [
   { id: 'host', title: 'Running on a web host', blocks: [
     ['p', 'A web host keeps the bot online when your PC is off. The same Good Boy 4 runs there as a small program with no window.'],
     ['steps', ['Put the goodboy program and your data folder on the host.', 'Set DISCORD_TOKEN in the host\'s secrets or environment page. The token is never typed on a command line.', 'Set the start command to: goodboy run <data folder>']],
-    ['note', 'Managing a hosted bot from this app is not in this test build yet. For now this app manages a bot that runs on this PC.'],
+    ['note', 'This app manages a bot that runs on this PC. To manage a hosted bot, turn on the web app on the host (Settings, Web app) and sign in to it from your phone or browser.'],
   ] },
   { id: 'trouble', title: 'If something is wrong', blocks: [
     ['h', 'The bot will not start'],
@@ -164,12 +164,14 @@ window.GBGuide = [
       'Settings: the token, colours, and how long private messages stay before they are taken down.']],
     ['note', 'Pages that act in Discord (moderation, tickets, music, inactive scans and removals) need the bot to be running.'],
   ] },
-  { id: 'build', title: 'What is in this test build', blocks: [
-    ['p', 'This is an early build of Good Boy 4. It is for trying things with a test bot, not for replacing Good Boy 3 yet.'],
-    ['h', 'Works now'],
-    ['list', ['First run, with Good Boy 3 data copied across', 'Levels, Money (with a reset), Moderation with AutoMod, the strike ladder and server logs, Welcome, Role menus, Tickets, Reminders, Giveaways, Custom commands, Counting, Fun and Music, with their settings', 'Bot token and client secret kept by the operating system', 'Start, stop and restart, backups, the tour and this guide']],
+  { id: 'build', title: 'What is in this version', blocks: [
+    ['p', 'Good Boy 4 is Good Boy rebuilt from the ground up. It is the same bot: your settings, levels, coins, tickets, licence and token carried over from Good Boy 3.'],
+    ['h', 'What it does'],
+    ['list', ['Levels with rank cards, Money with a shop, pets, treasury and exchange, and games (slots, blackjack, the arcade, fishing, critters)', 'Moderation with AutoMod, the strike ladder, server logs and appeals; Tickets with search and transcripts', 'Welcome, Role menus, Reminders, Giveaways, Custom commands, Counting, Fun, Family, Parties and image Quotes', 'Music with playlists, a sound filter, autoplay and vote skip, and a Music page that joins the call you are in', 'The dashboard in this window, and a phone web app (turn it on in Settings)', 'Your bot\'s token and client secret are kept by the operating system, not in a file']],
+    ['h', 'Good to know'],
+    ['list', ['Two programs cannot run the same bot at once, so Good Boy 3 is switched off when Good Boy 4 starts.', 'A backup of your Good Boy 3 data is kept for 14 days after the move.', 'Good Boy 4 is installed with Good-Boy-4-Setup.exe (for you only, no administrator password) and can be removed in Windows Settings, Apps; your data stays unless you choose to delete it. It updates itself. It looks for a new version a little after it opens and every six hours, and Home shows a card when one is ready. Press Update now on the Updates page: the file is checked against its checksum first, the bot stops for a moment, and Good Boy reopens on the new version. Your data, settings and token stay where they are.']],
     ['h', 'Still to come'],
-    ['list', ['The other Good Boy 3 modules: games, fishing, family, the shop and pets, invite tracking, social alerts and the rest', 'The clipping software', 'Updates from inside the app, and signing in from a phone or browser']],
+    ['list', ['Running on Linux and in Docker', 'The clipping and broadcast software']],
   ] },
 ];
 

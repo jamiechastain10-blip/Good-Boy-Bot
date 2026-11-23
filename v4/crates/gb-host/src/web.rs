@@ -108,7 +108,7 @@ impl Web {
 
 // ---- what may be asked, by whom
 /// Things only the person who runs the bot may do, and never from the web: they handle secrets or the computer itself.
-const DESKTOP_ONLY: &[&str] = &["setup_data", "token_test", "token_save", "token_forget", "helpers_list", "helper_add", "helper_remove", "secret_save", "secret_forget", "v3_status", "v3_folder_set", "v3_recopy", "v3_check", "backup_now", "open", "prefs_set", "licence_set", "licence_refresh", "brand_status", "brand_keep", "brand_custom"];
+const DESKTOP_ONLY: &[&str] = &["update_install", "setup_data", "token_test", "token_save", "token_forget", "helpers_list", "helper_add", "helper_remove", "secret_save", "secret_forget", "v3_status", "v3_folder_set", "v3_recopy", "v3_check", "backup_now", "open", "prefs_set", "licence_set", "licence_refresh", "brand_status", "brand_keep", "brand_custom"];
 /// Things only the owner may do (over the web): start and stop the bot, and see how it is doing.
 const OWNER_ONLY: &[&str] = &["bot_start", "bot_stop", "bot_restart", "announce_restart", "health"];
 /// All that ticket staff (who do not manage the server) may ask for: the tickets, and what the page needs to start.
@@ -153,6 +153,8 @@ pub async fn dispatch(web: &Web, who: &Session, name: &str, a: &Value) -> Result
         "bot_stop" => { desk.stop().await; ok(Value::Null) }
         "bot_restart" => desk.restart().await.map(|_| Value::Null),
         "whatsnew" => Ok(desk.whatsnew()),
+        "update_status" => ok(desk.update_status()),
+        "update_check" => desk.update_check().await,
         "announce_restart" => desk.announce_restart(int(a, "minutes").unwrap_or(5).clamp(1, 60) as u64).map(|n| json!(n)),
         "health" => ok(desk.health()),
         "servers" => {
