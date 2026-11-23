@@ -285,14 +285,24 @@ function pages() {
   // Reachable, but not in the sidebar: the other tools, and pages opened from Settings or Home.
   for (const m of d.modules) if ((admin ? m.enabled : true) && (m.panels ?? []).length && !list.some((x) => x.id === `tool:${m.name}`)) list.push({ id: `tool:${m.name}`, icon: ICON[m.name] ?? '◆', label: TITLE[m.name] ?? cap(m.name), hidden: true });
   for (const [id, label] of [['permissions', 'Permissions'], ['feedback', 'Tester feedback'], ['whatsnew', "What's new"], ['appearance', 'Appearance']]) if (admin || id === 'whatsnew' || id === 'appearance') list.push({ id, label, hidden: true });
-  if (state.me?.botOwner) list.push({ id: 'updates', label: 'Updates', hidden: true });
+  if (state.me?.botOwner) list.push({ id: 'updates', label: 'Updates', hidden: true }, { id: 'art', label: 'Your art', hidden: true });
   if (String(state.page).startsWith('module:') && !list.some((x) => x.id === state.page)) list.push({ id: state.page, icon: '▦', label: 'Modules', hidden: true });
   return list;
 }
 
-function go(id) { state.page = id; window.GB ? GB.transition(render) : render(); }
+// Pressing the page you are already on does nothing (rebuilding it threw the scroll back to the top), and a page that is
+// rebuilt gets the sidebar's and the page's scroll position back.
+function go(id) {
+  if (id === state.page && document.querySelector('.shell')) return;
+  state.page = id; window.GB ? GB.transition(render) : render();
+}
 
 function render() {
+  const keepSide = document.querySelector('.side')?.scrollTop || 0;
+  const keepMain = document.querySelector('.workspace')?.scrollTop || 0;
+  const samePage = state.renderedPage === state.page;
+  state.renderedPage = state.page;
+  queueMicrotask(() => { const sd = document.querySelector('.side'); if (sd) sd.scrollTop = keepSide; const ws = document.querySelector('.workspace'); if (ws && samePage) ws.scrollTop = keepMain; });
   clear();
   const d = state.data, list = pages(), current = list.find((p) => p.id === state.page) ?? list[0];
   const side = h('aside', { class: 'side glass', 'aria-label': 'Dashboard navigation' });
@@ -334,6 +344,7 @@ function render() {
   else if (current.id === 'fishing') renderGames(workspace, true);
   else if (current.id === 'feedback') renderFeedback(workspace);
   else if (current.id === 'music') renderMusic(workspace);
+  else if (current.id === 'art') { const box = h('div', { class: 'gba' }); workspace.append(box); window.GBArt ? GBArt.mount(box, { api, toast }) : put(box, h('div', { class: 'card' }, h('p', { class: 'muted' }, 'This page did not load. Refresh the page.'))); }
   else if (current.id.startsWith('tool:')) renderTool(workspace, current.id.slice(5));
   if (state.live) { liveChip('on'); paintPulse(); paintFeed(); }
 }

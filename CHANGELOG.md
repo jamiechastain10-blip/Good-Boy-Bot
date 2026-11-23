@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.2.0
+**The way to Good Boy 4, your own art on the dashboard, and a steadier dashboard.** Nothing changes until Good Boy 4 is published; then this app offers the move.
+
+<!-- members -->
+the bot's owner can now swap the hug, boop and critter pictures for their own, so expect some new looks 🎨
+<!-- /members -->
+
+- **The move to Good Boy 4 (nothing happens until it is published):** when Good Boy 4 is out, the app shows a card that says what it is and why you are being moved (it is a one-time move: Good Boy was rebuilt from scratch, and two bots cannot use one token at the same time), with a five-minute countdown and a button to go now. Then it does everything by itself: it backs up your data and settings, downloads Good Boy 4 and checks it against its published checksum, stops this app's bot, hands Good Boy 4 your bot token and licence through a file only you can read (deleted as soon as it is read), starts it, waits until it says it is running, and removes this app. Same bot, same token, same licence, same data. If anything goes wrong after the bot was stopped, Good Boy 4 is stopped and Good Boy 3 is started again exactly as it was. The backup is kept for 14 days. Nothing is sent anywhere except Discord and GitHub; the token never leaves this computer.
+- **The dashboard stays where you are:** pressing the page you are already on no longer rebuilds it and throws you back to the top, and a rebuilt page keeps the sidebar's and the page's scroll position.
+- **Your art on the dashboard:** Settings → **Your art** (bot owner only) shows every roleplay action (hug, boop, pat and the rest) and every critter with the picture it uses now. Drag a picture onto a card or press **Add your picture** and it's used in every server straight away. Roleplay actions can have up to 20 (one is picked at random); a critter has one, plus one for its Sparkly version. Remove one, or all of them to go back to Good Boy's own. `/art` in Discord still works. Only real pictures are kept (PNG, JPG, GIF or WEBP, up to 8 MB).
+- **A guided tour:** the first time you open **Your art**, a short tour lights up each part of the page and explains it (where to pick roleplay or critters, how to find one, where to add your picture, how to go back). **✨ Show me how** plays it again. Skip it with Skip, Esc or a click outside.
+
 ## 3.1.2
 **Music gets smoother sound, a volume control, search by song name, and a full music player on the dashboard and phone app, with playlists you make, keep and bring over from Spotify, YouTube and more.**
 

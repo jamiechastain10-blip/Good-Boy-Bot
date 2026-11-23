@@ -29,6 +29,8 @@ import { brandStatus, applyBrand, applyCustom } from './lib/brand.js';
 import { verifyLicense, hasFeature, readCancelList, CANCEL_LIST_URL } from './lib/license.js';
 import { verifyModule, moduleNameOf } from './lib/modsign.js';
 import { readNotes } from './lib/notes.js';
+import { Migration, findV4, BRIDGE } from './lib/bridge.js';
+import { spawn } from 'node:child_process';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const startHidden = process.argv.includes('--hidden');
@@ -263,6 +265,7 @@ async function prepare() {
   if (!smokeDir && (settings.shareAuto || settings.customLink)) { setTimeout(() => keepShared().catch((e) => log(`share: ${e.message}`)), 8000); setInterval(() => keepShared().catch(() => {}), 30 * 60000).unref?.(); }
   if (!smokeDir) { setTimeout(() => keepBrand().catch(() => {}), 20000); setInterval(() => keepBrand().catch(() => {}), 6 * 3600000).unref?.(); }
   if (!smokeDir) { setTimeout(() => refreshCancelList(), 30000); setInterval(() => refreshCancelList(), 12 * 3600000).unref?.(); }
+  if (!smokeDir) { setTimeout(() => checkV4().catch(() => {}), 45000); setInterval(() => checkV4().catch(() => {}), 6 * 3600000).unref?.(); }
 }
 
 // ---- windows
@@ -915,6 +918,49 @@ async function applySettings(patch) {
   send('state', snapshot());
   return snapshot();
 }
+
+// ---- the move to Good Boy 4 (bridge): a card with a countdown, then the move happens by itself
+let v4 = { phase: 'none' }, v4Timer = null, migration = null;
+const v4Public = () => ({ phase: v4.phase, version: v4.release?.version ?? null, notes: v4.release?.notes ?? '', startsAt: v4.startsAt ?? null, percent: v4.percent ?? null, message: v4.message ?? '', rolledBack: !!v4.rolledBack });
+const setV4 = (patch) => { v4 = { ...v4, ...patch }; send('v4', v4Public()); };
+const v4Paths = () => { const root = app.getPath('userData'); return { dataDir: P.dataDir(), settingsFile: P.settings(), root, exe: path.join(root, 'v4', 'Good-Boy-4.exe'), handoff: path.join(root, 'handoff-v4.json'), marker: path.join(root, 'v4-started.json') }; };
+/** Looks for Good Boy 4 and, when it is out, shows the card and starts the countdown. Only the normal app, once set up. */
+async function checkV4() {
+  if (!bundled || edition.id !== 'consumer' || !settings.setupComplete || !vault?.has('DISCORD_TOKEN') || migration?.running || ['offer', 'working'].includes(v4.phase)) return;
+  const release = await findV4(fetch, { allowTest: process.env.GOODBOY_V4_TEST === '1' });
+  if (!release) return;
+  log(`Good Boy ${release.version} is out; the move starts in ${BRIDGE.countdownSeconds} seconds`);
+  v4 = { phase: 'offer', release, startsAt: Date.now() + BRIDGE.countdownSeconds * 1000 };
+  send('v4', v4Public());
+  clearTimeout(v4Timer);
+  v4Timer = setTimeout(() => startV4().catch(() => {}), BRIDGE.countdownSeconds * 1000);
+}
+async function startV4() {
+  if (!v4.release || migration?.running) return { ok: false, error: 'Nothing to move to.' };
+  clearTimeout(v4Timer);
+  setV4({ phase: 'working', message: 'Starting…', percent: null });
+  const finish = async () => {
+    // Good Boy 4 is running: remove this app (the installed one has an uninstaller; the data stays in the backup)
+    const uninstaller = path.join(path.dirname(process.execPath), 'Uninstall Good Boy.exe');
+    if (process.platform === 'win32' && fs.existsSync(uninstaller)) { try { spawn(uninstaller, ['/S'], { detached: true, stdio: 'ignore' }).unref(); } catch (e) { log(`could not start the uninstaller: ${e.message}`); } }
+    quitting = true; setTimeout(() => app.quit(), 1500);
+  };
+  migration = new Migration({
+    fetchFn: fetch, release: v4.release, paths: v4Paths(), readToken: savedToken, license: () => settings.license,
+    stopBot: () => runner.stop(), startBot: async () => { startBot(); },
+    launch: (exe, args) => { const c = spawn(exe, args, { detached: true, stdio: 'ignore' }); c.unref(); return c; }, finish,
+  });
+  migration.on('state', (s) => { if (s.phase !== 'error') setV4({ phase: 'working', message: s.message ?? '', percent: s.percent ?? null }); });
+  const r = await migration.run();
+  if (!r.ok) {
+    log(`the move to Good Boy 4 failed: ${r.error}${r.rolledBack ? ' (Good Boy 3 was put back)' : ''}`);
+    setV4({ phase: 'error', message: r.error, rolledBack: r.rolledBack, release: v4.release });
+    v4Timer = setTimeout(() => { v4 = { phase: 'none' }; checkV4().catch(() => {}); }, 24 * 3600000); // try again tomorrow
+  }
+  return r;
+}
+ipcMain.handle('gb:v4-state', () => v4Public());
+ipcMain.handle('gb:v4-start', () => startV4());
 
 app.on('second-instance', showWindow);
 app.on('activate', showWindow);

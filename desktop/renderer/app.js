@@ -686,3 +686,34 @@ gb.state().then((s) => { S = s; logLines = s.logs ?? []; refreshSummary().catch(
 setTimeout(() => { if (!document.getElementById('app')?.children.length) showCrash(new Error('The window got no answer from Good Boy. Reload, or quit from the tray icon and open Good Boy again.')); }, 8000);
 document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') { e.preventDefault(); location.reload(); } });
 setInterval(() => { if (S && !S.setupNeeded && document.visibilityState === 'visible') refreshSummary(); }, 5000);
+
+// ---- Good Boy 4 is here: a card with a countdown, then the move happens by itself (the start button only makes it sooner)
+(function goodBoy4() {
+  let box = null, tick = null, last = null;
+  const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  function draw(s) {
+    last = s;
+    if (!s || s.phase === 'none') { box?.remove(); box = null; clearInterval(tick); return; }
+    if (!box) { box = el('div', { class: 'v4back', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Good Boy 4' }); document.body.append(box); }
+    const working = s.phase === 'working', failed = s.phase === 'error';
+    const start = (e) => { e.target.disabled = true; gb.v4Start().catch(() => {}); };
+    const parts = [
+      el('h1', {}, failed ? 'Good Boy 4 could not be set up' : `Good Boy ${s.version ?? '4'} is here`),
+      failed ? el('p', {}, s.message || 'Something went wrong.') : el('p', {}, 'Good Boy 4 is a faster Good Boy, rebuilt with a new look. Your settings, levels, coins, licence and bot come with it, your panels are replaced with new ones, and Good Boy 3 is removed when it is working.'),
+      failed ? el('p', { class: 'note' }, s.rolledBack ? 'Good Boy 3 is running again, exactly as it was. It will try again tomorrow.' : 'Nothing was changed.')
+        : working ? el('div', { class: 'v4bar', role: 'progressbar' }, el('i', { style: `width:${s.percent ?? 8}%` })) : el('p', { class: 'v4count', id: 'v4count' }),
+      working ? el('p', { class: 'note' }, s.message || '') : failed ? el('div', { class: 'row-btns' }, el('button', { class: 'btn', onclick: start }, 'Try again'))
+        : el('div', { class: 'row-btns' }, el('button', { class: 'btn', onclick: start }, 'Download Good Boy 4')),
+      !failed && !working && s.notes ? el('details', {}, el('summary', {}, 'What is new'), el('pre', {}, s.notes)) : null,
+      !failed ? el('p', { class: 'note' }, 'A backup of your data is kept for 14 days. Nothing leaves this computer.') : null,
+    ].filter(Boolean);
+    box.replaceChildren(el('div', { class: 'v4card' }, ...parts));
+    clearInterval(tick);
+    if (s.phase === 'offer' && s.startsAt) {
+      const paint = () => { const c = document.getElementById('v4count'); if (c) c.textContent = `Starting by itself in ${mmss(s.startsAt - Date.now())}`; };
+      paint(); tick = setInterval(paint, 1000);
+    }
+  }
+  gb.onV4?.(draw);
+  gb.v4State?.().then(draw).catch(() => {});
+})();
