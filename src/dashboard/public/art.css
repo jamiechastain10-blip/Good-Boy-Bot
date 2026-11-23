@@ -1,0 +1,36 @@
+/* Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* "Your art" (3.2): a card for each roleplay action and critter, with its picture. */
+.gba-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.gba-grow{flex:1}
+.gba-search{width:240px!important;max-width:100%;padding:9px 14px!important;border-radius:999px!important;background:var(--gb-field,#10141e)!important;border:1px solid var(--gb-rim-2,rgba(160,180,230,.12))!important;color:inherit;font:inherit}
+.gba .segbar button{background:none;color:var(--gb-ink-2,#8d97ae)}
+.gba .segbar button.on{background:var(--gb-accent,#6b93ff);color:var(--gb-accent-ink,#0b1020)}
+.gba-only{display:inline-flex;align-items:center;gap:8px;font-weight:600;cursor:pointer}
+.gba-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.gba-card{position:relative;display:grid;gap:8px;align-content:start;padding:10px;border-radius:14px;background:var(--gb-glass,#151a26);border:1px solid var(--gb-rim-2,rgba(160,180,230,.12));transition:border-color .12s,transform .12s}
+.gba-card.mine{border-color:color-mix(in srgb,var(--gb-accent,#6b93ff) 55%,transparent)}
+.gba-card.over{border-color:var(--gb-accent,#6b93ff);transform:scale(1.02)}
+.gba-pic{position:relative;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:var(--gb-field,#10141e);display:grid;place-items:center}
+.gba-pic img{width:100%;height:100%;object-fit:contain;display:block}
+.gba-tag{position:absolute;left:8px;top:8px;font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(10,14,22,.72);color:#d6dcea}
+.gba-tag.on{background:var(--gb-accent,#6b93ff);color:var(--gb-accent-ink,#0b1020)}
+.gba-drop{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:12px;font-weight:700;color:#fff;background:color-mix(in srgb,var(--gb-accent,#6b93ff) 78%,transparent)}
+.gba-card.over .gba-drop{display:grid}
+.gba-name{display:grid;gap:1px;min-width:0}
+.gba-name b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gba-name small{font-size:12.5px}
+.gba-strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.gba-thumb{position:relative;flex:none;width:46px;height:46px;border-radius:8px;overflow:hidden;background:var(--gb-field,#10141e)}
+.gba-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.gba-x{position:absolute;right:2px;top:2px;width:18px;height:18px;border:0;border-radius:50%;background:rgba(10,14,22,.8);color:#fff;font-size:10px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+.gba-x:hover{background:var(--gb-bad,#ff6475)}
+.gba-acts{display:flex;gap:6px;flex-wrap:wrap}
+.gba-btn{flex:1;border:0;border-radius:999px;padding:7px 10px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;background:var(--gb-accent,#6b93ff);color:var(--gb-accent-ink,#0b1020);white-space:nowrap}
+.gba-btn.gba-ghost{flex:none;background:transparent;color:var(--gb-ink,#e9edf7);border:1px solid var(--gb-rim-2,rgba(160,180,230,.12))}
+.gba-btn.gba-ghost:hover{border-color:var(--gb-bad,#ff6475);color:var(--gb-bad,#ff6475)}
+.gba-btn:disabled{opacity:.45;cursor:default}
+@media (max-width:620px){.gba-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.gba-search{width:100%!important}}
+.gba-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.gba-head h3{margin:0}
+.gba-tour{flex:none}
+.gba-btn.gba-ghost.gba-tour:hover{border-color:var(--gb-accent,#6b93ff);color:var(--gb-accent,#6b93ff)}

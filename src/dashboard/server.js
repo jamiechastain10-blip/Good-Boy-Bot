@@ -10,6 +10,9 @@
  * secrets, codes or tokens) is written to the log. Visit /auth/diagnose to see the exact values to configure.
  */
 import { ART_HOSTS } from '../medialinks.js';
+import * as ART from '../customart.js';
+import { ACTIONS as RP_ACTIONS, rpGif } from '../rpart.js';
+import { speciesById, critterImage } from '../critters.js';
 import http from 'node:http';
 import { subscribe, publish, recentActivity } from '../live.js';
 import crypto from 'node:crypto';
@@ -23,6 +26,10 @@ import { readChangelog, whatsNew } from '../about.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(here, 'public');
 const STATIC = {
+  '/art.js': ['art.js', 'text/javascript; charset=utf-8'],
+  '/art.css': ['art.css', 'text/css; charset=utf-8'],
+  '/tour.js': ['tour.js', 'text/javascript; charset=utf-8'],
+  '/tour.css': ['tour.css', 'text/css; charset=utf-8'],
   '/music.js': ['music.js', 'text/javascript; charset=utf-8'],
   '/music.css': ['music.css', 'text/css; charset=utf-8'],
   '/': ['index.html', 'text/html; charset=utf-8'],
@@ -433,6 +440,52 @@ main{max-width:560px;padding:28px;background:#181b24;border:1px solid #2a2f3d;bo
         logger.info(`Update requested from the dashboard by ${s.user.username} (${s.user.id})`);
       }
       return json(res, 200, { supervised: true, ...(await updates.request(p.endsWith('/apply') ? 'apply' : 'check')) });
+    }
+
+    // ---- 3.2: your own art (roleplay GIFs, critter pictures) from the dashboard. Bot owner only: it changes every server.
+    if (p === '/api/art' || p.startsWith('/api/art/')) {
+      const s = session(req);
+      if (!s) return json(res, 401, { error: 'Not logged in.' });
+      if (!manager.isBotOwner(s.user.id)) return json(res, 403, { error: 'Only the person who runs this bot can change its art.' });
+      const parts = p.split('/').slice(3).map((x) => { try { return decodeURIComponent(x); } catch { return ''; } });
+      if (p === '/api/art' && req.method === 'GET') {
+        return json(res, 200, { maxBytes: ART.MAX_BYTES, maxPerName: ART.MAX_PER_NAME, kinds: ART.overview().map((k) => ({ ...k,
+          names: k.names.map((n) => ({ ...n, emoji: k.kind === 'rp' ? RP_ACTIONS[n.name]?.emoji ?? null : null,
+            title: k.kind === 'critters' ? `${speciesById(n.name.replace(/-sparkly$/, ''))?.name ?? n.name}${n.name.endsWith('-sparkly') ? ' ✨ Sparkly' : ''}` : n.name[0].toUpperCase() + n.name.slice(1) })) })) });
+      }
+      const [kind, name, what, file] = parts;
+      if (!Object.hasOwn(ART.KINDS, kind) || !ART.KINDS[kind].names().includes(name)) return json(res, 404, { error: 'There is no art with that name.' });
+      const picture = (buf, type) => { res.writeHead(200, { 'Content-Type': type, 'Content-Length': buf.length, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'private, no-cache' }); res.end(buf); };
+      const TYPES = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+      if (req.method === 'GET' && what === 'file') {
+        const f = ART.artFile(kind, name, file);
+        const buf = f ? fs.readFileSync(f) : null; const t = buf ? ART.imageType(buf) : null;
+        if (!t) return json(res, 404, { error: 'That picture is gone.' });
+        return picture(buf, TYPES[t]);
+      }
+      if (req.method === 'GET' && what === 'builtin') { // Good Boy's own picture, to compare with
+        const made = kind === 'rp' ? (await rpGif(name))?.file : await critterImage(name.replace(/-sparkly$/, ''), { sparkly: name.endsWith('-sparkly') });
+        if (!made) return json(res, 404, { error: 'No built-in picture.' });
+        return picture(Buffer.from(made), kind === 'rp' ? 'image/gif' : 'image/png');
+      }
+      if (req.method === 'POST' && !what) { // the picture itself is the request body
+        const chunks = []; let size = 0;
+        for await (const c of req) { size += c.length; if (size > ART.MAX_BYTES) throw new UserError('That file is over 8 MB.'); chunks.push(c); }
+        // ?replace=1 (one-picture names, like critters): the new picture is saved first, then the old ones go.
+        const before = url.searchParams.get('replace') === '1' ? ART.listArt(kind, name) : [];
+        if (before.length >= ART.MAX_PER_NAME) fs.rmSync(before.shift(), { force: true });
+        let kept; try { kept = ART.saveArt(kind, name, Buffer.concat(chunks)); } catch (e) { throw new UserError(e.message); } // its messages are written for people
+        for (const old of before) if (old !== kept) fs.rmSync(old, { force: true });
+        db.addLog(s.guilds[0]?.id ?? '0', 'dashboard', 'security', `${s.user.username} added their own art for ${kind}/${name}`);
+        return json(res, 200, { ok: true, files: ART.listArt(kind, name).map((x) => path.basename(x)) });
+      }
+      if (req.method === 'POST' && what === 'remove') {
+        const body = await readJson(req);
+        const gone = body.all === true ? ART.clearArt(kind, name) : (ART.removeArt(kind, name, body.file) ? 1 : 0);
+        if (!gone) throw new UserError('That picture was already removed.');
+        return json(res, 200, { ok: true, removed: gone, files: ART.listArt(kind, name).map((x) => path.basename(x)) });
+      }
+      return json(res, 404, { error: 'Not found.' });
     }
 
     // ---- recent activity for the phone app's Home (3.0.6)

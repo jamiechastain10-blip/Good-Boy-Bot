@@ -3615,7 +3615,7 @@ export default async function runFeatureTests({ test, rejectsWith }) {
   await test('no assistant-brand or legacy "Project Eclipse" wording in anything users can see', () => {
     const bad = new RegExp([...BANNED_BRANDS, 'project eclipse'].join('|'), 'i');
     const hits = [];
-    const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { if (['node_modules', 'data', '.git'].includes(e.name)) continue; const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (/\.(js|html|css|md|json|txt)$/.test(e.name) && !p.endsWith(path.join('tests', 'features.js')) && bad.test(fs.readFileSync(p, 'utf8'))) hits.push(path.relative(root, p)); } };
+    const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { if (['node_modules', 'data', '.git', 'target'].includes(e.name)) continue; const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (/\.(js|html|css|md|json|txt)$/.test(e.name) && !p.endsWith(path.join('tests', 'features.js')) && !p.includes(path.join('v4', 'tools', 'trivia')) /* composers and scientists with a first name that is also a brand */ && bad.test(fs.readFileSync(p, 'utf8'))) hits.push(path.relative(root, p)); } };
     walk(root);
     assert.deepEqual(hits, []);
   });

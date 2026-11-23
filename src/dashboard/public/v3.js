@@ -396,6 +396,7 @@ function renderSettingsHub(ws) {
     tile('whatsnew', '★', "What's new", 'What changed in each update'),
     tile('appearance', '✦', 'Dashboard look', 'Theme and motion for this dashboard'),
     state.me?.botOwner ? tile('updates', '⬆', 'Updates', 'Check for a new version') : null,
+    state.me?.botOwner ? tile('art', '🎨', 'Your art', 'Your own GIFs for hug, boop and the rest, and critter pictures') : null,
     ...(state.me?.local ? [
       h('a', { class: 'quick plain', href: 'goodboy-app://page/settings' }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '🔑'), h('span', {}, h('strong', {}, 'Licence'), h('small', {}, 'Add or remove a licence key'))),
       h('a', { class: 'quick plain', href: 'goodboy-app://page/settings' }, h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '🐶'), h('span', {}, h('strong', {}, 'Bot name, picture and banner'), h('small', {}, 'How your bot looks in Discord'))),

@@ -24,3 +24,8 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+
+# Good Boy 4 build output
+v4/target/
+v4/crates/gb-launcher/gen/
+v4/launcher/brand/sheet.png
