@@ -1,0 +1,233 @@
+general|How many days are in a week?|Seven|Five|Six|Eight
+general|How many months have 31 days?|Seven|Six|Five|Eight
+general|How many seconds are in a minute?|60|100|30|90
+general|How many minutes are in an hour?|60|100|30|90
+general|How many hours are in a day?|24|12|48|36
+general|How many days are in a year (not a leap year)?|365|360|366|364
+general|How many weeks are in a year?|52|48|50|54
+general|How many sides does a triangle have?|Three|Four|Five|Two
+general|How many sides does a square have?|Four|Three|Five|Six
+general|How many sides does a pentagon have?|Five|Six|Four|Seven
+general|How many sides does an octagon have?|Eight|Six|Seven|Ten
+general|How many degrees are in a right angle?|90|45|180|60
+general|How many degrees are in a circle?|360|180|270|90
+general|How many players are on a basketball team on court?|Five|Six|Seven|Four
+general|How many strings does a violin have?|Four|Five|Six|Three
+general|How many keys are on a standard piano?|88|76|92|100
+general|How many colours are in the rainbow?|Seven|Six|Five|Eight
+general|How many letters are in the English alphabet?|26|24|25|28
+general|How many vowels are in the English alphabet (a, e, i, o, u)?|Five|Four|Six|Seven
+general|What is the smallest prime number?|Two|One|Three|Zero
+general|What is the next number: 1, 1, 2, 3, 5, 8?|13|11|12|10
+general|Which is heavier: a kilogram of feathers or a kilogram of steel?|They weigh the same|Steel|Feathers|It depends
+general|What colour do you get by mixing red and white?|Pink|Orange|Purple|Brown
+general|What colour do you get by mixing red and blue?|Purple|Green|Orange|Brown
+general|What colour do you get by mixing red and yellow?|Orange|Green|Purple|Pink
+general|What colour do you get by mixing yellow and blue?|Green|Orange|Purple|Brown
+general|What colour do you get by mixing black and white?|Grey|Brown|Pink|Silver
+general|Which colour is on top of a traffic light?|Red|Green|Yellow|Blue
+general|What colour is a ripe banana?|Yellow|Green|Red|Orange
+general|What colour are most school buses in the US?|Yellow|Blue|Green|Red
+general|What is the longest day of the year in the northern hemisphere called?|Summer solstice|Winter solstice|Spring equinox|Autumn equinox
+general|Which month is the shortest?|February|April|June|September
+general|Which month comes after August?|September|July|October|November
+general|Which day comes before Thursday?|Wednesday|Friday|Tuesday|Monday
+general|What is the first month of the year?|January|February|December|March
+general|What is the last month of the year?|December|November|January|October
+general|What is the opposite of north?|South|East|West|Up
+general|Which direction does the sun rise?|East|West|North|South
+general|Which direction does the sun set?|West|East|North|South
+general|What is the currency of Japan?|Yen|Won|Yuan|Ringgit
+general|What do you call a word that means the same as another?|Synonym|Antonym|Homonym|Acronym
+general|What do you call a word that means the opposite?|Antonym|Synonym|Homonym|Acronym
+general|What is the plural of mouse (the animal)?|Mice|Mouses|Mices|Mouse
+general|What is the plural of goose?|Geese|Gooses|Geeses|Goose
+general|What is the plural of child?|Children|Childs|Childrens|Childer
+general|What is the plural of tooth?|Teeth|Tooths|Teeths|Toothes
+general|What is the past tense of the verb "go"?|Went|Goed|Gone|Going
+general|Which word is a palindrome?|Level|Table|Planet|Window
+general|Which of these words reads the same backwards?|Radar|Radio|Rocket|Robot
+general|Which letter is the most common in English?|E|A|T|S
+general|Which month is named after the Roman god of war?|March|May|June|April
+general|Which month is named after Julius Caesar?|July|August|June|May
+general|Which month is named after Augustus?|August|July|September|June
+general|What is the tallest type of grass?|Bamboo|Wheat|Sugarcane|Reed
+general|What is the tallest tree species?|Coast redwood|Oak|Pine|Baobab
+general|What is the most widely spoken language in the world by native speakers?|Mandarin Chinese|English|Spanish|Hindi
+general|Which language has the most words in its dictionary, famously?|English|French|German|Latin
+general|What is the official language of Brazil?|Portuguese|Spanish|English|French
+general|What is the official language of Egypt?|Arabic|Egyptian|French|English
+general|What is the official language of Austria?|German|Austrian|Hungarian|French
+general|What is the official language of Iran?|Persian|Arabic|Turkish|Urdu
+general|What is the official language of Mexico, in practice?|Spanish|Portuguese|English|Nahuatl
+general|Which country gave us the Statue of Liberty?|France|Britain|Italy|Spain
+general|Which city is known as the Big Apple?|New York City|Los Angeles|Chicago|Washington
+general|Which city is known as the City of Light?|Paris|London|Rome|Vienna
+general|Which city is known as the Eternal City?|Rome|Athens|Jerusalem|Cairo
+general|Which city is known as the Windy City?|Chicago|Boston|Seattle|San Francisco
+general|Which city is known as the Big Easy?|New Orleans|Houston|Atlanta|Miami
+general|Which country is known as the Land of the Rising Sun?|Japan|China|Thailand|Korea
+general|Which country is known as the Land Down Under?|Australia|New Zealand|South Africa|Fiji
+general|Which country is known as the Emerald Isle?|Ireland|Scotland|Iceland|New Zealand
+general|Which country is known as the Land of Fire and Ice?|Iceland|Norway|Greenland|Finland
+general|What is Superman's home planet?|Krypton|Mars|Vulcan|Tatooine
+general|What is the name of Batman's butler?|Alfred|Jarvis|Wilson|Edwin
+general|What is the name of Sherlock Holmes's assistant?|Dr. Watson|Dr. Moriarty|Inspector Lestrade|Mycroft
+general|Which fairy-tale character left a glass slipper?|Cinderella|Snow White|Rapunzel|Aurora
+general|In the story, what did Jack climb?|A beanstalk|A tower|A ladder|A hill
+general|What did Little Red Riding Hood carry to her grandmother?|A basket of food|A letter|A flower|A lantern
+general|Which fairy tale features three bears?|Goldilocks|Snow White|Hansel and Gretel|Rapunzel
+general|How many dwarfs were there in Snow White?|Seven|Five|Six|Eight
+general|Who lives in a pineapple under the sea?|SpongeBob SquarePants|Patrick Star|Squidward|Mr. Krabs
+general|What do you call a person who makes bread?|Baker|Butcher|Chef|Miller
+general|What do you call a person who looks after your teeth?|Dentist|Doctor|Optician|Surgeon
+general|What do you call a person who writes books?|Author|Editor|Publisher|Printer
+general|What do you call a person who flies a plane?|Pilot|Captain only|Driver|Engineer
+general|What do you call a doctor for animals?|Veterinarian|Zoologist|Biologist|Pharmacist
+general|What is the name of the longest bone in the leg?|Femur|Tibia|Fibula|Patella
+general|Which direction does a compass needle point?|North|South|East|West
+general|What is the top of a mountain called?|Summit|Valley|Ridge|Slope
+general|What is a baby's first set of teeth called?|Milk teeth|Wisdom teeth|Molars|Canines
+general|What is the name of the person who rides a horse in a race?|Jockey|Rider only|Trainer|Groom
+general|What do you call a place where bees live?|Hive|Nest|Den|Burrow
+general|What do you call a number that is divisible by 2?|Even|Odd|Prime|Square
+general|What do you call a number with only two factors, 1 and itself?|Prime|Even|Odd|Square
+general|What is the sum of the angles in a triangle?|180 degrees|360 degrees|90 degrees|270 degrees
+general|What is the perimeter of a square with side 5?|20|25|10|15
+general|What is the area of a rectangle 4 by 6?|24|20|10|48
+general|Which shape has no corners?|Circle|Square|Triangle|Hexagon
+general|What shape is a stop sign?|Octagon|Hexagon|Circle|Square
+general|What shape is a yield sign (in the US)?|Triangle|Square|Circle|Diamond
+general|What shape is a honeycomb cell?|Hexagon|Circle|Square|Triangle
+general|How many cents are in a US dollar?|100|10|50|1000
+general|How many cents is a US dime worth?|10|5|25|1
+general|How many cents is a US nickel worth?|5|10|25|1
+general|How many cents is a US quarter worth?|25|10|50|20
+general|What is the currency of the United Kingdom?|Pound sterling|Euro|Dollar|Franc
+general|What is the currency of Switzerland?|Swiss franc|Euro|Pound|Krone
+general|What is the currency of India?|Rupee|Yen|Dollar|Taka
+general|Who is known for the phrase "To be, or not to be"?|Hamlet|Macbeth|Othello|Romeo
+general|Who wrote Romeo and Juliet?|William Shakespeare|Charles Dickens|Jane Austen|Mark Twain
+general|Who wrote Pride and Prejudice?|Jane Austen|Charlotte Bronte|Emily Bronte|George Eliot
+general|Who wrote A Christmas Carol?|Charles Dickens|Mark Twain|Oscar Wilde|Thomas Hardy
+general|Who wrote Harry Potter?|J. K. Rowling|Roald Dahl|C. S. Lewis|Suzanne Collins
+general|Who wrote The Hobbit?|J. R. R. Tolkien|C. S. Lewis|George R. R. Martin|Roald Dahl
+general|Who wrote Charlie and the Chocolate Factory?|Roald Dahl|Dr. Seuss|Enid Blyton|Beatrix Potter
+general|Who wrote The Cat in the Hat?|Dr. Seuss|Roald Dahl|Eric Carle|Maurice Sendak
+general|Who wrote The Very Hungry Caterpillar?|Eric Carle|Dr. Seuss|Beatrix Potter|A. A. Milne
+general|Who wrote Winnie-the-Pooh?|A. A. Milne|Beatrix Potter|Lewis Carroll|Roald Dahl
+general|Who wrote Alice's Adventures in Wonderland?|Lewis Carroll|Charles Dickens|J. M. Barrie|Roald Dahl
+general|Who wrote Peter Pan?|J. M. Barrie|Lewis Carroll|C. S. Lewis|Roald Dahl
+general|Who wrote The Lion, the Witch and the Wardrobe?|C. S. Lewis|J. R. R. Tolkien|Roald Dahl|Philip Pullman
+general|Who wrote The Hunger Games?|Suzanne Collins|Veronica Roth|Stephenie Meyer|J. K. Rowling
+general|Who wrote Frankenstein?|Mary Shelley|Bram Stoker|Jane Austen|Emily Bronte
+general|Who wrote Dracula?|Bram Stoker|Mary Shelley|Edgar Allan Poe|Oscar Wilde
+general|Who wrote Moby-Dick?|Herman Melville|Mark Twain|Jack London|Ernest Hemingway
+general|Who wrote The Adventures of Tom Sawyer?|Mark Twain|Charles Dickens|Jack London|Washington Irving
+general|Who wrote 1984?|George Orwell|Aldous Huxley|Ray Bradbury|H. G. Wells
+general|Who wrote The Great Gatsby?|F. Scott Fitzgerald|Ernest Hemingway|John Steinbeck|William Faulkner
+general|Who wrote To Kill a Mockingbird?|Harper Lee|Toni Morrison|Maya Angelou|J. D. Salinger
+general|Who wrote The Catcher in the Rye?|J. D. Salinger|John Steinbeck|Jack Kerouac|F. Scott Fitzgerald
+general|Who wrote The War of the Worlds?|H. G. Wells|Jules Verne|Arthur C. Clarke|Isaac Asimov
+general|Who wrote Twenty Thousand Leagues Under the Sea?|Jules Verne|H. G. Wells|Robert Louis Stevenson|Mark Twain
+general|Who wrote Treasure Island?|Robert Louis Stevenson|Daniel Defoe|Jules Verne|Charles Dickens
+general|Who wrote Robinson Crusoe?|Daniel Defoe|Jonathan Swift|Henry Fielding|Charles Dickens
+general|Who wrote Gulliver's Travels?|Jonathan Swift|Daniel Defoe|Lewis Carroll|Charles Dickens
+general|Who wrote The Jungle Book?|Rudyard Kipling|Robert Louis Stevenson|Roald Dahl|J. M. Barrie
+general|Who wrote Les Miserables?|Victor Hugo|Alexandre Dumas|Jules Verne|Honore de Balzac
+general|Who wrote The Three Musketeers?|Alexandre Dumas|Victor Hugo|Jules Verne|Voltaire
+general|Who wrote Don Quixote?|Miguel de Cervantes|Federico Garcia Lorca|Gabriel Garcia Marquez|Lope de Vega
+general|Who wrote One Hundred Years of Solitude?|Gabriel Garcia Marquez|Pablo Neruda|Jorge Luis Borges|Isabel Allende
+general|Who wrote War and Peace?|Leo Tolstoy|Fyodor Dostoevsky|Anton Chekhov|Ivan Turgenev
+general|Who wrote Crime and Punishment?|Fyodor Dostoevsky|Leo Tolstoy|Anton Chekhov|Nikolai Gogol
+general|Who wrote The Divine Comedy?|Dante Alighieri|Petrarch|Boccaccio|Virgil
+general|Who wrote The Odyssey (traditionally)?|Homer|Virgil|Sophocles|Euripides
+general|Who wrote Jane Eyre?|Charlotte Bronte|Emily Bronte|Anne Bronte|Jane Austen
+general|Who wrote Wuthering Heights?|Emily Bronte|Charlotte Bronte|Jane Austen|George Eliot
+general|Who wrote Little Women?|Louisa May Alcott|Jane Austen|Harper Lee|Emily Dickinson
+general|Who wrote Anne of Green Gables?|L. M. Montgomery|Louisa May Alcott|Laura Ingalls Wilder|Beatrix Potter
+general|Who wrote the Percy Jackson books?|Rick Riordan|J. K. Rowling|Suzanne Collins|Rick Yancey
+general|Who wrote Diary of a Wimpy Kid?|Jeff Kinney|Dav Pilkey|Rick Riordan|Lemony Snicket
+general|Who wrote Captain Underpants?|Dav Pilkey|Jeff Kinney|Dr. Seuss|Roald Dahl
+food|What is the main ingredient of guacamole?|Avocado|Tomato|Pea|Lime
+food|What is the main ingredient of hummus?|Chickpeas|Lentils|Beans|Peas
+food|What is the main ingredient of sushi rice's seasoning?|Vinegar|Soy sauce|Sugar only|Wine
+food|What is the main ingredient in a traditional margherita pizza topping?|Tomato and mozzarella|Ham and pineapple|Pepperoni|Mushrooms
+food|Which fruit is dried to make raisins?|Grapes|Plums|Figs|Apricots
+food|Which fruit is dried to make prunes?|Plums|Grapes|Figs|Dates
+food|Which fruit is the main ingredient of wine?|Grapes|Apples|Plums|Pears
+food|Which fruit is the main ingredient of cider?|Apples|Pears|Grapes|Plums
+food|Which vegetable is used to make french fries?|Potato|Carrot|Parsnip|Turnip
+food|Which vegetable makes you cry when you cut it?|Onion|Carrot|Pepper|Celery
+food|Which vegetable is the main ingredient of sauerkraut?|Cabbage|Cucumber|Beet|Carrot
+food|Which vegetable is the main ingredient of kimchi?|Cabbage|Radish only|Cucumber|Spinach
+food|Which vegetable is pickled to make gherkins?|Cucumber|Onion|Pepper|Zucchini
+food|Which spice comes from the crocus flower?|Saffron|Turmeric|Paprika|Cinnamon
+food|Which spice is made from dried chillies?|Cayenne|Cinnamon|Nutmeg|Clove
+food|Which spice comes from tree bark?|Cinnamon|Pepper|Ginger|Saffron
+food|Which spice makes curry yellow?|Turmeric|Paprika|Cumin|Saffron
+food|What is the hottest chilli component called?|Capsaicin|Citric acid|Caffeine|Menthol
+food|What gives mint its cool taste?|Menthol|Capsaicin|Caffeine|Vanillin
+food|Which bean is chocolate made from?|Cacao|Coffee|Vanilla|Soy
+food|Which bean is coffee made from?|Coffee bean|Cacao|Soy|Kidney
+food|Which plant is tequila made from?|Agave|Cactus|Sugarcane|Corn
+food|Which grain is used to make traditional sake?|Rice|Wheat|Barley|Corn
+food|Which grain is used to make most bread in Europe?|Wheat|Rice|Oats|Corn
+food|Which grain is used for porridge?|Oats|Rice|Rye|Corn
+food|Which nut is used to make marzipan?|Almond|Peanut|Walnut|Hazelnut
+food|Which nut is used in classic pesto?|Pine nut|Walnut|Almond|Cashew
+food|Which nut is used to make Nutella's main flavour?|Hazelnut|Peanut|Almond|Cashew
+food|Is a peanut a nut or a legume?|Legume|Nut|Seed|Fruit
+food|Is a tomato a fruit or a vegetable botanically?|Fruit|Vegetable|Root|Leaf
+food|Which country is famous for inventing pizza?|Italy|Greece|France|Spain
+food|Which country is famous for inventing sushi?|Japan|China|Korea|Thailand
+food|Which country is famous for paella?|Spain|Italy|Portugal|Mexico
+food|Which country is famous for goulash?|Hungary|Poland|Russia|Austria
+food|Which country is famous for pad thai?|Thailand|Vietnam|Laos|Malaysia
+food|Which country is famous for pho?|Vietnam|Thailand|Cambodia|China
+food|Which country is famous for tacos?|Mexico|Spain|Peru|Argentina
+food|Which country is famous for croissants?|France|Austria|Belgium|Italy
+food|Which country is famous for waffles and chocolate?|Belgium|Germany|Sweden|Spain
+food|Which country is famous for feta cheese?|Greece|Italy|France|Bulgaria
+food|Which country is famous for parmesan cheese?|Italy|France|Spain|Switzerland
+food|Which country is famous for Swiss-style cheese with holes?|Switzerland|France|Germany|Italy
+food|Which country is famous for kebabs?|Turkey|Greece|Italy|Spain
+food|Which country is famous for curry (classic origin)?|India|China|Thailand|Japan
+food|Which country is famous for kimchi?|South Korea|Japan|China|Vietnam
+food|Which country is famous for pierogi?|Poland|Russia|Hungary|Czech Republic
+food|Which country is famous for borscht?|Ukraine|France|Italy|Germany
+food|Which country is famous for bratwurst?|Germany|Austria|Poland|Belgium
+food|Which country is famous for fish and chips?|United Kingdom|Ireland|Norway|Australia
+food|Which country is famous for poutine?|Canada|United States|France|Belgium
+food|What is the Italian word for "ice cream"?|Gelato|Granita|Sorbetto|Cassata
+food|What is the Japanese word for raw fish slices?|Sashimi|Tempura|Ramen|Teriyaki
+food|What is a Japanese noodle soup called?|Ramen|Tempura|Sushi|Miso
+food|What is the Spanish word for "little dishes" served as snacks?|Tapas|Paella|Churros|Gazpacho
+food|What is a French pancake called?|Crepe|Blini|Waffle|Pancake only
+food|What is the Indian flatbread cooked in a tandoor?|Naan|Pita|Tortilla|Chapati only
+food|What is the Mexican flatbread made from corn called?|Tortilla|Naan|Pita|Roti
+food|What is the Greek dip made from yoghurt and cucumber?|Tzatziki|Hummus|Baba ghanoush|Taramasalata
+food|What is the Middle Eastern chickpea fritter called?|Falafel|Kebab|Kofta|Shawarma
+food|What is the name of the Italian cured ham?|Prosciutto|Salami|Pancetta|Mortadella
+food|What is the name of the Italian dessert with coffee-soaked biscuits?|Tiramisu|Panna cotta|Cannoli|Gelato
+food|What is the French dessert with a burnt sugar top?|Creme brulee|Mousse|Eclair|Macaron
+food|What is the colourful French sandwich cookie called?|Macaron|Meringue|Madeleine|Profiterole
+food|What is a baguette?|A long French loaf|A round Italian roll|A German pretzel|A flat Greek bread
+food|What is the main ingredient in a classic omelette?|Eggs|Flour|Potato|Cheese
+food|What is the main ingredient in mayonnaise?|Egg yolk and oil|Cream|Mustard|Butter
+food|What is the main ingredient in butter?|Cream|Milk powder|Egg|Cheese
+food|What is the main ingredient in yoghurt?|Milk|Cream|Eggs|Cheese
+food|What is the main ingredient in tofu?|Soybeans|Rice|Wheat|Chickpeas
+food|What is the main ingredient in pasta?|Wheat flour|Rice flour|Corn flour|Potato
+food|What is the main ingredient in bread?|Flour|Sugar|Butter|Eggs
+food|What is the main ingredient of a Caesar salad's greens?|Romaine lettuce|Spinach|Iceberg|Kale
+food|What is the main ingredient in a BLT sandwich filling?|Bacon, lettuce, tomato|Beef, lettuce, tomato|Bread, lettuce, turkey|Butter, lettuce, tuna
+food|What does the "P" in PB&J stand for?|Peanut|Pecan|Pistachio|Pumpkin
+food|What flavour is the herb basil used in?|Pesto|Gazpacho|Hummus|Guacamole
+food|What colour is wasabi?|Green|Red|Yellow|White
+food|What do you call cooking food slowly in water just below boiling?|Simmering|Frying|Roasting|Grilling
+food|What do you call cooking food by dry heat in an oven?|Baking|Poaching|Steaming|Simmering
+food|What do you call cooking in hot oil in a pan?|Frying|Poaching|Steaming|Baking
+food|What do you call cooking over steam?|Steaming|Frying|Boiling|Grilling
+food|What do you call cutting food into very small cubes?|Dicing|Slicing|Julienne|Mincing only
+food|What temperature does water boil at, in Celsius, at sea level?|100|90|110|120

@@ -1,0 +1,46 @@
+/* Guided tour: a spotlight that walks through the app, and a showcase of everything the bot does. */
+.tour-offer{position:fixed;right:20px;bottom:20px;z-index:40;width:min(360px,calc(100vw - 40px));background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:grid;gap:12px;box-shadow:0 18px 48px rgba(0,0,0,.4);animation:tour-up .3s cubic-bezier(.2,.8,.2,1) both}
+.tour-offer .hd{display:flex;gap:12px;align-items:center}
+.tour-offer img{width:44px;height:44px}
+.tour-offer .btns{display:grid;gap:8px}
+.tour-spot{position:fixed;z-index:60;border-radius:12px;box-shadow:0 0 0 9999px rgba(4,8,18,.66),0 0 0 3px var(--accent);pointer-events:none;transition:all .3s cubic-bezier(.2,.8,.2,1)}
+.tour-tip{position:fixed;z-index:61;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;display:grid;gap:10px;box-shadow:0 18px 48px rgba(0,0,0,.45);transition:top .3s cubic-bezier(.2,.8,.2,1),left .3s cubic-bezier(.2,.8,.2,1)}
+.tour-tip .n{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.06em;text-transform:uppercase}
+.tour-tip .row{justify-content:space-between}
+.tour-dots{display:flex;gap:4px}.tour-dots i{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}.tour-dots i.on{background:var(--accent);width:16px;border-radius:4px}
+.show{position:fixed;inset:0;z-index:70;background:rgba(4,8,18,.6);display:grid;place-items:center;padding:24px;animation:tour-fade .2s both}
+.show .sheet{width:min(1040px,100%);height:min(680px,100%);background:var(--panel);border:1px solid var(--line);border-radius:16px;display:grid;grid-template-columns:240px minmax(0,1fr);overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5);animation:tour-up .3s cubic-bezier(.2,.8,.2,1) both}
+.show nav{border-right:1px solid var(--line);padding:16px 10px;overflow:auto;display:grid;align-content:start;gap:2px}
+.show nav h3{padding:4px 10px 10px}
+.show nav button{display:flex;gap:10px;align-items:center;border:0;background:none;color:var(--ink-2);font:600 14px var(--text);padding:8px 10px;border-radius:var(--r-sm);cursor:pointer;text-align:left}
+.show nav button[aria-current="true"]{background:var(--accent-soft);color:var(--ink)}
+.show nav button span{width:22px;text-align:center}
+.show .body{padding:28px 32px;overflow:auto;display:grid;align-content:start;gap:18px}
+.show .top{display:flex;justify-content:space-between;align-items:start;gap:16px}
+.show .chips{display:flex;flex-wrap:wrap;gap:6px}.show .chips code{font:600 13px ui-monospace,Consolas,monospace;background:var(--raised);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+.show .foot{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:16px}
+.show .count{font-size:13px;color:var(--ink-2);align-self:center}
+/* a Discord message, drawn the way members see it */
+.dc{background:#313338;border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:40px minmax(0,1fr);gap:12px;color:#dbdee1;font:15px/1.4 "gg sans","Figtree",system-ui,sans-serif}
+:root[data-theme="light"] .dc{background:#fff;color:#313338;border:1px solid var(--line)}
+.dc .av{width:40px;height:40px;border-radius:50%;background:#1e1f22 url(mascot.png) center/120% no-repeat}
+.dc .who{display:flex;gap:6px;align-items:center;font-weight:600;color:#fff}
+:root[data-theme="light"] .dc .who{color:#060607}
+.dc .app{font-size:10px;font-weight:700;background:#5865f2;color:#fff;border-radius:3px;padding:1px 4px}
+.dc .when{font-size:12px;color:#949ba4;font-weight:400}
+.dc .box{margin-top:6px;background:#2b2d31;border-left:4px solid var(--c,#5865f2);border-radius:6px;padding:12px 14px;display:grid;gap:6px;max-width:460px}
+:root[data-theme="light"] .dc .box{background:#f2f3f5}
+.dc .box h4{font-size:15px;color:#fff;margin:0}
+:root[data-theme="light"] .dc .box h4{color:#060607}
+.dc .box .sub{font-size:12px;color:#949ba4}
+.dc .mention{background:rgba(88,101,242,.3);color:#c9cdfb;border-radius:3px;padding:0 2px}
+.dc .bt{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.dc .bt span{font-size:14px;font-weight:500;border-radius:4px;padding:5px 14px;background:#4e5058;color:#fff}
+.dc .bt .g{background:#248046}.dc .bt .r{background:#da373c}.dc .bt .p{background:#5865f2}
+.dc .user{grid-column:1/-1;display:flex;gap:8px;align-items:center;font-size:14px;color:#b5bac1}
+.dc .user b{color:#fff;font-weight:600}
+.dc .rx{display:inline-flex;gap:4px;align-items:center;background:#2b2d31;border:1px solid #5865f2;border-radius:8px;padding:1px 6px;font-size:13px;margin-top:4px}
+.dc .bar{font-family:ui-monospace,Consolas,monospace;letter-spacing:1px;color:#58a6ff}
+@keyframes tour-up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes tour-fade{from{opacity:0}to{opacity:1}}
+@media (max-width:760px){.show .sheet{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.show nav{display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}.show nav h3{display:none}.show nav button{white-space:nowrap}.show .body{padding:20px}}

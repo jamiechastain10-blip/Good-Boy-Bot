@@ -1,0 +1,234 @@
+tech|What does CPU stand for?|Central Processing Unit|Computer Personal Unit|Central Program Utility|Core Processing Unit
+tech|What does RAM stand for?|Random Access Memory|Read Access Memory|Rapid Active Memory|Run Application Memory
+tech|What does GPU stand for?|Graphics Processing Unit|General Processing Unit|Game Power Unit|Graphic Program Utility
+tech|What does USB stand for?|Universal Serial Bus|United System Board|Universal Signal Bridge|Unified Serial Block
+tech|What does HTML stand for?|HyperText Markup Language|HighText Machine Language|Hyper Transfer Markup Link|Home Tool Markup Language
+tech|What does URL stand for?|Uniform Resource Locator|Universal Reference Link|Unified Resource Layer|User Request Locator
+tech|What does Wi-Fi commonly refer to?|Wireless networking|A type of battery|A phone brand|A video format
+tech|What does PDF stand for?|Portable Document Format|Printable Data File|Public Document Form|Page Design Format
+tech|What does SSD stand for?|Solid State Drive|Super Speed Disk|Solid Storage Device|Silicon Serial Drive
+tech|What does LED stand for?|Light Emitting Diode|Low Energy Display|Light Energy Device|Linear Electric Diode
+tech|What does AI stand for?|Artificial Intelligence|Automated Input|Applied Internet|Advanced Interface
+tech|What does GPS stand for?|Global Positioning System|General Position Signal|Global Planet Scanner|Geo Point System
+tech|What does VPN stand for?|Virtual Private Network|Very Protected Node|Verified Public Network|Virtual Packet Node
+tech|What does the .com in a web address originally stand for?|Commercial|Computer|Community|Company
+tech|What does the .org domain originally stand for?|Organization|Original|Orbit|Order
+tech|What does HTTP stand for?|HyperText Transfer Protocol|High Transfer Text Process|Hyper Tool Transfer Plan|Home Text Transfer Protocol
+tech|What does FAQ stand for?|Frequently Asked Questions|Fast Answer Query|Free Access Quota|File And Query
+tech|What does SMS stand for?|Short Message Service|Simple Mail System|Speedy Message Send|Signal Message Service
+tech|What does 3D stand for?|Three dimensional|Third device|Triple data|Three display
+tech|What is the binary number for 5?|101|110|011|111
+tech|What is the binary number for 2?|10|11|01|100
+tech|What is the binary number for 8?|1000|0100|1100|1010
+tech|What decimal number is the binary 1111?|15|16|14|12
+tech|What decimal number is the binary 1010?|10|12|8|5
+tech|How many bits are in a byte?|Eight|Four|Sixteen|Ten
+tech|Which is bigger: a megabyte or a gigabyte?|Gigabyte|Megabyte|They are equal|Kilobyte
+tech|Which is the smallest: kilobyte, megabyte, gigabyte, terabyte?|Kilobyte|Megabyte|Gigabyte|Terabyte
+tech|Which company makes the iPhone?|Apple|Samsung|Google|Microsoft
+tech|Which company makes the Galaxy phones?|Samsung|Apple|Sony|LG
+tech|Which company makes the Pixel phones?|Google|Apple|Samsung|Huawei
+tech|Which company makes Windows?|Microsoft|Apple|Google|IBM
+tech|Which company makes macOS?|Apple|Microsoft|Google|Canonical
+tech|Which company develops Android?|Google|Apple|Microsoft|Samsung
+tech|Which company owns YouTube?|Google|Meta|Microsoft|Amazon
+tech|Which company owns Instagram?|Meta|Google|Snap|Microsoft
+tech|Which company owns WhatsApp?|Meta|Google|Apple|Microsoft
+tech|Which company owns LinkedIn?|Microsoft|Meta|Google|Amazon
+tech|Which company owns GitHub?|Microsoft|Google|Amazon|Meta
+tech|Which company founded Amazon Web Services?|Amazon|Google|Microsoft|IBM
+tech|Who co-founded Microsoft with Paul Allen?|Bill Gates|Steve Jobs|Mark Zuckerberg|Larry Page
+tech|Who co-founded Apple with Steve Wozniak?|Steve Jobs|Bill Gates|Tim Cook|Jony Ive
+tech|Who founded Facebook?|Mark Zuckerberg|Jack Dorsey|Evan Spiegel|Elon Musk
+tech|Who co-founded Google with Larry Page?|Sergey Brin|Eric Schmidt|Sundar Pichai|Jeff Bezos
+tech|Who founded Amazon?|Jeff Bezos|Elon Musk|Bill Gates|Tim Cook
+tech|Who created the Linux kernel?|Linus Torvalds|Richard Stallman|Dennis Ritchie|Ken Thompson
+tech|Who invented the World Wide Web?|Tim Berners-Lee|Vint Cerf|Bill Gates|Steve Jobs
+tech|Who is often called the first computer programmer?|Ada Lovelace|Grace Hopper|Alan Turing|Charles Babbage
+tech|Who designed the Analytical Engine?|Charles Babbage|Alan Turing|John von Neumann|Ada Lovelace
+tech|Who broke the Enigma code and is a father of computing?|Alan Turing|Tommy Flowers|Konrad Zuse|Claude Shannon
+tech|Who created the Python programming language?|Guido van Rossum|James Gosling|Bjarne Stroustrup|Dennis Ritchie
+tech|Who created the C programming language?|Dennis Ritchie|Bjarne Stroustrup|James Gosling|Guido van Rossum
+tech|Who created the C++ programming language?|Bjarne Stroustrup|Dennis Ritchie|James Gosling|Brian Kernighan
+tech|Who created the Java programming language?|James Gosling|Guido van Rossum|Bjarne Stroustrup|Brendan Eich
+tech|Who created JavaScript?|Brendan Eich|James Gosling|Tim Berners-Lee|Guido van Rossum
+tech|Which language runs inside web browsers by default?|JavaScript|Python|Java|C++
+tech|Which language is used to style web pages?|CSS|HTML|SQL|PHP
+tech|Which language is used to structure web pages?|HTML|CSS|SQL|Python
+tech|Which language is used to query databases?|SQL|HTML|CSS|Java
+tech|What is the name of the Rust package manager?|Cargo|Pip|Npm|Gem
+tech|What is the name of Python's package installer?|pip|npm|cargo|gem
+tech|What is the name of Node.js's default package manager?|npm|pip|cargo|brew
+tech|What is Git used for?|Version control|Image editing|Web hosting|Video calls
+tech|Which website hosts code repositories and is owned by Microsoft?|GitHub|Bitbucket|SourceForge|GitLab
+tech|What is the name of the Linux mascot?|Tux|Beastie|Duke|Clippy
+tech|What was Microsoft's paperclip assistant called?|Clippy|Bob|Cortana|Siri
+tech|What is Apple's voice assistant called?|Siri|Alexa|Cortana|Bixby
+tech|What is Amazon's voice assistant called?|Alexa|Siri|Cortana|Google Assistant
+tech|What was the first widely used web browser with graphics (1993)?|Mosaic|Chrome|Firefox|Safari
+tech|Which web browser is made by Mozilla?|Firefox|Chrome|Safari|Edge
+tech|Which web browser is made by Apple?|Safari|Chrome|Firefox|Edge
+tech|Which web browser is made by Microsoft today?|Edge|Chrome|Safari|Opera
+tech|Which search engine is the most popular in the world?|Google|Bing|Yahoo|DuckDuckGo
+tech|What is the most visited video site?|YouTube|Vimeo|Twitch|Dailymotion
+tech|What do we call unwanted email?|Spam|Junk mail only|Phish|Trojan
+tech|What is a "phishing" attack?|A fake message to steal info|A virus that deletes files|A password manager|A type of firewall
+tech|What does a firewall do?|Blocks unwanted traffic|Cools the computer|Backs up files|Speeds up the internet
+tech|What is two-factor authentication?|Two ways to prove who you are|Two passwords at once|Two accounts|Two devices charging
+tech|What is a strong password made of?|Length and a mix of characters|Your birthday|The word password|Your pet's name
+tech|What is the "cloud" in computing?|Remote servers on the internet|A weather app|A type of battery|A Wi-Fi router
+tech|What is the key you press to cancel or escape a task on a keyboard?|Esc|Ctrl|Alt|Tab
+tech|What does Ctrl+C usually do?|Copy|Cut|Paste|Close
+tech|What does Ctrl+V usually do?|Paste|Copy|Cut|Save
+tech|What does Ctrl+Z usually do?|Undo|Redo|Close|Save
+tech|What does Ctrl+S usually do?|Save|Search|Select all|Send
+tech|What does Ctrl+A usually do?|Select all|Add|Open|Copy
+tech|What is the arrangement of keys on most English keyboards called?|QWERTY|ABCDEF|AZERTY only|DVORAK only
+tech|What is the file extension for a JPEG image?|.jpg|.png|.gif|.bmp
+tech|What is the file extension for a Microsoft Word document?|.docx|.xlsx|.pptx|.txt
+tech|What is the file extension for a Microsoft Excel workbook?|.xlsx|.docx|.pptx|.csv
+tech|What is the file extension for a Microsoft PowerPoint file?|.pptx|.docx|.xlsx|.pdf
+tech|What is the file extension for a plain text file?|.txt|.doc|.pdf|.rtf
+tech|What is the file extension for an MP3 audio file?|.mp3|.mp4|.wav|.png
+tech|What is the file extension for a compressed archive often called a zip?|.zip|.exe|.iso|.dll
+tech|Which image format supports animation and is often used for memes?|GIF|JPEG|BMP|TIFF
+tech|What is the most popular social network for short videos?|TikTok|Pinterest|Tumblr|LinkedIn
+tech|What does "bug" mean in programming?|An error in code|A new feature|A programming language|A type of server
+tech|What is the process of finding and fixing bugs called?|Debugging|Compiling|Deploying|Refactoring
+tech|What is the "Hello, World!" program?|A simple first program|A virus|A game|A website
+tech|What is an algorithm?|Steps to solve a problem|A type of computer|A coding language|A hardware part
+tech|What is open-source software?|Code anyone can read and edit|Software with no screen|Software for banks only|Software with no bugs
+tech|What is the brain of the computer called?|CPU|Hard drive|Keyboard|Monitor
+tech|What stores data permanently in a classic computer?|Hard drive|RAM|CPU|Fan
+tech|Which memory is erased when you turn off the computer?|RAM|SSD|Hard drive|USB stick
+tech|What is the term for a program that replicates itself to spread?|Worm|Patch|Cookie|Firewall
+tech|What does an operating system do?|Manages hardware and software|Edits photos|Browses the web|Plays music only
+tech|Which of these is an operating system?|Linux|Excel|Chrome|Photoshop
+tech|Which of these is an operating system for phones?|Android|Windows Office|Photoshop|Excel
+tech|Which of these is a web browser?|Chrome|Excel|Linux|Word
+tech|Which of these is a video game console made by Sony?|PlayStation|Xbox|Switch|Wii
+tech|Which of these is a video game console made by Microsoft?|Xbox|PlayStation|Switch|Dreamcast
+tech|Which of these is a video game console made by Nintendo?|Switch|Xbox|PlayStation|Steam Deck
+tech|Which company makes the Steam Deck?|Valve|Nintendo|Sony|Microsoft
+tech|What is the name of the platform Valve runs to sell PC games?|Steam|Origin|Epic Store|Battle.net
+tech|Which messaging app is popular with gamers and communities?|Discord|Skype only|Slack only|Telegram only
+tech|In what year was Discord launched?|2015|2010|2018|2012
+tech|What year was the first iPhone released?|2007|2004|2010|2001
+tech|In what year was YouTube founded?|2005|2001|2009|2012
+tech|In what year was Google founded?|1998|1992|2004|1989
+tech|In what year did Facebook launch?|2004|1999|2008|2010
+tech|In what year was Twitter founded?|2006|2002|2009|2011
+tech|In what year did Windows 95 launch?|1995|1990|2000|1985
+tech|In what year did Bitcoin first appear (whitepaper)?|2008|2002|2013|2016
+tech|What is Bitcoin?|A cryptocurrency|A bank|A social network|A search engine
+tech|What technology does a cryptocurrency typically use?|Blockchain|Dial-up|Bluetooth|Infrared
+tech|What does the "I" in IoT stand for?|Internet|Intelligence|Interface|Input
+tech|What does 5G refer to?|Fifth-generation mobile|Five gigabytes|A Wi-Fi band|A phone model
+tech|What is Bluetooth used for?|Short-range wireless links|Faster Wi-Fi|Charging|Cooling
+tech|What is the name of the small file websites store in your browser?|Cookie|Biscuit|Cache only|Token only
+tech|What is a pixel?|A single dot of a picture|A type of camera|A screen cable|A memory chip
+tech|What does HD stand for?|High Definition|Hard Disk|High Data|Home Display
+tech|What is the resolution called 1920 by 1080?|Full HD|4K|HD ready|2K
+tech|Approximately how wide is a 4K image in pixels?|3840|1920|2560|7680
+tech|What is the main language of Android apps traditionally?|Java and Kotlin|Swift|C#|Ruby
+tech|What is the main language for iPhone apps?|Swift|Kotlin|Java|C#
+tech|What is the term for the process of turning source code into a program?|Compiling|Debugging|Browsing|Streaming
+tech|What do we call a computer program that you interact with by typing text commands?|Terminal|Browser|Spreadsheet|Editor only
+tech|What is the "dark web"?|Hidden parts of the internet|A slow internet|A VPN|A blocked website
+sports|How many players are on a soccer team on the field?|Eleven|Ten|Nine|Twelve
+sports|How many players are on a baseball team on the field?|Nine|Eleven|Ten|Eight
+sports|How many players are on a rugby union team on the field?|Fifteen|Eleven|Thirteen|Twelve
+sports|How many players are on a volleyball team on court?|Six|Five|Seven|Four
+sports|How many players are on an ice hockey team on the ice?|Six|Five|Seven|Eleven
+sports|How many players are on an American football team on the field?|Eleven|Nine|Twelve|Ten
+sports|How many holes are in a full round of golf?|18|9|12|20
+sports|How many points is a touchdown worth in American football?|Six|Seven|Three|Five
+sports|How many points is a field goal worth in American football?|Three|Two|Six|Seven
+sports|How many points is a free throw worth in basketball?|One|Two|Three|Four
+sports|How many points is a three-pointer worth in basketball?|Three|Two|Four|Five
+sports|How many rings are on the Olympic flag?|Five|Four|Six|Seven
+sports|How often are the Summer Olympics held?|Every four years|Every two years|Every year|Every five years
+sports|Which country hosted the 2016 Summer Olympics?|Brazil|China|UK|Japan
+sports|Which country hosted the 2012 Summer Olympics?|United Kingdom|China|Brazil|Greece
+sports|Which country hosted the 2008 Summer Olympics?|China|Greece|Australia|Russia
+sports|Which country hosted the 2020 Summer Olympics (held in 2021)?|Japan|China|Brazil|France
+sports|Which country hosted the 2024 Summer Olympics?|France|United States|Japan|Italy
+sports|Which country hosted the 2022 FIFA World Cup?|Qatar|Russia|Brazil|Germany
+sports|Which country hosted the 2018 FIFA World Cup?|Russia|Brazil|Germany|France
+sports|Which country won the 2022 FIFA World Cup?|Argentina|France|Brazil|Croatia
+sports|Which country won the 2018 FIFA World Cup?|France|Croatia|Brazil|Germany
+sports|Which country won the 2014 FIFA World Cup?|Germany|Argentina|Brazil|Spain
+sports|Which country has won the most men's FIFA World Cups?|Brazil|Germany|Italy|Argentina
+sports|Which soccer player is nicknamed "La Pulga"?|Lionel Messi|Cristiano Ronaldo|Neymar|Kylian Mbappe
+sports|Which country does Cristiano Ronaldo play for internationally?|Portugal|Spain|Brazil|Italy
+sports|Which country does Lionel Messi play for internationally?|Argentina|Spain|Brazil|Uruguay
+sports|Which country does Neymar play for internationally?|Brazil|Argentina|Portugal|Spain
+sports|Which tennis tournament is played on grass in London?|Wimbledon|US Open|French Open|Australian Open
+sports|Which tennis tournament is played on clay in Paris?|French Open|Wimbledon|US Open|Australian Open
+sports|Which tennis player has won the most Grand Slam titles in men's singles (as of the mid-2020s)?|Novak Djokovic|Roger Federer|Rafael Nadal|Pete Sampras
+sports|Which tennis player is known as the King of Clay?|Rafael Nadal|Roger Federer|Novak Djokovic|Andy Murray
+sports|Which sport is played at Wimbledon?|Tennis|Cricket|Golf|Rugby
+sports|Which sport uses a shuttlecock?|Badminton|Tennis|Squash|Table tennis
+sports|Which sport uses a puck?|Ice hockey|Field hockey|Lacrosse|Curling
+sports|Which sport uses a stone and a broom on ice?|Curling|Ice hockey|Bobsled|Luge
+sports|Which sport uses a bat, wickets and bails?|Cricket|Baseball|Rounders|Softball
+sports|Which sport is Usain Bolt famous for?|Sprinting|Swimming|Boxing|Cycling
+sports|How many metres is a standard running track lap?|400|200|800|500
+sports|How long is a marathon, roughly, in kilometres?|42|21|50|36
+sports|In which sport would you perform a slam dunk?|Basketball|Volleyball|Netball|Handball
+sports|In which sport would you perform a pirouette?|Ballet|Football|Swimming|Archery
+sports|In which sport do you score a try?|Rugby|Football|Tennis|Cricket
+sports|In which sport is a birdie a good score?|Golf|Tennis|Cricket|Bowling
+sports|What is a score of zero called in tennis?|Love|Nil|Zero|Duck
+sports|What is a score of zero called in cricket for a batter?|Duck|Love|Nil|Zilch
+sports|What is a perfect score in ten-pin bowling?|300|200|250|100
+sports|What is the maximum break in snooker?|147|180|155|100
+sports|What is the maximum score with three darts?|180|170|201|150
+sports|What colour is the centre of an archery target?|Gold|Red|Blue|Black
+sports|What colour jersey does the Tour de France leader wear?|Yellow|Green|Red|White
+sports|Which sport does the Super Bowl belong to?|American football|Baseball|Basketball|Ice hockey
+sports|Which trophy is awarded in the NHL?|Stanley Cup|Lombardi Trophy|Larry O'Brien Trophy|Commissioner's Trophy
+sports|Which trophy is awarded in the NFL?|Lombardi Trophy|Stanley Cup|Vince's Cup|Heisman
+sports|Which trophy is awarded in the NBA?|Larry O'Brien Trophy|Stanley Cup|Lombardi Trophy|Heisman
+sports|Which trophy is awarded in the English Premier League?|Premier League trophy|FA Cup only|Ballon d'Or|Carabao Cup
+sports|Which sport is Michael Jordan famous for?|Basketball|Baseball|Football|Golf
+sports|Which sport is Tiger Woods famous for?|Golf|Tennis|Basketball|Baseball
+sports|Which sport is Serena Williams famous for?|Tennis|Golf|Basketball|Athletics
+sports|Which sport is Simone Biles famous for?|Gymnastics|Swimming|Athletics|Skating
+sports|Which sport is Michael Phelps famous for?|Swimming|Gymnastics|Cycling|Rowing
+sports|Which sport is Muhammad Ali famous for?|Boxing|Wrestling|Judo|Karate
+sports|Which sport is Lewis Hamilton famous for?|Formula 1|Rallying|Cycling|Golf
+sports|Which sport is Tom Brady famous for?|American football|Baseball|Basketball|Golf
+sports|Which sport is LeBron James famous for?|Basketball|Football|Baseball|Tennis
+sports|Which sport is Wayne Gretzky famous for?|Ice hockey|Baseball|Basketball|Golf
+sports|Which sport is Babe Ruth famous for?|Baseball|Football|Basketball|Golf
+sports|Which sport is Pele famous for?|Soccer|Basketball|Baseball|Tennis
+sports|Which sport is Roger Federer famous for?|Tennis|Golf|Squash|Badminton
+sports|What is the national sport of Japan, traditionally?|Sumo|Judo|Baseball|Karate
+sports|What is the national sport of Canada (summer)?|Lacrosse|Hockey|Baseball|Football
+sports|What is the national sport of Canada (winter)?|Ice hockey|Curling|Skiing|Lacrosse
+sports|What is the national sport of Scotland?|Golf|Football|Curling|Shinty
+sports|Which martial art comes from Japan and means "empty hand"?|Karate|Judo|Aikido|Kendo
+sports|Which martial art comes from Korea?|Taekwondo|Karate|Kung fu|Judo
+sports|Which martial art uses a sword made of bamboo?|Kendo|Karate|Aikido|Jujutsu
+sports|What do you call the person who officiates a soccer match?|Referee|Umpire|Judge|Marshal
+sports|What do you call the person who officiates a baseball game?|Umpire|Referee|Judge|Marshal
+sports|What colour is the card for a sending-off in soccer?|Red|Yellow|Green|Blue
+sports|What colour is the card for a caution in soccer?|Yellow|Red|Green|Blue
+sports|How long is a standard soccer match (without extra time)?|90 minutes|60 minutes|80 minutes|120 minutes
+sports|How many minutes is a standard NBA quarter?|12|10|15|8
+sports|How many innings are in a standard baseball game?|Nine|Seven|Eleven|Five
+sports|How many periods are in an ice hockey game?|Three|Two|Four|Five
+sports|How many sets must you win to win a women's Grand Slam final?|Two|Three|Four|One
+sports|Which swimming stroke is the fastest?|Freestyle|Breaststroke|Backstroke|Butterfly
+sports|Which swimming stroke uses a frog-like kick?|Breaststroke|Butterfly|Freestyle|Backstroke
+sports|What is the length of an Olympic swimming pool?|50 metres|25 metres|100 metres|75 metres
+sports|What is the height of a basketball hoop?|10 feet|8 feet|12 feet|9 feet
+sports|What is the shape of an American football?|Prolate spheroid|Perfect sphere|Cube|Cylinder
+sports|What is the diameter of a soccer ball approximately?|22 centimetres|10 centimetres|40 centimetres|15 centimetres
+sports|Which country invented the sport of golf, traditionally?|Scotland|England|Ireland|United States
+sports|Which country invented the sport of basketball?|United States|Canada|Britain|Spain
+sports|Which country invented table tennis?|England|China|Japan|Germany
+sports|Which country invented the sport of cricket?|England|India|Australia|South Africa
+sports|Which country is the sport of sumo from?|Japan|China|Korea|Mongolia
+sports|Which country is the sport of judo from?|Japan|China|Korea|Mongolia

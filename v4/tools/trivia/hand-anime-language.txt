@@ -1,0 +1,154 @@
+anime|Which anime features a boy who wants to become Pirate King?|One Piece|Naruto|Bleach|Fairy Tail
+anime|What is the name of the rubber-bodied hero of One Piece?|Monkey D. Luffy|Roronoa Zoro|Usopp|Sanji
+anime|Which anime features a ninja who dreams of becoming Hokage?|Naruto|Bleach|Black Clover|Dragon Ball
+anime|What is the name of the Nine-Tailed Fox sealed in Naruto?|Kurama|Shukaku|Matatabi|Isobu
+anime|Which anime features Goku and the Dragon Balls?|Dragon Ball|Naruto|One Piece|Yu Yu Hakusho
+anime|What race is Goku?|Saiyan|Namekian|Human|Majin
+anime|Which anime features giants called Titans?|Attack on Titan|Terror in Resonance|Seven Deadly Sins|Fire Force
+anime|Who is the main character of Attack on Titan?|Eren Yeager|Levi Ackerman|Armin Arlert|Reiner Braun
+anime|Which anime features a notebook that kills anyone whose name is written in it?|Death Note|Code Geass|Monster|Another
+anime|What is the name of the Shinigami in Death Note who owns a love of apples?|Ryuk|Rem|Sidoh|Gelus
+anime|Which anime features alchemy and two brothers seeking the Philosopher's Stone?|Fullmetal Alchemist|Soul Eater|Blue Exorcist|Black Clover
+anime|What are the names of the brothers in Fullmetal Alchemist?|Edward and Alphonse Elric|Light and Ryuk|Eren and Mikasa|Naruto and Sasuke
+anime|Which anime features a high school student turned into a Soul Reaper?|Bleach|Naruto|Blue Exorcist|Noragami
+anime|Which anime features a boy who fights demons with a corpse-killing sword?|Demon Slayer|Jujutsu Kaisen|Bleach|Blue Exorcist
+anime|What is the name of Tanjiro's sister in Demon Slayer?|Nezuko|Mitsuri|Shinobu|Kanao
+anime|Which anime features cursed energy and sorcerers?|Jujutsu Kaisen|Demon Slayer|Black Clover|Bleach
+anime|Who is the white-haired teacher in Jujutsu Kaisen?|Satoru Gojo|Kento Nanami|Megumi Fushiguro|Yuji Itadori
+anime|Which anime features a bald hero who defeats enemies with one punch?|One Punch Man|Mob Psycho 100|Hunter x Hunter|My Hero Academia
+anime|What is the name of the hero in One Punch Man?|Saitama|Genos|Mumen Rider|Garou
+anime|Which anime features Quirks and a hero school called U.A.?|My Hero Academia|One Punch Man|Mob Psycho 100|Hunter x Hunter
+anime|Who is the main character of My Hero Academia?|Izuku Midoriya|Katsuki Bakugo|Shoto Todoroki|All Might
+anime|Which anime features a boy who wants to become a Hunter to find his father?|Hunter x Hunter|One Piece|Naruto|Yu Yu Hakusho
+anime|Who is the main character of Hunter x Hunter?|Gon Freecss|Killua Zoldyck|Kurapika|Leorio
+anime|Which anime features a girl with a red scarf?|Attack on Titan|Naruto|Sword Art Online|Evangelion
+anime|Which anime features a game in which players are trapped in a virtual world?|Sword Art Online|Log Horizon|No Game No Life|Overlord
+anime|Which anime features a mecha-piloting teen named Shinji?|Neon Genesis Evangelion|Gundam|Code Geass|Gurren Lagann
+anime|Which anime features a bounty hunter crew aboard the Bebop?|Cowboy Bebop|Trigun|Samurai Champloo|Outlaw Star
+anime|Which anime features Spike Spiegel?|Cowboy Bebop|Trigun|Samurai Champloo|Gungrave
+anime|Which anime features a cat bus and forest spirits?|My Neighbor Totoro|Spirited Away|Kiki's Delivery Service|Ponyo
+anime|Which Studio Ghibli film features a girl who works in a bathhouse for spirits?|Spirited Away|My Neighbor Totoro|Howl's Moving Castle|Princess Mononoke
+anime|Which Studio Ghibli film features a young witch who delivers packages?|Kiki's Delivery Service|Howl's Moving Castle|Ponyo|Spirited Away
+anime|Which Studio Ghibli film features a boy-turned-fish-girl named Ponyo?|Ponyo|Spirited Away|Arrietty|Totoro
+anime|Which Studio Ghibli film features a wolf-raised girl named San?|Princess Mononoke|Spirited Away|Nausicaa|Ponyo
+anime|Which anime features a magical girl who fights with the Moon Prism Power?|Sailor Moon|Cardcaptor Sakura|Madoka Magica|Pretty Cure
+anime|What is the name of the main hero of Sailor Moon?|Usagi Tsukino|Ami Mizuno|Rei Hino|Makoto Kino
+anime|Which anime features a card-collecting girl named Sakura?|Cardcaptor Sakura|Sailor Moon|Madoka Magica|Pretty Cure
+anime|Which anime features a duel-monster card game?|Yu-Gi-Oh!|Pokemon|Digimon|Cardfight!! Vanguard
+anime|Which anime features a talking cat-like Pokemon named Meowth on a team?|Pokemon|Digimon|Yo-kai Watch|Bakugan
+anime|Who is Ash Ketchum's first Pokemon?|Pikachu|Bulbasaur|Charmander|Squirtle
+anime|Which anime features a blue robotic cat from the future?|Doraemon|Astro Boy|Gundam|Tetsujin 28
+anime|Which anime features a boy with a straw hat and stretchy arms?|One Piece|Dragon Ball|Fairy Tail|Naruto
+anime|Which anime features a volleyball team from Karasuno?|Haikyu!!|Kuroko's Basketball|Slam Dunk|Ace of Diamond
+anime|Which anime features a basketball team and Hanamichi Sakuragi?|Slam Dunk|Haikyu!!|Kuroko's Basketball|Free!
+anime|Which anime features high-school swimmers?|Free!|Haikyu!!|Yuri on Ice|Ace of Diamond
+anime|Which anime features a figure skater named Yuri?|Yuri on Ice|Free!|Haikyu!!|Princess Tutu
+anime|Which anime features a high school student in a Death Game?|Another|Classroom of the Elite|Danganronpa|Re:Zero
+anime|Which anime features a hero who returns from death by dying?|Re:Zero|Overlord|Konosuba|Sword Art Online
+anime|Which anime features a reincarnated slime hero?|Tensura|Overlord|Konosuba|Re:Zero
+anime|Which anime features a goddess named Aqua and a useless party?|Konosuba|Overlord|Re:Zero|Rising of the Shield Hero
+anime|Which anime features a super-intelligent boy with a Geass?|Code Geass|Death Note|Steins;Gate|Psycho-Pass
+anime|Which anime features time travel via a microwave phone?|Steins;Gate|Re:Zero|Erased|Code Geass
+anime|Which anime features a clown-themed cast in a circus of teen assassins?|Assassination Classroom|Black Butler|Kill la Kill|Hell Girl
+anime|Which anime features a teacher octopus named Koro-sensei?|Assassination Classroom|Great Teacher Onizuka|Gintama|Ouran High
+anime|Which anime features a cast of Fairy Tail wizards?|Fairy Tail|Black Clover|Seven Deadly Sins|Magi
+anime|What is the name of the guild's main fire dragon slayer in Fairy Tail?|Natsu Dragneel|Gray Fullbuster|Gajeel Redfox|Laxus Dreyar
+anime|Which anime features a boy with no magic in a world of magic?|Black Clover|Fairy Tail|Seven Deadly Sins|Magi
+anime|Which anime features knights of seven sins?|The Seven Deadly Sins|Fairy Tail|Black Clover|Fire Force
+anime|Which anime features fire soldiers fighting infernals?|Fire Force|Fairy Tail|Blue Exorcist|Bleach
+anime|Which anime features a boy exorcist who is Satan's son?|Blue Exorcist|Noragami|Bleach|Demon Slayer
+anime|Which anime features the god Yato?|Noragami|Blue Exorcist|Bleach|Kamisama Kiss
+anime|Which anime features a boy and a girl swapping bodies?|Your Name|Weathering with You|The Garden of Words|5 Centimeters per Second
+anime|Who directed Your Name?|Makoto Shinkai|Hayao Miyazaki|Mamoru Hosoda|Satoshi Kon
+anime|Which anime features Tokyo-centered weather magic?|Weathering with You|Your Name|Suzume|A Silent Voice
+anime|Which anime features a deaf girl and a bully who tries to make amends?|A Silent Voice|Your Name|Violet Evergarden|Clannad
+anime|Which anime features a letter-writing Auto Memory Doll?|Violet Evergarden|A Silent Voice|Your Name|Clannad
+anime|Which anime features a nature spirits tale with a boy named Natsume?|Natsume's Book of Friends|Mushishi|Noragami|Kamisama Kiss
+anime|Which anime features a girl dressed as a maid in Akihabara?|Maid Sama!|Ouran High School Host Club|Kaguya-sama|Toradora
+anime|Which anime features two student council geniuses battling in romance?|Kaguya-sama: Love Is War|Toradora|Horimiya|Ouran High
+anime|Which anime features a half-tiger-half-human girl and a boy named Ryuji?|Toradora|Horimiya|Clannad|Your Lie in April
+anime|Which anime features a pianist boy named Kousei?|Your Lie in April|Beck|Nodame Cantabile|Carole & Tuesday
+anime|Which anime features a school band of girls who love light music?|K-On!|Bocchi the Rock!|Love Live!|Beck
+anime|Which anime features a shy girl who joins a rock band?|Bocchi the Rock!|K-On!|Love Live!|Beck
+anime|Which anime features an assassin family and a boy named Anya?|Spy x Family|Black Lagoon|Gintama|Hitman Reborn
+anime|Who is the telepath in Spy x Family?|Anya Forger|Loid Forger|Yor Forger|Bond Forger
+anime|Which anime features a chainsaw-powered devil hunter?|Chainsaw Man|Jujutsu Kaisen|Hellsing|Devilman
+anime|Which anime features a boy-turned-cyborg who hunts ghouls?|Tokyo Ghoul|Parasyte|Hellsing|Claymore
+anime|Which anime features a parasite taking over the hand of a boy?|Parasyte|Tokyo Ghoul|Claymore|Gantz
+anime|Which anime features a cat girl and a maid cafe?|K-On!|Nyan Koi!|Dogs & Cats|Kaguya-sama
+anime|What is the famous Japanese comic art style called?|Manga|Comic|Cartoon|Sketch
+anime|What does "senpai" typically mean?|Senior or upperclassman|Teacher|Friend|Enemy
+anime|What does "kawaii" mean?|Cute|Strong|Fast|Scary
+anime|What does "baka" mean?|Fool|Friend|Teacher|Hero
+anime|What does "sensei" mean?|Teacher|Student|Friend|Boss
+anime|What does "otaku" refer to?|A passionate fan or geek|A ninja|A samurai|A teacher
+language|What do you call words that sound the same but have different meanings?|Homophones|Synonyms|Antonyms|Acronyms
+language|What do you call words with opposite meanings?|Antonyms|Synonyms|Homonyms|Acronyms
+language|What do you call words with similar meanings?|Synonyms|Antonyms|Homophones|Palindromes
+language|What do you call a word that reads the same backward and forward?|Palindrome|Anagram|Acronym|Homonym
+language|What do you call a word formed from the first letters of other words (NASA)?|Acronym|Anagram|Palindrome|Idiom
+language|What do you call a figure of speech comparing using "like" or "as"?|Simile|Metaphor|Idiom|Pun
+language|What do you call a figure of speech saying one thing is another?|Metaphor|Simile|Idiom|Alliteration
+language|What do you call the repetition of the same starting sound in nearby words?|Alliteration|Onomatopoeia|Hyperbole|Irony
+language|What do you call words that imitate sounds, like buzz?|Onomatopoeia|Alliteration|Simile|Idiom
+language|What do you call an exaggeration for effect?|Hyperbole|Irony|Oxymoron|Metaphor
+language|What do you call two opposite words together like "jumbo shrimp"?|Oxymoron|Hyperbole|Simile|Idiom
+language|What is the most common letter in English?|E|A|T|S
+language|Which letter is not in the Roman numerals I, V, X, L, C, D, M?|A|C|D|M
+language|What is the plural of "mouse" (rodent)?|Mice|Mouses|Mices|Mousen
+language|What is the plural of "goose"?|Geese|Gooses|Goose|Gees
+language|What is the plural of "child"?|Children|Childs|Childes|Childrens
+language|What is the plural of "tooth"?|Teeth|Tooths|Teeths|Toothes
+language|What is the plural of "cactus"?|Cacti|Cactuses only|Cactis|Cactuss
+language|What is the plural of "fungus"?|Fungi|Funguses only|Fungus|Fungies
+language|What is the plural of "criterion"?|Criteria|Criterions|Criterium|Criteriae
+language|What is the past tense of "go"?|Went|Goed|Gone|Going
+language|What is the past tense of "swim"?|Swam|Swimmed|Swim|Swimmen
+language|What is the past tense of "bring"?|Brought|Bringed|Brang|Brung
+language|What is the opposite of "ancient"?|Modern|Old|Elderly|Historic
+language|What is the opposite of "generous"?|Stingy|Kind|Rich|Wealthy
+language|What is the opposite of "expand"?|Contract|Grow|Extend|Stretch
+language|Which word means "happy"?|Joyful|Sad|Angry|Tired
+language|Which word means "big"?|Enormous|Tiny|Small|Slim
+language|Which word means "fast"?|Rapid|Slow|Calm|Lazy
+language|Which word means "brave"?|Courageous|Afraid|Timid|Meek
+language|Which word means "smart"?|Intelligent|Dull|Foolish|Naive
+language|Which word means "quiet"?|Silent|Loud|Noisy|Rowdy
+language|"Bonjour" is a greeting in which language?|French|Spanish|Italian|German
+language|"Hola" is a greeting in which language?|Spanish|Portuguese|Italian|French
+language|"Ciao" is a greeting in which language?|Italian|French|Spanish|Greek
+language|"Guten Tag" is a greeting in which language?|German|Dutch|Swedish|Danish
+language|"Konnichiwa" is a greeting in which language?|Japanese|Chinese|Korean|Thai
+language|"Annyeong" is a greeting in which language?|Korean|Japanese|Chinese|Thai
+language|"Namaste" is a greeting in which language?|Hindi|Arabic|Persian|Bengali
+language|"Merci" means what in English?|Thank you|Hello|Goodbye|Please
+language|"Gracias" means what in English?|Thank you|Hello|Goodbye|Please
+language|"Danke" means what in English?|Thank you|Hello|Goodbye|Please
+language|"Arigato" means what in English?|Thank you|Hello|Goodbye|Please
+language|"Adios" means what in English?|Goodbye|Hello|Please|Sorry
+language|"Por favor" means what in English?|Please|Thank you|Sorry|Welcome
+language|What is "cat" in Spanish?|Gato|Perro|Pez|Pajaro
+language|What is "dog" in Spanish?|Perro|Gato|Caballo|Vaca
+language|What is "water" in Spanish?|Agua|Fuego|Leche|Pan
+language|What is "house" in French?|Maison|Chat|Chien|Pain
+language|What is "bread" in French?|Pain|Fromage|Lait|Eau
+language|What is "cheese" in French?|Fromage|Pain|Lait|Beurre
+language|What is "one" in German?|Eins|Zwei|Drei|Vier
+language|What is "two" in German?|Zwei|Eins|Drei|Vier
+language|What is "red" in Spanish?|Rojo|Azul|Verde|Blanco
+language|What is "blue" in Spanish?|Azul|Rojo|Verde|Negro
+language|What is "snow" in French?|Neige|Pluie|Soleil|Vent
+language|How many main official languages does the UN have?|6|4|8|10
+language|Which language has the most native speakers worldwide?|Mandarin Chinese|English|Spanish|Hindi
+language|Which language is spoken in Brazil?|Portuguese|Spanish|French|English
+language|Which language is spoken in Egypt (official)?|Arabic|Egyptian|Coptic|French
+language|Which writing system is used for Russian?|Cyrillic|Latin|Greek|Arabic
+language|Which writing system is used for Greek?|Greek alphabet|Cyrillic|Latin|Hebrew
+language|Which writing system reads right to left?|Arabic|Latin|Greek|Cyrillic
+language|What is Braille?|A tactile writing system|A sign language|A secret code|A musical notation
+language|What is Morse code made of?|Dots and dashes|Colors|Numbers|Letters only
+language|What does SOS in Morse code look like?|... --- ...|.- .-.|-.. .-|.... ..
+language|What is the name of the international auxiliary language created in 1887?|Esperanto|Latin|Klingon|Volapuk
+language|Which fictional language is spoken by Klingons?|Klingon|Dothraki|Elvish|Esperanto
+language|Which fictional language is spoken in Game of Thrones by the Dothraki?|Dothraki|Klingon|Elvish|Na'vi
+language|Which fictional language is spoken by the Na'vi in Avatar?|Na'vi|Klingon|Dothraki|Elvish

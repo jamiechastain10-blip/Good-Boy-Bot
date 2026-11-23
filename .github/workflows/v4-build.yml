@@ -1,0 +1,114 @@
+# Good Boy 4 builds. Builds the v4 launcher and the no-window program for Windows and runs its tests there.
+# Test builds (any branch but main) go on this repository's Releases page as the v4-test pre-release and reach no one.
+# When the build passes on main, the same way as Good Boy 3 (desktop.yml), the programs are published as a release in the
+# public repository jamiechastain10-blip/Good-Boy-Bot, which is where the last Good Boy 3 looks for Good Boy 4. Running in
+# that repository it uses its own built-in token; running anywhere else it needs the RELEASES_TOKEN secret.
+# A version is published once: raise "version" in v4/Cargo.toml to publish a new one. A version with a dash in it
+# (4.0.0-dev.8) is published as a pre-release, which Good Boy 3 never moves anyone to.
+name: Good Boy 4 test build
+on:
+  push:
+    branches: ['claude/good-boy-2.2-on-2.1.3', 'main']
+    paths: ['v4/**', '.github/workflows/v4-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v4-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the Good Boy 3 packages (the v4 tests make real 3.x data with them)
+        run: npm install --no-audit --no-fund
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            v4/target
+          key: v4-windows-${{ hashFiles('v4/Cargo.lock') }}
+          restore-keys: v4-windows-
+      - name: Test
+        working-directory: v4
+        run: cargo test --release
+      - name: Build
+        working-directory: v4
+        run: cargo build --release
+      - name: Build the game preview (every game running on the real bot in a Discord look-alike page)
+        working-directory: v4
+        run: cargo build --release -p gb-core --example emulator
+      - name: Name the programs
+        working-directory: v4/target/release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item examples/emulator.exe "out/Good-Boy-game-preview.exe"
+          Copy-Item good-boy.exe "out/Good-Boy-4.exe"
+          Copy-Item goodboy.exe "out/Good-Boy-4-no-window.exe"
+      # The test build goes on this private repository's Releases page as a pre-release that each build replaces.
+      # (Run downloads have a small storage allowance that fills up; Releases do not count against it.)
+      - name: Keep the programs for the release job
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows
+          path: |
+            v4/target/release/out/Good-Boy-4.exe
+            v4/target/release/out/Good-Boy-4-no-window.exe
+          retention-days: 3
+          if-no-files-found: error
+      - name: Put the test build on the Releases page
+        if: github.ref != 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete v4-test --yes --cleanup-tag --repo "${{ github.repository }}" 2>$null
+          $global:LASTEXITCODE = 0
+          Start-Sleep -Seconds 3
+          gh release create v4-test "v4/target/release/out/Good-Boy-4.exe" "v4/target/release/out/Good-Boy-4-no-window.exe" "v4/target/release/out/Good-Boy-game-preview.exe" --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease --title "Good Boy 4 test build" --notes "Test build of Good Boy 4. Good-Boy-4.exe is the launcher; Good-Boy-4-no-window.exe is for web hosts. Good-Boy-game-preview.exe opens a Discord look-alike page where every game runs on the real bot (double-click it)."
+
+  release:
+    needs: [windows]
+    # Only finished work is published: main. Test builds on any other branch reach no one.
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: Windows, path: out }
+      - name: Publish the release to Good-Boy-Bot
+        env:
+          OWN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CROSS_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          THIS_REPO: ${{ github.repository }}
+          REPO: jamiechastain10-blip/Good-Boy-Bot
+        run: |
+          set -euo pipefail
+          # In Good-Boy-Bot itself the built-in token can publish; from another repository a personal token is needed.
+          if [ "$THIS_REPO" = "$REPO" ]; then export GH_TOKEN="$OWN_TOKEN"; else export GH_TOKEN="$CROSS_TOKEN"; fi
+          if [ -z "${GH_TOKEN}" ]; then echo "::error::The RELEASES_TOKEN secret is missing. Add it in Settings > Secrets and variables > Actions, or build from Good-Boy-Bot."; exit 1; fi
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' v4/Cargo.toml | head -1)
+          case "$v" in 4.*) ;; *) echo "::error::Version $v is not a version 4."; exit 1;; esac
+          ls -la out
+          # a version with a dash in it (4.0.0-dev.8) is a pre-release: Good Boy 3 never moves anyone to it
+          pre=""; case "$v" in *-*) pre="--prerelease";; esac
+          if gh release view "v$v" -R "$REPO" >/dev/null 2>&1; then
+            # never replace the files of a published version: Good Boy 3 checks them against the checksum GitHub recorded
+            echo "Version $v is already published, so nothing is changed. Raise the version in v4/Cargo.toml to publish a new one."
+            exit 0
+          fi
+          printf 'Good Boy %s\n\nThe rebuilt Good Boy. Installed copies of Good Boy 3 offer to move to it by themselves: your settings, levels, coins and licence come with you, and Good Boy 3 is put back if anything goes wrong.\n' "$v" > notes.md
+          gh release create "v$v" out/Good-Boy-4.exe out/Good-Boy-4-no-window.exe -R "$REPO" --title "Good Boy $v" --notes-file notes.md $pre
+          echo "Published https://github.com/$REPO/releases/tag/v$v"
+

@@ -1,0 +1,11 @@
+[package]
+name = "gb-art"
+description = "Good Boy 4: the pictures the bot draws (rank cards), drawn the same way Good Boy 3 draws them."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+resvg = { version = "0.45", default-features = false, features = ["text", "raster-images", "system-fonts"] }
+ttf-parser = "0.25"
+gif = "0.13"

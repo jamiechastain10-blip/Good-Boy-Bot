@@ -1,0 +1,132 @@
+math|What is 3 cubed?|27|32|26|29
+math|What is 4 cubed?|64|66|58|69
+math|What is 5 cubed?|125|113|137|124
+math|What is 6 cubed?|216|211|237|215
+math|What is 7 cubed?|343|344|338|340
+math|What is 8 cubed?|512|461|502|510
+math|What is 9 cubed?|729|801|739|734
+math|What is 10 cubed?|1000|1010|1005|990
+math|What is 11 cubed?|1331|1321|1341|1198
+math|What is 12 cubed?|1728|1723|1900|1556
+math|What is 13 cubed?|2197|2416|2194|2196
+math|What is 14 cubed?|2744|2745|3018|2734
+math|What is 15 cubed?|3375|3385|3380|3038
+math|What is 16 cubed?|4096|4106|4098|4091
+math|What is 17 cubed?|4913|4912|4908|4422
+math|What is 18 cubed?|5832|5833|5835|6415
+math|What is 19 cubed?|6859|6849|6869|6174
+math|What is 20 cubed?|8000|7200|8003|7990
+math|What is 2 to the power of 5?|32|34|35|29
+math|What is 2 to the power of 6?|64|66|59|69
+math|What is 2 to the power of 7?|128|130|123|118
+math|What is 2 to the power of 8?|256|281|253|246
+math|What is 2 to the power of 9?|512|522|563|511
+math|What is 2 to the power of 10?|1024|1029|1021|1126
+math|What is 2 to the power of 11?|2048|2043|2053|2038
+math|What is 2 to the power of 12?|4096|4098|4101|3687
+math|What is 2 to the power of 13?|8192|8189|8187|7373
+math|What is 2 to the power of 14?|16384|14746|16387|16382
+math|What is 2 to the power of 15?|32768|32778|29492|32773
+math|What is 2 to the power of 16?|65536|65537|65539|65534
+math|What is 4 factorial (4!)?|24|34|27|22
+math|What is 5 factorial (5!)?|120|122|108|130
+math|What is 6 factorial (6!)?|720|792|725|718
+math|What is 7 factorial (7!)?|5040|4536|5042|5035
+math|What is 8 factorial (8!)?|40320|44352|40330|40318
+math|What is 9 factorial (9!)?|362880|399168|362881|362879
+math|What is 10 factorial (10!)?|3628800|3991680|3628801|3628802
+math|What is 154 divided by 11?|14|19|12|15
+math|What is 99 divided by 9?|11|9|10|12
+math|What is 270 divided by 9?|30|27|28|31
+math|What is 78 divided by 6?|13|10|12|14
+math|What is 378 divided by 18?|21|24|26|20
+math|What is 80 divided by 10?|8|11|6|7
+math|What is 76 divided by 19?|4|3|14|7
+math|What is 44 divided by 11?|4|1|3|5
+math|What is 162 divided by 18?|9|8|11|19
+math|What is 180 divided by 9?|20|25|22|30
+math|What is 135 divided by 15?|9|8|11|4
+math|What is 182 divided by 13?|14|17|19|15
+math|What is 36 divided by 6?|6|8|9|7
+math|What is 231 divided by 11?|21|18|26|23
+math|What is 180 divided by 18?|10|9|12|20
+math|What is 100 divided by 10?|10|9|20|13
+math|What is 30 divided by 5?|6|9|11|7
+math|What is 234 divided by 9?|26|16|36|21
+math|What is 391 divided by 17?|23|24|25|22
+math|What is 35 divided by 5?|7|8|17|2
+math|What is 243 divided by 9?|27|24|28|22
+math|What is 78 divided by 13?|6|9|3|5
+math|What is 132 divided by 6?|22|25|19|12
+math|What is 510 divided by 17?|30|40|29|31
+math|What is 145 divided by 5?|29|24|30|31
+math|What is 72 divided by 6?|12|9|11|13
+math|What is 408 divided by 17?|24|26|22|14
+math|What is 90 divided by 6?|15|25|18|10
+math|What is 95 divided by 19?|5|10|6|7
+math|What is 420 divided by 15?|28|38|26|30
+math|What is 209 divided by 19?|11|1|14|6
+math|What is 220 divided by 10?|22|32|24|12
+math|What is 288 divided by 18?|16|11|6|15
+math|What is 196 divided by 7?|28|27|29|31
+math|What is 60 divided by 15?|4|9|2|6
+math|What is 20 divided by 4?|5|10|3|6
+math|What is 432 divided by 18?|24|34|22|14
+math|What is 108 divided by 4?|27|25|37|29
+math|What is 392 divided by 14?|28|25|26|33
+math|What is 112 divided by 16?|7|8|5|6
+math|What is 220 divided by 11?|20|18|10|19
+math|What is 90 divided by 18?|5|10|3|6
+math|What is 540 divided by 18?|30|33|27|28
+math|What is 48 divided by 6?|8|11|3|13
+math|What is 240 divided by 12?|20|18|22|23
+math|What is 20 divided by 5?|4|3|6|14
+math|What is 270 divided by 18?|15|16|18|10
+math|What is 352 divided by 16?|22|24|17|19
+math|What is 15 divided by 3?|5|8|3|4
+math|What is 144 divided by 18?|8|9|13|7
+math|What is 78 divided by 3?|26|25|27|29
+math|What is 33 divided by 3?|11|9|10|12
+math|What is 125 divided by 5?|25|23|30|15
+math|What is 119 divided by 17?|7|17|2|9
+math|What is 285 divided by 15?|19|17|18|20
+math|What is 225 + 258?|483|481|485|493
+math|What is 365 + 387?|752|755|677|750
+math|What is 334 + 208?|542|540|541|543
+math|What is 285 + 288?|573|568|574|630
+math|What is 272 + 145?|417|427|420|414
+math|What is 171 + 358?|529|531|532|526
+math|What is 806 + 633?|1439|1440|1436|1429
+math|What is 508 + 710?|1218|1217|1221|1223
+math|What is 849 + 869?|1718|1721|1723|1713
+math|What is 735 + 547?|1282|1281|1284|1287
+math|What is 621 + 638?|1259|1262|1269|1254
+math|What is 394 + 732?|1126|1123|1116|1127
+math|What is 225 + 602?|827|824|822|830
+math|What is 756 + 544?|1300|1297|1299|1305
+math|What is 422 + 673?|1095|986|1090|1094
+math|What is 402 + 414?|816|817|821|815
+math|What is 584 + 313?|897|896|894|887
+math|What is 138 + 726?|864|867|862|863
+math|What is 618 + 192?|810|809|812|729
+math|What is 156 + 139?|295|296|292|324
+math|What is 872 + 264?|1136|1249|1141|1126
+math|What is 129 + 212?|341|344|338|375
+math|What is 794 + 231?|1025|1015|923|1127
+math|What is 642 + 328?|970|960|873|972
+math|What is 815 + 205?|1020|1122|1018|1022
+math|What is 555 + 289?|844|841|846|839
+math|What is 231 + 800?|1031|1032|1026|1030
+math|What is 513 + 410?|923|921|922|1015
+math|What is 591 + 620?|1211|1209|1221|1214
+math|What is 665 + 831?|1496|1645|1501|1495
+math|What is 531 + 318?|849|851|844|846
+math|What is 785 + 558?|1343|1338|1333|1477
+math|What is 377 + 410?|787|792|777|797
+math|What is 208 + 656?|864|866|861|863
+math|What is 451 + 442?|893|888|892|896
+math|What is 318 + 407?|725|722|723|735
+math|What is 497 + 892?|1389|1394|1386|1527
+math|What is 862 + 817?|1679|1512|1682|1674
+math|What is 609 + 887?|1496|1497|1506|1347
+math|What is 791 + 657?|1448|1304|1453|1446

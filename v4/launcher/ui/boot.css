@@ -1,0 +1,24 @@
+/* Boot animation. The mascot comes in, a ring fills as the real start-up steps finish, the visor
+   catches the light once, then everything settles into the app. About 1.5 seconds; any click skips it. */
+.boot{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:radial-gradient(520px 380px at 50% 46%,color-mix(in srgb,var(--accent) 22%,transparent),transparent 70%),var(--bg);transition:opacity .35s ease,transform .45s cubic-bezier(.2,.8,.2,1)}
+.boot.done{opacity:0;transform:scale(1.04);pointer-events:none}
+.boot .stage{display:grid;justify-items:center;gap:18px}
+.boot .orb{position:relative;width:200px;height:200px;display:grid;place-items:center}
+.boot .orb svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.boot .orb circle{fill:none;stroke-width:4}
+.boot .orb .track{stroke:color-mix(in srgb,var(--ink-3) 30%,transparent)}
+.boot .orb .fill{stroke:url(#ring);stroke-linecap:round;stroke-dasharray:597;stroke-dashoffset:597;transition:stroke-dashoffset .35s cubic-bezier(.2,.8,.2,1)}
+.boot .pup{width:150px;height:150px;position:relative;animation:pup-in .55s cubic-bezier(.2,.9,.25,1.2) both}
+.boot .pup img{width:100%;height:100%;display:block;filter:drop-shadow(0 10px 30px rgba(40,120,255,.45))}
+.boot .pup::after{content:"";position:absolute;inset:0;-webkit-mask:url(mascot.png) center/contain no-repeat;mask:url(mascot.png) center/contain no-repeat;background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.75) 50%,transparent 65%) -150% 0/250% 100% no-repeat;animation:shine .9s .45s ease-in-out both}
+.boot .orb.ok .fill{stroke:var(--good)}
+.boot .orb.ok .pup{animation:pup-in .55s both,bounce .4s ease-out}
+.boot h1{font:800 30px var(--display);letter-spacing:-.02em;animation:rise .5s .15s both}
+.boot .step{font-size:14px;color:var(--ink-2);min-height:21px;animation:rise .5s .25s both}
+.boot .step b{color:var(--ink)}
+.boot .tag{font-size:12px;color:var(--warn);letter-spacing:.06em;text-transform:uppercase;animation:rise .5s .35s both}
+@keyframes pup-in{from{opacity:0;transform:scale(.7) rotate(-8deg)}to{opacity:1;transform:none}}
+@keyframes shine{from{background-position:-150% 0}to{background-position:150% 0}}
+@keyframes bounce{40%{transform:translateY(-8px) scale(1.04)}100%{transform:none}}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.boot *{animation:none!important}.boot{transition:opacity .2s}}

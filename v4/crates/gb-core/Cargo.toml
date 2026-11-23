@@ -1,0 +1,20 @@
+[package]
+name = "gb-core"
+description = "Good Boy 4: settings, cards and modules, with no Discord library in sight so everything can be tested."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+gb-art = { path = "../gb-art" }
+gb-data = { path = "../gb-data" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+regex = "1"
+sha2 = "0.10"
+getrandom = "0.2"
+jiff = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

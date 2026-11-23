@@ -1,0 +1,147 @@
+science|What planet is closest to the Sun?|Mercury|Venus|Mars|Earth
+science|Which planet has the most moons as of recent counts?|Saturn|Jupiter|Uranus|Neptune
+science|Which planet is known for its Great Red Spot?|Jupiter|Mars|Saturn|Neptune
+science|Which planet spins on its side?|Uranus|Neptune|Saturn|Venus
+science|Which planet is the hottest in our solar system?|Venus|Mercury|Mars|Jupiter
+science|How many planets are in our solar system?|Eight|Seven|Nine|Ten
+science|What is the largest moon of Saturn?|Titan|Europa|Ganymede|Io
+science|What is the largest moon in the solar system?|Ganymede|Titan|Callisto|The Moon
+science|What is the name of Earth's only natural satellite?|The Moon|Luna Two|Phobos|Titan
+science|What galaxy is Earth in?|The Milky Way|Andromeda|Triangulum|Sombrero
+science|What is the center of our solar system?|The Sun|Jupiter|Earth|The Moon
+science|What is the boiling point of water in Fahrenheit at sea level?|212 degrees|100 degrees|180 degrees|250 degrees
+science|What is the freezing point of water in Celsius?|0 degrees|32 degrees|100 degrees|-10 degrees
+science|What is the freezing point of water in Fahrenheit?|32 degrees|0 degrees|-32 degrees|100 degrees
+science|What is the speed of light, roughly?|300,000 km per second|30,000 km per second|3,000 km per second|3 million km per second
+science|What gas do humans breathe out?|Carbon dioxide|Oxygen|Nitrogen|Helium
+science|What gas makes up most of Earth's atmosphere?|Nitrogen|Oxygen|Carbon dioxide|Argon
+science|Which gas do plants release?|Oxygen|Carbon dioxide|Nitrogen|Methane
+science|What is the process plants use to make food from light?|Photosynthesis|Respiration|Digestion|Fermentation
+science|What part of the plant absorbs water from the soil?|Roots|Leaves|Stem|Flowers
+science|What is the green pigment in plants called?|Chlorophyll|Melanin|Keratin|Haemoglobin
+science|What is the hardest part of the human body?|Tooth enamel|Femur|Skull|Jawbone
+science|What is the largest organ of the human body?|Skin|Liver|Brain|Lungs
+science|How many bones does an adult human have?|206|201|212|300
+science|How many chambers does the human heart have?|Four|Two|Three|Six
+science|Which blood cells carry oxygen?|Red blood cells|White blood cells|Platelets|Plasma
+science|Which blood cells fight infection?|White blood cells|Red blood cells|Platelets|Plasma
+science|What do platelets help with?|Clotting|Carrying oxygen|Digestion|Hearing
+science|Which organ pumps blood?|Heart|Liver|Kidney|Stomach
+science|Which organ filters blood and makes urine?|Kidneys|Liver|Lungs|Spleen
+science|Which organ produces insulin?|Pancreas|Liver|Stomach|Spleen
+science|What is the longest bone in the human body?|Femur|Tibia|Humerus|Spine
+science|What is the smallest bone in the human body?|Stapes|Femur|Rib|Toe bone
+science|How many teeth does an adult human normally have?|32|28|30|36
+science|Which vitamin do we get from sunlight?|Vitamin D|Vitamin C|Vitamin A|Vitamin B12
+science|Which vitamin is found in oranges?|Vitamin C|Vitamin D|Vitamin K|Vitamin E
+science|What is the chemical formula for water?|H2O|CO2|O2|NaCl
+science|What is the chemical formula for table salt?|NaCl|KCl|H2O|CaCO3
+science|What is the chemical formula for carbon dioxide?|CO2|CO|O2|C2O
+science|What is the pH of pure water?|7|0|14|1
+science|What is a substance with a pH below 7 called?|Acid|Base|Salt|Neutral
+science|What is a substance with a pH above 7 called?|Base|Acid|Salt|Neutral
+science|What force pulls objects toward the Earth?|Gravity|Magnetism|Friction|Inertia
+science|Who developed the theory of general relativity?|Albert Einstein|Isaac Newton|Niels Bohr|Galileo Galilei
+science|Who is known for discovering gravity with a falling apple?|Isaac Newton|Albert Einstein|Galileo Galilei|Johannes Kepler
+science|Who proposed the theory of evolution by natural selection?|Charles Darwin|Gregor Mendel|Louis Pasteur|Alfred Wegener
+science|Who is called the father of genetics?|Gregor Mendel|Charles Darwin|Louis Pasteur|James Watson
+science|Who discovered penicillin?|Alexander Fleming|Louis Pasteur|Marie Curie|Joseph Lister
+science|Who discovered radium and polonium?|Marie Curie|Rosalind Franklin|Ada Lovelace|Lise Meitner
+science|Who invented the light bulb (commonly credited)?|Thomas Edison|Nikola Tesla|Alexander Graham Bell|Michael Faraday
+science|Who invented the telephone (commonly credited)?|Alexander Graham Bell|Thomas Edison|Nikola Tesla|Guglielmo Marconi
+science|What is the unit of electrical resistance?|Ohm|Volt|Ampere|Watt
+science|What is the unit of electric current?|Ampere|Ohm|Volt|Joule
+science|What is the unit of electric potential?|Volt|Ampere|Watt|Ohm
+science|What is the unit of power?|Watt|Joule|Newton|Pascal
+science|What is the unit of energy?|Joule|Watt|Newton|Pascal
+science|What is the unit of force?|Newton|Joule|Watt|Pascal
+science|What is the unit of pressure?|Pascal|Newton|Joule|Hertz
+science|What is the unit of frequency?|Hertz|Decibel|Tesla|Lumen
+science|What is the unit of sound loudness?|Decibel|Hertz|Watt|Lux
+science|What type of animal is a whale shark?|Fish|Mammal|Reptile|Amphibian
+science|Which layer of the Earth do we live on?|Crust|Mantle|Outer core|Inner core
+science|What is the hottest layer of the Earth?|Inner core|Crust|Mantle|Outer core
+science|What causes the tides?|The Moon's gravity|The wind|Earth's rotation only|The Sun's heat
+science|What causes day and night?|Earth's rotation|Earth's orbit|The Moon|The tilt of the Moon
+science|What causes the seasons?|Earth's tilt|Distance from the Sun|The Moon|Solar flares
+science|How long does Earth take to orbit the Sun?|365 days|30 days|24 hours|12 months and a day
+science|How long does the Moon take to orbit Earth, roughly?|About 27 days|About 7 days|About 365 days|About 3 days
+science|What is the closest star to Earth after the Sun?|Proxima Centauri|Sirius|Betelgeuse|Polaris
+science|What is the brightest star in the night sky?|Sirius|Polaris|Vega|Betelgeuse
+science|What is a shooting star actually?|A meteor|A comet|A planet|A satellite
+science|What is a rock from space that lands on Earth called?|Meteorite|Asteroid|Comet|Meteoroid
+science|What is a frozen ball of ice and dust with a tail called?|Comet|Asteroid|Meteor|Planet
+science|What is the name of the force that opposes motion between surfaces?|Friction|Gravity|Inertia|Tension
+science|What type of energy does a moving object have?|Kinetic|Potential|Thermal|Nuclear
+science|What type of energy is stored in a stretched spring?|Potential|Kinetic|Sound|Chemical
+science|Which type of rock is formed from cooled lava?|Igneous|Sedimentary|Metamorphic|Mineral
+science|Which type of rock is formed in layers from sediment?|Sedimentary|Igneous|Metamorphic|Volcanic
+science|Which type of rock is changed by heat and pressure?|Metamorphic|Igneous|Sedimentary|Volcanic
+science|What is the hardest natural mineral?|Diamond|Quartz|Topaz|Ruby
+science|What is the scale used to measure mineral hardness?|Mohs scale|Richter scale|Beaufort scale|Kelvin scale
+science|What is the scale used to measure earthquakes (classic)?|Richter scale|Mohs scale|Beaufort scale|Celsius scale
+science|What is the scale used to measure wind speed?|Beaufort scale|Richter scale|Mohs scale|Kelvin scale
+science|What is the absolute zero temperature in Celsius?|-273.15 degrees|-100 degrees|-373 degrees|0 degrees
+science|What do you call a scientist who studies weather?|Meteorologist|Geologist|Biologist|Astronomer
+science|What do you call a scientist who studies rocks?|Geologist|Meteorologist|Biologist|Chemist
+science|What do you call a scientist who studies stars and planets?|Astronomer|Geologist|Botanist|Zoologist
+science|What do you call a scientist who studies plants?|Botanist|Zoologist|Geologist|Chemist
+science|What do you call a scientist who studies animals?|Zoologist|Botanist|Geologist|Physicist
+science|What do you call a scientist who studies fungi?|Mycologist|Botanist|Zoologist|Geologist
+science|What is the study of earthquakes called?|Seismology|Volcanology|Meteorology|Geology only
+science|What is the study of volcanoes called?|Volcanology|Seismology|Geology|Meteorology
+science|What is DNA short for?|Deoxyribonucleic acid|Dioxyribonucleic acid|Deoxyribose nitric acid|Double nucleic acid
+science|What shape is the structure of DNA?|Double helix|Single strand|Triple helix|Spiral square
+science|What is the powerhouse of the cell?|Mitochondria|Nucleus|Ribosome|Cell wall
+science|What part of the cell contains its DNA?|Nucleus|Mitochondria|Ribosome|Membrane
+science|What is the basic unit of life?|Cell|Atom|Molecule|Organ
+science|What is the basic unit of matter?|Atom|Cell|Molecule|Proton
+science|What particle has a positive charge?|Proton|Electron|Neutron|Photon
+science|What particle has a negative charge?|Electron|Proton|Neutron|Quark
+science|What particle has no charge?|Neutron|Proton|Electron|Ion
+science|What is the lightest element?|Hydrogen|Helium|Lithium|Oxygen
+science|What is the most abundant element in the universe?|Hydrogen|Helium|Oxygen|Carbon
+science|What is the most abundant gas in the Sun?|Hydrogen|Helium|Oxygen|Nitrogen
+science|What is the most common element in Earth's crust?|Oxygen|Silicon|Iron|Aluminium
+science|What metal is liquid at room temperature?|Mercury|Lead|Tin|Zinc
+science|What is the lightest metal?|Lithium|Aluminium|Magnesium|Sodium
+science|What is the best conductor of electricity among common metals?|Silver|Copper|Gold|Iron
+science|What metal is used in most electrical wiring?|Copper|Lead|Iron|Tin
+science|What is the main metal in steel?|Iron|Copper|Aluminium|Zinc
+science|What is an alloy of copper and tin?|Bronze|Brass|Steel|Pewter
+science|What is an alloy of copper and zinc?|Brass|Bronze|Steel|Solder
+science|What is the rusting of iron an example of?|Oxidation|Evaporation|Condensation|Melting
+science|What is it called when a liquid turns into a gas?|Evaporation|Condensation|Freezing|Melting
+science|What is it called when a gas turns into a liquid?|Condensation|Evaporation|Sublimation|Melting
+science|What is it called when a solid turns directly into a gas?|Sublimation|Evaporation|Melting|Freezing
+science|What is the state of matter with no fixed shape or volume?|Gas|Liquid|Solid|Crystal
+science|What is the fourth state of matter?|Plasma|Steam|Ice|Liquid crystal
+science|What do we call the bending of light as it passes through water?|Refraction|Reflection|Diffraction|Absorption
+science|Which colour of light has the longest wavelength we can see?|Red|Violet|Green|Blue
+science|Which colour of light has the shortest wavelength we can see?|Violet|Red|Yellow|Green
+science|What are the three primary colours of light?|Red, green, blue|Red, yellow, blue|Cyan, magenta, yellow|Red, green, yellow
+science|What are the three primary pigment colours (traditional art)?|Red, yellow, blue|Red, green, blue|Cyan, magenta, black|Orange, green, purple
+science|What type of wave is sound?|Longitudinal|Transverse|Electromagnetic|Gamma
+science|What can sound NOT travel through?|A vacuum|Water|Steel|Air
+science|What is the study of motion and forces called?|Mechanics|Optics|Acoustics|Thermodynamics
+science|What device measures atmospheric pressure?|Barometer|Thermometer|Hygrometer|Anemometer
+science|What device measures wind speed?|Anemometer|Barometer|Thermometer|Seismograph
+science|What device measures earthquakes?|Seismograph|Barometer|Anemometer|Hygrometer
+science|What instrument is used to see very small things?|Microscope|Telescope|Periscope|Kaleidoscope
+science|What instrument is used to see distant stars?|Telescope|Microscope|Periscope|Stethoscope
+science|What instrument do doctors use to listen to the heart?|Stethoscope|Thermometer|Otoscope|Endoscope
+science|What is the name of the first artificial satellite?|Sputnik 1|Explorer 1|Apollo 11|Vostok 1
+science|Who was the first human in space?|Yuri Gagarin|Neil Armstrong|Alan Shepard|Buzz Aldrin
+science|Who was the first person to walk on the Moon?|Neil Armstrong|Buzz Aldrin|Yuri Gagarin|John Glenn
+science|In what year did humans first land on the Moon?|1969|1965|1972|1959
+science|What is the name of NASA's rover that landed on Mars in 2021?|Perseverance|Curiosity|Opportunity|Spirit
+science|What is the name of the telescope launched in 1990?|Hubble|Kepler|Spitzer|Webb
+science|What is the name of the telescope launched in 2021?|James Webb|Hubble|Kepler|Chandra
+science|What does the acronym RADAR stand for?|Radio detection and ranging|Radio direction and recording|Rapid detection and ranging|Radio data and receiver
+science|What type of bond shares electrons between atoms?|Covalent|Ionic|Metallic|Hydrogen
+science|What is the symbol for the speed of light in physics?|c|v|s|l
+science|What is Newton's second law?|F = ma|E = mc squared|V = IR|P = mv
+
+science|Which equation did Einstein make famous?|E = mc2|F = ma|V = IR|PV = nRT
+science|What does Ohm's law link voltage with?|Current and resistance|Mass and speed|Heat and pressure|Light and sound
+science|How many colours are traditionally in a rainbow?|Seven|Five|Six|Eight

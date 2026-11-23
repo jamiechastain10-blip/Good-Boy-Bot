@@ -1,0 +1,404 @@
+[
+ {
+  "key": "achievements.manage",
+  "label": "Create, grant and revoke server achievements",
+  "default": "admin",
+  "group": "achievements"
+ },
+ {
+  "key": "achievements.use",
+  "label": "See achievements",
+  "default": "everyone",
+  "group": "achievements"
+ },
+ {
+  "key": "altwatch.manage",
+  "label": "Check members against banned ones (/altcheck)",
+  "default": "moderator",
+  "group": "altwatch"
+ },
+ {
+  "key": "backup.manage",
+  "label": "Make, list and download backups (restoring also needs Administrator)",
+  "default": "admin",
+  "group": "backup"
+ },
+ {
+  "key": "botnews.manage",
+  "label": "Set up bot news",
+  "default": "admin",
+  "group": "botnews"
+ },
+ {
+  "key": "clips.manage",
+  "label": "Set up the clips channel",
+  "default": "admin",
+  "group": "clips"
+ },
+ {
+  "key": "clips.view",
+  "label": "See top clips",
+  "default": "everyone",
+  "group": "clips"
+ },
+ {
+  "key": "community.manage",
+  "label": "Edit XP, set level rewards",
+  "default": "admin",
+  "group": "community"
+ },
+ {
+  "key": "community.rep-admin",
+  "label": "Remove, set and reset reputation; view anyone's history",
+  "default": "admin",
+  "group": "community"
+ },
+ {
+  "key": "counting.manage",
+  "label": "Start, stop and reset counting and word chain channels",
+  "default": "admin",
+  "group": "counting"
+ },
+ {
+  "key": "counting.play",
+  "label": "See counting stats",
+  "default": "everyone",
+  "group": "counting"
+ },
+ {
+  "key": "critters.admin",
+  "label": "Choose where critters appear, and make one appear",
+  "default": "admin",
+  "group": "critters"
+ },
+ {
+  "key": "critters.use",
+  "label": "Catch and collect critters",
+  "default": "everyone",
+  "group": "critters"
+ },
+ {
+  "key": "dashboard.access",
+  "label": "Use the web dashboard (only the panels whose own permission they also hold)",
+  "default": "admin",
+  "group": "dashboard"
+ },
+ {
+  "key": "deadchat.manage",
+  "label": "Set up the dead chat ping",
+  "default": "admin",
+  "group": "deadchat"
+ },
+ {
+  "key": "eclipseid.staff",
+  "label": "See profile fields members shared with staff only",
+  "default": "moderator",
+  "group": "eclipseid"
+ },
+ {
+  "key": "eclipseid.use",
+  "label": "Have and view Eclipse ID cards",
+  "default": "everyone",
+  "group": "eclipseid"
+ },
+ {
+  "key": "economy.admin",
+  "label": "Give, take or set coins",
+  "default": "admin",
+  "group": "economy"
+ },
+ {
+  "key": "economy.use",
+  "label": "Use the economy (balance, daily, pay, leaderboard)",
+  "default": "everyone",
+  "group": "economy"
+ },
+ {
+  "key": "engagement.announce",
+  "label": "Send & schedule announcements, end any poll",
+  "default": "admin",
+  "group": "engagement"
+ },
+ {
+  "key": "engagement.manage",
+  "label": "Configure the starboard and suggestions",
+  "default": "admin",
+  "group": "engagement"
+ },
+ {
+  "key": "engagement.poll",
+  "label": "Create polls",
+  "default": "moderator",
+  "group": "engagement"
+ },
+ {
+  "key": "engagement.suggestions",
+  "label": "Review, edit and delete suggestions",
+  "default": "moderator",
+  "group": "engagement"
+ },
+ {
+  "key": "family.use",
+  "label": "Marry, adopt and see family trees",
+  "default": "everyone",
+  "group": "family"
+ },
+ {
+  "key": "fun.use",
+  "label": "Use /fun",
+  "default": "everyone",
+  "group": "fun"
+ },
+ {
+  "key": "games.admin",
+  "label": "Post the arcade panel",
+  "default": "admin",
+  "group": "games"
+ },
+ {
+  "key": "games.play",
+  "label": "Play games",
+  "default": "everyone",
+  "group": "games"
+ },
+ {
+  "key": "giveaways.manage",
+  "label": "Start, end and reroll giveaways",
+  "default": "admin",
+  "group": "giveaways"
+ },
+ {
+  "key": "integrations.manage",
+  "label": "Add feeds and webhooks",
+  "default": "admin",
+  "group": "integrations"
+ },
+ {
+  "key": "integrations.use",
+  "label": "Use status commands",
+  "default": "everyone",
+  "group": "integrations"
+ },
+ {
+  "key": "invites.view",
+  "label": "See invite counts",
+  "default": "everyone",
+  "group": "invites"
+ },
+ {
+  "key": "member-management.manage",
+  "label": "Post verification panels and set welcome pictures",
+  "default": "admin",
+  "group": "member-management"
+ },
+ {
+  "key": "messages.post",
+  "label": "Post as the bot and set sticky messages",
+  "default": "admin",
+  "group": "messages"
+ },
+ {
+  "key": "moderation.antinuke-immune",
+  "label": "Trusted: not watched by anti-nuke (owner always is)",
+  "default": "owner",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.automod",
+  "label": "Change AutoMod rules and exemptions",
+  "default": "admin",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.ban",
+  "label": "Ban / unban",
+  "default": "moderator",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.bypass",
+  "label": "Ignored by AutoMod",
+  "default": "moderator",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.history",
+  "label": "View moderation history",
+  "default": "moderator",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.kick",
+  "label": "Kick members",
+  "default": "moderator",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.logs",
+  "label": "Choose log channels with /logs",
+  "default": "admin",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.purge",
+  "label": "Bulk delete messages",
+  "default": "moderator",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.timeout",
+  "label": "Time out members",
+  "default": "moderator",
+  "group": "moderation"
+ },
+ {
+  "key": "moderation.warn",
+  "label": "Warn members",
+  "default": "moderator",
+  "group": "moderation"
+ },
+ {
+  "key": "modmail.reply",
+  "label": "Answer, close and block modmail",
+  "default": "moderator",
+  "group": "modmail"
+ },
+ {
+  "key": "music.dj",
+  "label": "Control the music and playlists from the dashboard",
+  "default": "moderator",
+  "group": "music"
+ },
+ {
+  "key": "music.player",
+  "label": "Post the music player",
+  "default": "moderator",
+  "group": "music"
+ },
+ {
+  "key": "partyfinder.create",
+  "label": "Post parties",
+  "default": "everyone",
+  "group": "partyfinder"
+ },
+ {
+  "key": "partyfinder.manage",
+  "label": "Close or edit anyone's party",
+  "default": "moderator",
+  "group": "partyfinder"
+ },
+ {
+  "key": "quotes.use",
+  "label": "Create image quotes",
+  "default": "everyone",
+  "group": "quotes"
+ },
+ {
+  "key": "reminders.manage",
+  "label": "See and cancel anyone's reminders",
+  "default": "admin",
+  "group": "reminders"
+ },
+ {
+  "key": "reminders.me",
+  "label": "Set personal reminders",
+  "default": "everyone",
+  "group": "reminders"
+ },
+ {
+  "key": "reminders.team",
+  "label": "Set reminders that notify roles",
+  "default": "moderator",
+  "group": "reminders"
+ },
+ {
+  "key": "roleplay.use",
+  "label": "Use roleplay actions",
+  "default": "everyone",
+  "group": "roleplay"
+ },
+ {
+  "key": "roles.manage",
+  "label": "Create role menus, reaction roles, auto roles, game roles",
+  "default": "moderator",
+  "group": "roles"
+ },
+ {
+  "key": "stats.manage",
+  "label": "Backfill history and post recaps",
+  "default": "admin",
+  "group": "stats"
+ },
+ {
+  "key": "stats.prune",
+  "label": "See inactive members and kick them",
+  "default": "admin",
+  "group": "stats"
+ },
+ {
+  "key": "stats.view",
+  "label": "See statistics",
+  "default": "everyone",
+  "group": "stats"
+ },
+ {
+  "key": "support.manage",
+  "label": "Create panels and ticket types, delete watch-log entries",
+  "default": "admin",
+  "group": "support"
+ },
+ {
+  "key": "support.staff",
+  "label": "Ticket staff: claim, close with notes, priority, appeals, transcripts",
+  "default": "moderator",
+  "group": "support"
+ },
+ {
+  "key": "support.watch",
+  "label": "Read and update the staff watch log",
+  "default": "moderator",
+  "group": "support"
+ },
+ {
+  "key": "tags.manage",
+  "label": "Add and remove custom commands",
+  "default": "moderator",
+  "group": "tags"
+ },
+ {
+  "key": "tags.use",
+  "label": "Use custom commands",
+  "default": "everyone",
+  "group": "tags"
+ },
+ {
+  "key": "tempvoice.manage",
+  "label": "Set up lobbies and control any room",
+  "default": "admin",
+  "group": "tempvoice"
+ },
+ {
+  "key": "tempvoice.use",
+  "label": "Own and control temporary rooms",
+  "default": "everyone",
+  "group": "tempvoice"
+ },
+ {
+  "key": "utility.use",
+  "label": "Use highlights and Translate",
+  "default": "everyone",
+  "group": "utility"
+ },
+ {
+  "key": "voice.control",
+  "label": "Stop, skip anyone's message, make the bot leave, run diagnostics",
+  "default": "moderator",
+  "group": "voice"
+ },
+ {
+  "key": "voice.use",
+  "label": "Use TTS",
+  "default": "everyone",
+  "group": "voice"
+ }
+]

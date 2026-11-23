@@ -1,0 +1,165 @@
+history|In what year did World War II end?|1945|1939|1944|1950
+history|In what year did World War I begin?|1914|1918|1905|1939
+history|In what year did World War I end?|1918|1914|1919|1920
+history|In what year did World War II begin?|1939|1941|1914|1936
+history|Who was the first President of the United States?|George Washington|Thomas Jefferson|John Adams|Abraham Lincoln
+history|Who was the US President during the Civil War?|Abraham Lincoln|Ulysses S. Grant|Andrew Jackson|Theodore Roosevelt
+history|In what year was the US Declaration of Independence signed?|1776|1789|1492|1812
+history|Which US document begins with "We the People"?|US Constitution|Magna Carta|Declaration of Independence|Bill of Rights
+history|In what year did Christopher Columbus first reach the Americas?|1492|1500|1453|1620
+history|Which ship carried the Pilgrims to America in 1620?|The Mayflower|The Santa Maria|The Endeavour|The Beagle
+history|Who was the first woman to fly solo across the Atlantic?|Amelia Earhart|Bessie Coleman|Harriet Quimby|Jacqueline Cochran
+history|Who was the first European to reach India by sea?|Vasco da Gama|Ferdinand Magellan|Marco Polo|James Cook
+history|Which ancient civilisation built the pyramids of Giza?|Egyptians|Romans|Greeks|Mayans
+history|Who was the famous queen of Egypt linked to Julius Caesar and Mark Antony?|Cleopatra|Nefertiti|Hatshepsut|Isis
+history|Which pharaoh's tomb was found nearly intact in 1922?|Tutankhamun|Ramses II|Khufu|Akhenaten
+history|Which empire was ruled from Rome?|Roman Empire|Ottoman Empire|Persian Empire|Byzantine only
+history|Who was the first Roman emperor?|Augustus|Julius Caesar|Nero|Constantine
+history|Who crossed the Alps with elephants to attack Rome?|Hannibal|Attila|Alexander|Spartacus
+history|Which Greek city-state was famous for its warriors?|Sparta|Athens|Corinth|Thebes
+history|Which Greek city-state is considered the birthplace of democracy?|Athens|Sparta|Corinth|Delphi
+history|Who was Alexander the Great's teacher?|Aristotle|Plato|Socrates|Homer
+history|Who was Aristotle's teacher?|Plato|Socrates|Pythagoras|Homer
+history|Who wrote the Iliad and the Odyssey (traditionally)?|Homer|Virgil|Sophocles|Herodotus
+history|What was the Trojan horse used for?|To sneak soldiers into Troy|To carry treasure|To race|To honour a god
+history|In what year did the Roman Empire in the West fall?|476|410|1066|312
+history|In what year was the Battle of Hastings?|1066|1215|1415|1492
+history|Which document did King John of England seal in 1215?|Magna Carta|Bill of Rights|Domesday Book|Act of Union
+history|Which English king had six wives?|Henry VIII|Richard III|Edward I|George III
+history|Which queen ruled England during the Spanish Armada?|Elizabeth I|Victoria|Mary I|Anne
+history|Which queen ruled the UK for 63 years until 1901?|Victoria|Elizabeth II|Anne|Elizabeth I
+history|Which queen was the longest-reigning British monarch?|Elizabeth II|Victoria|Anne|Mary
+history|What disease killed millions in Europe in the 1300s?|The Black Death|Smallpox|Cholera|Typhoid
+history|Who invented the printing press with movable type in Europe?|Johannes Gutenberg|William Caxton|Leonardo da Vinci|Galileo
+history|Who painted the Mona Lisa?|Leonardo da Vinci|Michelangelo|Raphael|Botticelli
+history|Who painted the ceiling of the Sistine Chapel?|Michelangelo|Leonardo da Vinci|Raphael|Donatello
+history|Which period was a rebirth of art and learning in Europe?|The Renaissance|The Enlightenment|The Middle Ages|The Reformation
+history|Who started the Protestant Reformation in 1517?|Martin Luther|John Calvin|Henry VIII|Pope Leo X
+history|Who was the French leader who crowned himself Emperor in 1804?|Napoleon Bonaparte|Louis XIV|Charles de Gaulle|Robespierre
+history|At which battle was Napoleon finally defeated in 1815?|Waterloo|Trafalgar|Austerlitz|Borodino
+history|In which year did the French Revolution begin?|1789|1776|1804|1815
+history|Which fortress did Parisians storm on 14 July 1789?|The Bastille|The Louvre|Versailles|Notre-Dame
+history|Who was the Sun King of France?|Louis XIV|Louis XVI|Napoleon III|Charlemagne
+history|Which battle in 1805 saw Nelson die at sea?|Trafalgar|Waterloo|Jutland|Hastings
+history|Who was the first man to reach the South Pole?|Roald Amundsen|Robert Falcon Scott|Ernest Shackleton|Edmund Hillary
+history|Who were the first to climb Mount Everest (1953)?|Hillary and Tenzing|Mallory and Irvine|Messner and Habeler|Scott and Amundsen
+history|Which ship sank in 1912 after hitting an iceberg?|Titanic|Lusitania|Britannic|Olympic
+history|In what year did the Titanic sink?|1912|1905|1920|1898
+history|Who led the Soviet Union during most of World War II?|Joseph Stalin|Vladimir Lenin|Nikita Khrushchev|Leon Trotsky
+history|Who was British Prime Minister for most of World War II?|Winston Churchill|Neville Chamberlain|Clement Attlee|Anthony Eden
+history|Who was US President for most of World War II?|Franklin D. Roosevelt|Harry Truman|Woodrow Wilson|Herbert Hoover
+history|What happened on D-Day, 6 June 1944?|Allied landings in Normandy|Attack on Pearl Harbor|End of the war|Fall of Berlin
+history|Which attack brought the US into WWII in 1941?|Pearl Harbor|Midway|Normandy|Dunkirk
+history|Which wall was torn down in 1989?|The Berlin Wall|The Great Wall|Hadrian's Wall|The Western Wall
+history|In what year did the Berlin Wall fall?|1989|1961|1975|1991
+history|In what year did the Soviet Union dissolve?|1991|1989|1985|2000
+history|What was the Cold War mainly between?|The USA and the USSR|Britain and France|China and Japan|Germany and Italy
+history|Who gave the "I Have a Dream" speech?|Martin Luther King Jr.|Malcolm X|Rosa Parks|Barack Obama
+history|Who refused to give up her bus seat in Montgomery in 1955?|Rosa Parks|Harriet Tubman|Sojourner Truth|Ruby Bridges
+history|Who led the Indian independence movement with non-violence?|Mahatma Gandhi|Jawaharlal Nehru|Subhas Chandra Bose|Bhagat Singh
+history|In what year did India gain independence?|1947|1950|1930|1919
+history|Who was South Africa's first Black president?|Nelson Mandela|Desmond Tutu|Thabo Mbeki|Jacob Zuma
+history|Who was the first US President to live in the White House?|John Adams|George Washington|Thomas Jefferson|James Madison
+history|Which US President is on the one-dollar bill?|George Washington|Abraham Lincoln|Thomas Jefferson|Benjamin Franklin
+history|Which US President is on the five-dollar bill?|Abraham Lincoln|George Washington|Alexander Hamilton|Ulysses S. Grant
+history|Which US President is on the penny?|Abraham Lincoln|Thomas Jefferson|George Washington|Theodore Roosevelt
+history|Which US President is on the nickel?|Thomas Jefferson|Abraham Lincoln|Franklin Roosevelt|John F. Kennedy
+history|Which US President was assassinated in 1963?|John F. Kennedy|Abraham Lincoln|James Garfield|William McKinley
+history|Which US President resigned in 1974?|Richard Nixon|Gerald Ford|Lyndon Johnson|Jimmy Carter
+history|Who was the first African American US President?|Barack Obama|Colin Powell|Jesse Jackson|Joe Biden
+history|What were the Thirteen Colonies fighting for in 1776?|Independence from Britain|Land from France|A new king|Control of Spain
+history|Who wrote the Declaration of Independence (main author)?|Thomas Jefferson|George Washington|Benjamin Franklin|John Hancock
+history|What was the Boston Tea Party protest against?|Taxes on tea|A new king|Slavery|A war with France
+history|What was the Gold Rush of 1849 in California about?|Prospecting for gold|A war|A railway strike|A new state vote
+history|What was the Underground Railroad?|A secret escape network|A subway in New York|A train in London|A secret postal service
+history|Who led many enslaved people to freedom via the Underground Railroad?|Harriet Tubman|Frederick Douglass|Sojourner Truth|Rosa Parks
+history|Which empire did Genghis Khan found?|The Mongol Empire|The Ottoman Empire|The Persian Empire|The Qing Empire
+history|Which empire conquered Constantinople in 1453?|The Ottoman Empire|The Mongol Empire|The Roman Empire|The Persian Empire
+history|What was Constantinople renamed after 1930?|Istanbul|Ankara|Athens|Smyrna
+history|Which Chinese dynasty built much of the Great Wall we see now?|Ming|Han|Tang|Qing
+history|Who was the first emperor of unified China?|Qin Shi Huang|Kublai Khan|Sun Yat-sen|Confucius
+history|Which Chinese philosopher's teachings are called Confucianism?|Confucius|Laozi|Mencius|Sun Tzu
+history|Which ancient book on war was written by Sun Tzu?|The Art of War|The Prince|The Iliad|The Analects
+history|Which Japanese warriors followed the bushido code?|Samurai|Ninja|Shogun|Sumo
+history|In what year did Japan open to the West under Commodore Perry?|1853|1900|1868|1945
+history|Which civilisation built Machu Picchu?|The Inca|The Aztec|The Maya|The Olmec
+history|Which civilisation built Chichen Itza?|The Maya|The Inca|The Aztec|The Toltec only
+history|Which civilisation had its capital at Tenochtitlan?|The Aztec|The Inca|The Maya|The Olmec
+history|Which conquistador defeated the Aztec Empire?|Hernan Cortes|Francisco Pizarro|Juan Ponce de Leon|Vasco Nunez de Balboa
+history|Which conquistador defeated the Inca Empire?|Francisco Pizarro|Hernan Cortes|Hernando de Soto|Pedro de Alvarado
+history|Which explorer is said to have searched for the Fountain of Youth?|Juan Ponce de Leon|Hernan Cortes|Amerigo Vespucci|Henry Hudson
+history|After whom is America named?|Amerigo Vespucci|Christopher Columbus|John Cabot|Leif Erikson
+history|Which Viking is credited with reaching North America around 1000?|Leif Erikson|Erik the Red|Ragnar Lodbrok|Harald Hardrada
+history|Which country did Vikings mainly come from?|Scandinavia|Spain|Italy|Poland
+history|Who was the English explorer who mapped Australia's east coast in 1770?|James Cook|Abel Tasman|Matthew Flinders|William Dampier
+history|Which country was the first to give women the vote in 1893?|New Zealand|United Kingdom|United States|Finland
+history|Who led the suffragette movement in the UK?|Emmeline Pankhurst|Florence Nightingale|Mary Wollstonecraft|Elizabeth Fry
+history|Who is known as the Lady with the Lamp?|Florence Nightingale|Mary Seacole|Clara Barton|Edith Cavell
+history|Who was the first woman to win a Nobel Prize?|Marie Curie|Mother Teresa|Jane Addams|Bertha von Suttner
+history|Which scientist is associated with the Principia Mathematica (1687)?|Isaac Newton|Galileo Galilei|Johannes Kepler|Robert Hooke
+history|Who first proposed that the Earth orbits the Sun (heliocentric model) in 1543?|Nicolaus Copernicus|Galileo Galilei|Johannes Kepler|Ptolemy
+history|Which astronomer was tried by the Inquisition for supporting heliocentrism?|Galileo Galilei|Copernicus|Kepler|Tycho Brahe
+history|Which machine did James Watt greatly improve?|The steam engine|The telephone|The telegraph|The loom
+history|What revolution began in Britain in the 1700s with machines and factories?|The Industrial Revolution|The Glorious Revolution|The French Revolution|The Green Revolution
+history|Who invented the first practical telephone patent in 1876?|Alexander Graham Bell|Samuel Morse|Thomas Edison|Elisha Gray
+history|Who invented the Morse code telegraph system?|Samuel Morse|Alexander Bell|Thomas Edison|Guglielmo Marconi
+history|Who made the first powered airplane flight in 1903?|The Wright brothers|Amelia Earhart|Charles Lindbergh|Louis Bleriot
+history|Who made the first solo non-stop flight across the Atlantic in 1927?|Charles Lindbergh|Amelia Earhart|Howard Hughes|Wiley Post
+history|What was the name of Lindbergh's plane?|Spirit of St. Louis|Enola Gay|Memphis Belle|Flyer
+history|Which US President signed the Emancipation Proclamation?|Abraham Lincoln|Andrew Johnson|Ulysses S. Grant|James Buchanan
+history|Which war was fought between the North and South in the US?|The Civil War|The Revolutionary War|The War of 1812|The Mexican War
+history|In what year did the American Civil War begin?|1861|1776|1812|1898
+history|Who was the Confederate general Robert E. Lee fighting for?|The Confederacy|The Union|Britain|Mexico
+history|Which treaty ended World War I with Germany?|Treaty of Versailles|Treaty of Paris|Treaty of Vienna|Treaty of Rome
+history|Which treaty created the European Economic Community in 1957?|Treaty of Rome|Treaty of Versailles|Treaty of Lisbon|Treaty of Paris
+history|Which organisation was founded in 1945 to keep peace?|The United Nations|NATO|The League of Nations|The European Union
+history|What was the League of Nations?|A post-WWI peace group|A sports league|A trade union|A treaty of 1648
+history|Which general led the Allied forces on D-Day?|Dwight D. Eisenhower|George Patton|Douglas MacArthur|Omar Bradley
+history|Which German leader started World War II?|Adolf Hitler|Otto von Bismarck|Kaiser Wilhelm II|Paul von Hindenburg
+history|Which Italian dictator was allied with Hitler?|Benito Mussolini|Giuseppe Garibaldi|Silvio Berlusconi|Victor Emmanuel
+history|What was the code name for the Allied invasion of Normandy?|Operation Overlord|Operation Barbarossa|Operation Market Garden|Operation Torch
+history|What was the name of the German air attack on Britain in 1940?|The Blitz|Operation Sea Lion|The Luftwaffe Raid|The Dambusters raid
+history|Which RAF fighter was famous in the Battle of Britain?|Spitfire|Mustang|Zero|Messerschmitt
+history|What event started the Great Depression in 1929?|The Wall Street Crash|The attack on Pearl Harbor|The First World War|The dust bowl
+history|What did the New Deal aim to do?|End the Great Depression|Start a war|Build a wall|Abolish slavery
+history|Who was the first man in space to orbit the Earth?|Yuri Gagarin|John Glenn|Alan Shepard|Neil Armstrong
+history|Who was the first American to orbit the Earth?|John Glenn|Alan Shepard|Neil Armstrong|Buzz Aldrin
+history|What was the name of the mission that first landed humans on the Moon?|Apollo 11|Apollo 13|Gemini 4|Mercury 7
+history|Which Apollo mission had the famous "Houston, we have a problem"?|Apollo 13|Apollo 11|Apollo 8|Apollo 17
+history|In which year did the 9/11 attacks occur?|2001|1999|2003|2005
+history|Which US city hosted the 1996 Summer Olympics?|Atlanta|Los Angeles|Sydney|Barcelona
+history|In what year did the euro coins and notes enter circulation?|2002|1999|1995|2010
+history|What did the Brexit vote of 2016 decide?|The UK leaving the EU|Scottish independence|A new king|Joining the euro
+history|In which year did Queen Elizabeth II's reign begin?|1952|1945|1960|1936
+history|Which king was forced to abdicate in 1936?|Edward VIII|George VI|George V|William IV
+history|Which British Prime Minister was nicknamed the Iron Lady?|Margaret Thatcher|Theresa May|Angela Merkel|Indira Gandhi
+history|Which German chancellor led Germany from 2005 to 2021?|Angela Merkel|Gerhard Schroder|Helmut Kohl|Olaf Scholz
+history|Which ancient wonder is the only one still standing?|Great Pyramid of Giza|Colossus of Rhodes|Hanging Gardens|Lighthouse of Alexandria
+history|Which Greek philosopher was sentenced to drink hemlock?|Socrates|Plato|Aristotle|Epicurus
+history|Which mathematician is known for his theorem on right triangles?|Pythagoras|Euclid|Archimedes|Thales
+history|Which ancient scientist is said to have shouted "Eureka"?|Archimedes|Euclid|Ptolemy|Hippocrates
+history|Who is called the father of medicine?|Hippocrates|Galen|Aristotle|Avicenna
+history|What was the Silk Road?|An East-West trade route|A river in China|A Roman road|A railway
+history|Which explorer traveled the Silk Road to China in the 1200s?|Marco Polo|Ibn Battuta|Zheng He|Vasco da Gama
+history|Which Chinese admiral led treasure fleets in the 1400s?|Zheng He|Kublai Khan|Sun Tzu|Qin Shi Huang
+history|Who is the famous Moroccan traveller of the 1300s?|Ibn Battuta|Marco Polo|Ibn Khaldun|Al-Idrisi
+history|Which empire's capital was Persepolis?|The Persian Empire|The Roman Empire|The Egyptian Empire|The Greek Empire
+history|Which city was buried by Mount Vesuvius in 79 AD?|Pompeii|Rome|Athens|Carthage
+history|Which Roman Emperor was said to have fiddled while Rome burned?|Nero|Caligula|Augustus|Hadrian
+history|Which Roman emperor built a wall across northern Britain?|Hadrian|Trajan|Nero|Claudius
+history|Which Roman Emperor made Christianity legal?|Constantine|Nero|Diocletian|Augustus
+history|What was a Roman gladiator arena called?|Colosseum|Parthenon|Forum|Pantheon
+history|What was the name of the Greek temple to Athena in Athens?|Parthenon|Pantheon|Colosseum|Acropolis
+history|What was the first modern Olympic Games location in 1896?|Athens|Paris|London|Rome
+history|Who founded the modern Olympic Games?|Pierre de Coubertin|Jesse Owens|Avery Brundage|Zeus
+history|In what year did the Chernobyl disaster happen?|1986|1979|1991|1975
+history|Which year was the Hindenburg airship disaster?|1937|1929|1945|1912
+history|What did the Magna Carta limit?|The power of the king|The power of the church|Trade|Taxes on tea
+history|What was the name of the plague that struck London in 1665?|The Great Plague|The Black Death|The Sweating Sickness|Cholera
+history|Which English king was killed at the Battle of Bosworth in 1485?|Richard III|Henry VI|Edward IV|Harold II
+history|Which dynasty followed the Tudors on the English throne?|The Stuarts|The Windsors|The Plantagenets|The Hanoverians
+history|Which king was executed in 1649?|Charles I|James II|Charles II|Henry VIII
+history|Which Lord Protector ruled England after the civil war?|Oliver Cromwell|Thomas Cromwell|William Pitt|Robert Walpole
+
+history|In what year did the Great Fire of London burn?|1666|1588|1776|1815
+history|Which expedition completed the first voyage around the world (1519-1522)?|Magellan and Elcano|Cook and Banks|Drake and Raleigh|Columbus and Cabot
