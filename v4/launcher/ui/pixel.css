@@ -1,0 +1,174 @@
+/* Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* The pixel look. It sits on top of ui.css: the same pages, menus and buttons, drawn with chunky borders, hard shadows
+   and pixel fonts. Switch it off (Settings > Appearance > Classic look) and the plain look from ui.css shows. */
+@font-face{font-family:"Press Start 2P";src:url(fonts/PressStart2P.woff2) format("woff2");font-display:swap}
+@font-face{font-family:"VT323";src:url(fonts/VT323.woff2) format("woff2");font-display:swap}
+
+:root[data-look="pixel"]{
+  --bg:#17133a; --panel:#221d54; --raised:#2d2768; --field:#0d0a26; --line:#0d0a26;
+  --ink:#f1e7cf; --ink-2:#c9c2ef; --ink-3:#a19bd6;
+  --accent:#f6dc3b; --accent-ink:#0d0a26; --accent-soft:rgba(246,220,59,.16);
+  --good:#62f0b4; --warn:#f6dc3b; --bad:#ff5a67; --sky:#6db7ff; --red:#ff5a67; --dark:#0d0a26;
+  --r:0; --r-sm:0; --fast:.05s;
+  --display:"Press Start 2P",ui-monospace,monospace;
+  --text:"VT323",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+:root[data-look="pixel"] body{
+  background-color:var(--bg);
+  background-image:linear-gradient(var(--dark) 1px,transparent 1px),linear-gradient(90deg,var(--dark) 1px,transparent 1px);
+  background-size:32px 32px;
+  font:22px/1.25 var(--text);
+}
+:root[data-look="pixel"] h1{font:16px/1.5 var(--display);font-weight:400;letter-spacing:0;text-wrap:pretty}
+:root[data-look="pixel"] h2{font:11px/1.6 var(--display);font-weight:400}
+:root[data-look="pixel"] h3{font:10px/1.6 var(--display);font-weight:400}
+:root[data-look="pixel"] :focus-visible{outline:3px solid var(--sky);outline-offset:2px;border-radius:0}
+:root[data-look="pixel"] .muted{color:var(--ink-3)}
+:root[data-look="pixel"] .small{font-size:19px}
+:root[data-look="pixel"] a{color:var(--sky)}
+
+/* the sidebar */
+:root[data-look="pixel"] .side{background:var(--dark);border-right:0;padding:16px 12px;gap:6px}
+:root[data-look="pixel"] .brand{font:11px/1.6 var(--display);gap:10px;padding:4px 6px 14px;color:var(--ink)}
+:root[data-look="pixel"] .brand img,:root[data-look="pixel"] .pup-logo{filter:drop-shadow(0 2px 6px rgba(40,120,255,.45));border-radius:0}
+:root[data-look="pixel"] .nav{font:10px/1.5 var(--display);color:var(--ink-3);padding:12px;border:4px solid transparent;border-radius:0;gap:12px}
+:root[data-look="pixel"] .nav svg{width:20px;height:20px;stroke:none;fill:currentColor;shape-rendering:crispEdges}
+:root[data-look="pixel"] .nav:hover{color:var(--ink);background:var(--panel)}
+:root[data-look="pixel"] .nav[aria-current="page"]{background:var(--accent);color:var(--dark);box-shadow:4px 4px 0 var(--red)}
+:root[data-look="pixel"] .navgroup{font:8px/1.6 var(--display);color:var(--ink-3);padding:14px 12px 4px}
+:root[data-look="pixel"] .state{border-top:4px solid var(--panel);color:var(--ink-3);font-size:19px}
+:root[data-look="pixel"] .dot{border-radius:0;width:10px;height:10px}
+
+/* the mascot at the bottom of the sidebar, who barks when something is saved */
+.pup-corner{display:none}
+:root[data-look="pixel"] .pup-corner{display:block;position:relative;margin-top:auto;text-align:center;color:var(--ink-3);font-size:19px;padding-top:12px}
+:root[data-look="pixel"] .pup-corner .dog{width:72px;margin:0 auto 6px;animation:pup-bob .8s steps(2) infinite}
+:root[data-look="pixel"] .pup-corner .dog img{width:100%;display:block;filter:drop-shadow(0 3px 8px rgba(40,120,255,.5))}
+:root[data-look="pixel"] .pup-corner .dog.bark{animation:pup-jump .3s steps(3)}
+:root[data-look="pixel"] .pup-bubble{position:absolute;left:0;right:0;bottom:calc(100% - 4px);background:var(--ink);color:var(--dark);border:4px solid var(--dark);padding:6px 8px;font-size:20px;visibility:hidden;transform:translateY(8px);text-align:left;z-index:3}
+:root[data-look="pixel"] .pup-bubble.show{visibility:visible;transform:none;transition:transform .12s steps(3)}
+@keyframes pup-bob{50%{transform:translateY(-4px)}}
+@keyframes pup-jump{40%{transform:translateY(-14px) scale(1.1)}}
+
+/* pages */
+:root[data-look="pixel"] .page{max-width:1100px;padding:24px 24px 64px;gap:18px}
+:root[data-look="pixel"] .head{gap:8px}
+:root[data-look="pixel"] .view-enter,:root[data-look="pixel"] .page>*{animation:px-wipe .24s steps(6) both}
+@keyframes px-wipe{from{clip-path:inset(-12px 100% -12px -12px)}to{clip-path:inset(-12px -12px -12px -12px)}}
+
+/* panels and cards */
+:root[data-look="pixel"] .card,:root[data-look="pixel"] .stat,:root[data-look="pixel"] .tile,:root[data-look="pixel"] .group{
+  background:var(--panel);border:4px solid var(--dark);border-radius:0;box-shadow:6px 6px 0 var(--dark)}
+:root[data-look="pixel"] .card{padding:16px}
+:root[data-look="pixel"] .card.inner,:root[data-look="pixel"] .group{box-shadow:none;background:var(--field)}
+:root[data-look="pixel"] .group>summary{font:10px/1.6 var(--display);padding:12px 14px}
+:root[data-look="pixel"] .group>summary::before{border-color:var(--accent);border-radius:0}
+:root[data-look="pixel"] .stat b{font:18px/1.2 var(--display);color:var(--accent)}
+:root[data-look="pixel"] .stat span{color:var(--ink-3)}
+:root[data-look="pixel"] .list>*{border-bottom:2px dashed var(--dark)}
+:root[data-look="pixel"] hr{border-top:2px dashed var(--dark)}
+:root[data-look="pixel"] .note{border-left:4px solid var(--accent);color:var(--ink-2);font-size:20px}
+:root[data-look="pixel"] .note.warn{border-color:var(--warn)}
+:root[data-look="pixel"] .msg{background:var(--field);border:4px solid var(--dark);border-radius:0;font-size:20px}
+:root[data-look="pixel"] .msg.bad{color:var(--bad);border-color:var(--bad);background:var(--field)}
+:root[data-look="pixel"] .msg.good{color:var(--good);border-color:var(--good);background:var(--field)}
+
+/* buttons: chunky, with a hard shadow that presses in */
+:root[data-look="pixel"] .btn{font:10px/1.4 var(--display);padding:12px 14px;background:var(--accent);color:var(--dark);border:4px solid var(--dark);border-radius:0;box-shadow:4px 4px 0 var(--red);transition:transform .05s;filter:none}
+:root[data-look="pixel"] .btn:hover{filter:none;background:#fbe85f}
+:root[data-look="pixel"] .btn:active{transform:translate(4px,4px);box-shadow:0 0 0 var(--red)}
+:root[data-look="pixel"] .btn.quiet{background:var(--raised);color:var(--ink);box-shadow:4px 4px 0 var(--dark);border-color:var(--dark)}
+:root[data-look="pixel"] .btn.quiet:hover{background:#3a3380;border-color:var(--dark)}
+:root[data-look="pixel"] .btn.quiet:active{box-shadow:0 0 0 var(--dark)}
+:root[data-look="pixel"] .btn.danger{background:var(--bad);color:var(--dark);box-shadow:4px 4px 0 var(--dark);border-color:var(--dark)}
+:root[data-look="pixel"] .btn.danger:hover{background:#ff7480}
+:root[data-look="pixel"] .btn:disabled{opacity:.5;filter:none}
+:root[data-look="pixel"] .btn.small,:root[data-look="pixel"] .btn.sm{padding:8px 10px}
+
+/* fields */
+:root[data-look="pixel"] .field label{font:19px/1.2 var(--text);font-weight:400;color:var(--ink-3)}
+:root[data-look="pixel"] input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+:root[data-look="pixel"] select,:root[data-look="pixel"] textarea{background:var(--field);border:4px solid var(--dark);border-radius:0;color:var(--ink);font:22px/1.2 var(--text);padding:8px 10px}
+:root[data-look="pixel"] .field input,:root[data-look="pixel"] .field select{border:4px solid var(--dark);border-radius:0;font:22px/1.2 var(--text)}
+:root[data-look="pixel"] input:focus,:root[data-look="pixel"] select:focus,:root[data-look="pixel"] textarea:focus,
+:root[data-look="pixel"] .field input:focus,:root[data-look="pixel"] .field select:focus{outline:none;border-color:var(--accent)}
+:root[data-look="pixel"] select{cursor:pointer}
+:root[data-look="pixel"] .field .hint{color:var(--ink-3);font-size:19px}
+:root[data-look="pixel"] .msearch{background:var(--field);border:4px solid var(--dark);border-radius:0}
+:root[data-look="pixel"] .msearch input{border:0;padding:0}
+
+/* the switch: a square that slides in three steps */
+:root[data-look="pixel"] .toggle{width:56px;height:28px;border-radius:0;background:var(--dark);border:4px solid var(--dark);position:relative;box-sizing:border-box}
+:root[data-look="pixel"] .toggle::after{left:0;top:0;width:20px;height:20px;border-radius:0;background:var(--ink-3);transition:transform .12s steps(3)}
+:root[data-look="pixel"] .toggle:checked{background:var(--dark)}
+:root[data-look="pixel"] .toggle:checked::after{transform:translateX(24px);background:var(--good)}
+
+/* pills, tabs, segments */
+:root[data-look="pixel"] .pill{font:8px/1.6 var(--display);border-radius:0;padding:4px 8px;background:var(--raised);color:var(--ink-3);border:2px solid var(--dark)}
+:root[data-look="pixel"] .pill.good{background:var(--good);color:var(--dark)}
+:root[data-look="pixel"] .pill.warn{background:var(--warn);color:var(--dark)}
+:root[data-look="pixel"] .pill.bad{background:var(--bad);color:var(--dark)}
+:root[data-look="pixel"] .seg,:root[data-look="pixel"] .segs{background:transparent;border:0;border-radius:0;padding:0;gap:8px}
+:root[data-look="pixel"] .seg button,:root[data-look="pixel"] .segs .seg{font:9px/1.4 var(--display);padding:9px 10px;border:4px solid var(--dark);border-radius:0;background:var(--raised);color:var(--ink);box-shadow:4px 4px 0 var(--dark);cursor:pointer}
+:root[data-look="pixel"] .seg button[aria-pressed="true"],:root[data-look="pixel"] .seg button[aria-selected="true"],:root[data-look="pixel"] .segs .seg[aria-pressed="true"]{background:var(--ink);color:var(--dark);font-weight:400}
+:root[data-look="pixel"] .choice{border:4px solid var(--dark);border-radius:0;background:var(--field);box-shadow:4px 4px 0 var(--dark)}
+:root[data-look="pixel"] .choice[aria-pressed="true"]{background:var(--accent);color:var(--dark);border-color:var(--dark)}
+:root[data-look="pixel"] .choice[aria-pressed="true"] span{color:var(--dark)}
+:root[data-look="pixel"] .steps i{height:8px;border-radius:0;background:var(--field)}
+:root[data-look="pixel"] .steps i.done{background:var(--accent)}
+
+/* module tiles */
+:root[data-look="pixel"] .tile{padding:14px;transition:transform .05s}
+:root[data-look="pixel"] .tile:hover{border-color:var(--dark);transform:translate(-2px,-2px);box-shadow:8px 8px 0 var(--dark);background:var(--raised)}
+:root[data-look="pixel"] .ticon{border-radius:0;border:4px solid var(--dark);box-shadow:3px 3px 0 var(--dark)}
+:root[data-look="pixel"] .tdesc{color:var(--ink-3);font-size:20px}
+:root[data-look="pixel"] .section-title{font:9px/1.6 var(--display);color:var(--accent);letter-spacing:0;text-transform:uppercase}
+:root[data-look="pixel"] .mstatus{font-size:19px}
+:root[data-look="pixel"] .mstatus i{border-radius:0}
+:root[data-look="pixel"] .case,:root[data-look="pixel"] .cmdrow{border-bottom:2px dashed var(--dark)}
+:root[data-look="pixel"] .flag,:root[data-look="pixel"] .chip{border-radius:0;border:4px solid var(--dark);background:var(--raised);color:var(--accent);padding:2px 8px}
+:root[data-look="pixel"] .flag{cursor:pointer;font-size:20px}
+:root[data-look="pixel"] .flag:hover{background:var(--bad);color:var(--dark)}
+
+/* toasts */
+:root[data-look="pixel"] .toast{background:var(--ink);color:var(--dark);border:4px solid var(--dark);border-left-width:12px;border-left-color:var(--good);border-radius:0;box-shadow:6px 6px 0 var(--dark);font-size:21px}
+:root[data-look="pixel"] .toast.bad{border-left-color:var(--bad)}
+
+/* pictures and previews */
+:root[data-look="pixel"] .picprev,:root[data-look="pixel"] .thumb,:root[data-look="pixel"] .msgprev{border-radius:0;border:4px solid var(--dark);background:var(--field)}
+:root[data-look="pixel"] .msgprev{background:#2b2a4a}
+:root[data-look="pixel"] .msgprev .tagapp{background:var(--sky);color:var(--dark);border-radius:0;font-size:14px}
+:root[data-look="pixel"] .danger-zone{border:4px solid var(--bad);border-radius:0;background:var(--field)}
+
+/* help */
+:root[data-look="pixel"] .topics button{font:9px/1.6 var(--display);border-radius:0;color:var(--ink-3)}
+:root[data-look="pixel"] .topics button[aria-current="true"]{background:var(--accent);color:var(--dark)}
+:root[data-look="pixel"] mark{background:var(--accent);color:var(--dark);border-radius:0}
+:root[data-look="pixel"] kbd{border-radius:0;border:2px solid var(--dark);background:var(--field)}
+
+/* the music page uses its own parts: the same colours, square corners and hard edges */
+:root[data-look="pixel"] .gbm,:root[data-look="pixel"] .gbm *{border-radius:0!important}
+:root[data-look="pixel"] .gbm{font-family:var(--text);font-size:21px}
+:root[data-look="pixel"] .gbm .gbm-h,:root[data-look="pixel"] .gbm h2,:root[data-look="pixel"] .gbm h3{font:10px/1.6 var(--display)}
+:root[data-look="pixel"] .gbm-btn{font:9px/1.4 var(--display)}
+
+/* phones: the bar along the bottom, like the design */
+@media (max-width:760px){
+  :root[data-look="pixel"] .side{background:var(--dark);border-bottom:0;padding:6px;gap:2px}
+  :root[data-look="pixel"] .nav{font-size:8px;padding:8px 6px;gap:6px;flex-direction:column;align-items:center}
+  :root[data-look="pixel"] .page{padding:max(16px,env(safe-area-inset-top)) 14px 96px}
+  :root[data-look="pixel"] .nav{flex:none;min-width:76px}
+  :root[data-look="pixel"] .pup-corner,:root[data-look="pixel"] .brand span{display:none}
+}
+@media (prefers-reduced-motion:reduce){:root[data-look="pixel"] *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+
+:root[data-look="pixel"] .hero{border:4px solid var(--dark);border-radius:0;box-shadow:6px 6px 0 var(--dark)}
+:root[data-look="pixel"] .hero h1{font-family:var(--display);font-size:34px;line-height:1.3;font-weight:400}
+:root[data-look="pixel"] .hero p{font:22px/1.25 var(--text)}
+:root[data-look="pixel"] .hero-eyebrow,:root[data-look="pixel"] .hero small{font-family:var(--display);font-size:9px;letter-spacing:.1em}
+/* the pixel text face is small for its size: small print is made bigger so it stays readable */
+:root[data-look="pixel"] .stat span,:root[data-look="pixel"] .stat small,:root[data-look="pixel"] .saved,:root[data-look="pixel"] .confirm-q{font-size:19px}
+:root[data-look="pixel"] .case .muted,:root[data-look="pixel"] .tfoot,:root[data-look="pixel"] .hint{font-size:19px}
+:root[data-look="pixel"] .gbm small,:root[data-look="pixel"] .gbm .gbm-muted{font-size:18px}

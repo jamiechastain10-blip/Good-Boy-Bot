@@ -1,0 +1,51 @@
+# state|capital|nickname
+Alabama|Montgomery|Yellowhammer State
+Alaska|Juneau|The Last Frontier
+Arizona|Phoenix|Grand Canyon State
+Arkansas|Little Rock|The Natural State
+California|Sacramento|Golden State
+Colorado|Denver|Centennial State
+Connecticut|Hartford|Constitution State
+Delaware|Dover|First State
+Florida|Tallahassee|Sunshine State
+Georgia|Atlanta|Peach State
+Hawaii|Honolulu|Aloha State
+Idaho|Boise|Gem State
+Illinois|Springfield|Prairie State
+Indiana|Indianapolis|Hoosier State
+Iowa|Des Moines|Hawkeye State
+Kansas|Topeka|Sunflower State
+Kentucky|Frankfort|Bluegrass State
+Louisiana|Baton Rouge|Pelican State
+Maine|Augusta|Pine Tree State
+Maryland|Annapolis|Old Line State
+Massachusetts|Boston|Bay State
+Michigan|Lansing|Great Lakes State
+Minnesota|Saint Paul|Land of 10,000 Lakes
+Mississippi|Jackson|Magnolia State
+Missouri|Jefferson City|Show-Me State
+Montana|Helena|Treasure State
+Nebraska|Lincoln|Cornhusker State
+Nevada|Carson City|Silver State
+New Hampshire|Concord|Granite State
+New Jersey|Trenton|Garden State
+New Mexico|Santa Fe|Land of Enchantment
+New York|Albany|Empire State
+North Carolina|Raleigh|Tar Heel State
+North Dakota|Bismarck|Peace Garden State
+Ohio|Columbus|Buckeye State
+Oklahoma|Oklahoma City|Sooner State
+Oregon|Salem|Beaver State
+Pennsylvania|Harrisburg|Keystone State
+Rhode Island|Providence|Ocean State
+South Carolina|Columbia|Palmetto State
+South Dakota|Pierre|Mount Rushmore State
+Tennessee|Nashville|Volunteer State
+Texas|Austin|Lone Star State
+Utah|Salt Lake City|Beehive State
+Vermont|Montpelier|Green Mountain State
+Virginia|Richmond|Old Dominion
+Washington|Olympia|Evergreen State
+West Virginia|Charleston|Mountain State
+Wisconsin|Madison|Badger State
+Wyoming|Cheyenne|Equality State

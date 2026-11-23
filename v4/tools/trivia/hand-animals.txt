@@ -1,0 +1,151 @@
+animals|Which animal is the largest living land animal?|African elephant|Rhinoceros|Hippopotamus|Giraffe
+animals|What is the largest animal on Earth?|Blue whale|African elephant|Whale shark|Colossal squid
+animals|Which bird cannot fly and is the largest living bird?|Ostrich|Emu|Cassowary|Albatross
+animals|How many hearts does an octopus have?|Three|One|Two|Eight
+animals|What is a group of lions called?|Pride|Pack|Herd|Troop
+animals|What is a baby kangaroo called?|Joey|Cub|Pup|Kit
+animals|Which animal is known as the ship of the desert?|Camel|Horse|Donkey|Llama
+animals|What do pandas mainly eat?|Bamboo|Fish|Berries|Grass
+animals|Which mammal can truly fly?|Bat|Flying squirrel|Sugar glider|Colugo
+animals|What is the fastest land animal?|Cheetah|Lion|Pronghorn|Greyhound
+animals|Which animal has the longest neck?|Giraffe|Ostrich|Llama|Swan
+animals|What is a baby cat called?|Kitten|Cub|Pup|Calf
+animals|What is a baby dog called?|Puppy|Kit|Cub|Foal
+animals|What is a baby horse called?|Foal|Calf|Lamb|Kid
+animals|What is a group of crows called?|Murder|Flock|Pack|Swarm
+animals|What is a group of fish called?|School|Pack|Herd|Pride
+animals|What is a group of wolves called?|Pack|Pride|Herd|Flock
+animals|Which animal sleeps hanging upside down?|Bat|Owl|Monkey|Parrot
+animals|How many legs does a spider have?|Eight|Six|Ten|Twelve
+animals|How many legs does an insect have?|Six|Four|Eight|Ten
+animals|Which sea creature has eight arms?|Octopus|Starfish|Jellyfish|Crab
+animals|Which animal is the national bird of the United States?|Bald eagle|Golden eagle|Turkey|Hawk
+animals|What colour is a polar bear's skin?|Black|White|Pink|Grey
+animals|Which animal produces wool?|Sheep|Cow|Goat|Pig
+animals|Which animal lays the largest egg?|Ostrich|Emu|Albatross|Penguin
+animals|Which bird is a symbol of peace?|Dove|Swan|Eagle|Owl
+animals|What is the only mammal that lays eggs?|Platypus|Bat|Armadillo|Otter
+animals|How long can a snail sleep at a stretch, at most?|Up to three years|One day|One week|Never sleeps
+animals|Which animal has black and white stripes?|Zebra|Okapi|Tapir|Horse
+animals|Which big cat has a mane?|Lion|Tiger|Leopard|Jaguar
+animals|Which animal is known for building dams?|Beaver|Otter|Muskrat|Badger
+animals|What do bees make?|Honey|Silk|Wax only|Nectar
+animals|What do caterpillars turn into?|Butterflies or moths|Beetles|Flies|Bees
+animals|Which animal is the tallest bird in the world?|Ostrich|Crane|Emu|Flamingo
+animals|Which bird is famous for mimicking human speech?|Parrot|Sparrow|Robin|Pigeon
+animals|What is the largest species of penguin?|Emperor penguin|King penguin|Adelie penguin|Gentoo penguin
+animals|Which ocean animal is known for its tusk-like tooth?|Narwhal|Dolphin|Orca|Walrus
+animals|Which animal is the largest member of the deer family?|Moose|Elk|Reindeer|Red deer
+animals|Which animal can change colour to blend in?|Chameleon|Gecko|Iguana|Toad
+animals|What is a female swan called?|Pen|Hen|Cow|Doe
+animals|What is a male swan called?|Cob|Tom|Buck|Jack
+animals|What is a female deer called?|Doe|Hind only|Sow|Ewe
+animals|What is a male deer called?|Buck or stag|Boar|Ram|Bull only
+animals|What is a female pig called?|Sow|Ewe|Doe|Mare
+animals|What is a male sheep called?|Ram|Buck|Stag|Bull
+animals|What is a baby sheep called?|Lamb|Kid|Calf|Foal
+animals|What is a baby goat called?|Kid|Lamb|Calf|Fawn
+animals|What is a baby cow called?|Calf|Foal|Kid|Cub
+animals|What is a baby frog called?|Tadpole|Larva|Fry|Polliwig only
+animals|What is a baby swan called?|Cygnet|Gosling|Duckling|Owlet
+animals|What is a baby goose called?|Gosling|Cygnet|Duckling|Chick
+animals|What is a baby bear called?|Cub|Kit|Pup|Joey
+animals|What is a baby fox called?|Kit or cub|Foal|Joey|Gosling
+animals|Which animal has the strongest bite of any living land animal?|Saltwater crocodile|Lion|Hippopotamus|Grizzly bear
+animals|Which snake is the longest in the world?|Reticulated python|King cobra|Anaconda|Black mamba
+animals|Which snake is the heaviest in the world?|Green anaconda|Burmese python|King cobra|Boa constrictor
+animals|Which lizard is the largest in the world?|Komodo dragon|Iguana|Monitor lizard|Gila monster
+animals|Which animal is the national animal of Australia?|Kangaroo|Koala|Emu|Wombat
+animals|Which animal is the national symbol of China?|Giant panda|Dragon|Tiger|Crane
+animals|Which animal is the national animal of Scotland?|Unicorn|Lion|Stag|Eagle
+animals|What do koalas mainly eat?|Eucalyptus leaves|Bamboo|Fruit|Grass
+animals|Which animal's milk is used to make feta cheese traditionally?|Sheep and goat|Cow|Camel|Horse
+animals|Which animal is the fastest bird in a dive?|Peregrine falcon|Golden eagle|Hummingbird|Swift
+animals|Which bird can fly backwards?|Hummingbird|Sparrow|Swallow|Pigeon
+animals|Which animal is known to have fingerprints like humans?|Koala|Chimpanzee|Dog|Cat
+animals|How many stomachs does a cow have (chambers)?|Four|One|Two|Three
+animals|Which insect makes a waggle dance to give directions?|Honeybee|Ant|Wasp|Butterfly
+animals|What do you call animals that eat only plants?|Herbivores|Carnivores|Omnivores|Insectivores
+animals|What do you call animals that eat only meat?|Carnivores|Herbivores|Omnivores|Decomposers
+animals|What do you call animals that eat both plants and meat?|Omnivores|Carnivores|Herbivores|Scavengers
+animals|Which animal is a marsupial?|Kangaroo|Squirrel|Rabbit|Hedgehog
+animals|Which of these is a marsupial?|Wombat|Beaver|Mole|Lemur
+animals|Which animal gives us the fabric silk?|Silkworm|Spider|Bee|Caterpillar of a butterfly
+animals|Which animal is nocturnal?|Owl|Eagle|Sparrow|Robin
+animals|What is the study of birds called?|Ornithology|Entomology|Herpetology|Ichthyology
+animals|What is the study of insects called?|Entomology|Ornithology|Herpetology|Mycology
+animals|What is the study of fish called?|Ichthyology|Ornithology|Entomology|Herpetology
+animals|What is the study of reptiles and amphibians called?|Herpetology|Ichthyology|Zoology|Mycology
+animals|Which animal is a mammal that lives in the sea?|Dolphin|Shark|Tuna|Stingray
+animals|Which sea animal is a mammal?|Whale|Octopus|Squid|Seahorse
+animals|Is a shark a fish or a mammal?|Fish|Mammal|Reptile|Amphibian
+animals|Which animal can regrow its tail?|Lizard|Dog|Cat|Rabbit
+animals|Which animal can regrow lost arms?|Starfish|Crab only|Snail|Slug
+animals|Which animal has the longest lifespan among mammals?|Bowhead whale|Elephant|Human|Giant tortoise
+animals|Which animal is thought to live the longest on land?|Giant tortoise|Elephant|Parrot|Crocodile
+animals|How many wings does a bee have?|Four|Two|Six|Eight
+animals|How many wings does a fly have?|Two|Four|Six|Eight
+animals|Which animal is the only one that can't jump (famously)?|Elephant|Sloth|Hippo|Rhino
+animals|Which animal sleeps the longest per day?|Koala|Cat|Bat|Sloth only
+animals|Which large cat is the biggest?|Tiger|Lion|Jaguar|Leopard
+animals|Which big cat has spots and lives in the Americas?|Jaguar|Leopard|Cheetah|Tiger
+animals|Which animal is the largest rodent?|Capybara|Beaver|Porcupine|Marmot
+animals|Which animal is the smallest bird?|Bee hummingbird|Sparrow|Wren|Finch
+animals|Which animal is the largest reptile?|Saltwater crocodile|Komodo dragon|Anaconda|Leatherback turtle
+animals|Which animal is the largest primate?|Gorilla|Orangutan|Chimpanzee|Baboon
+animals|Which animal is our closest living relative?|Chimpanzee|Gorilla|Orangutan|Baboon
+animals|Which animal is known for its black-and-white warning spray?|Skunk|Badger|Raccoon|Weasel
+animals|Which animal has a pouch and hops?|Kangaroo|Koala|Possum|Wombat
+animals|Which bird has the longest wingspan?|Wandering albatross|Eagle|Condor|Pelican
+animals|Which animal's call is a hoot?|Owl|Crow|Duck|Hen
+animals|Which animal's call is a bray?|Donkey|Horse|Sheep|Goat
+animals|Which animal's call is a neigh?|Horse|Donkey|Cow|Camel
+animals|Which animal's call is a roar?|Lion|Hyena|Fox|Wolf
+animals|Which animal makes a howl at night?|Wolf|Fox|Deer|Rabbit
+animals|Which animal's home is called a sett?|Badger|Fox|Rabbit|Otter
+animals|Which animal's home is called a drey?|Squirrel|Fox|Hare|Mouse
+animals|Which animal's home is called a lodge?|Beaver|Badger|Otter|Mole
+animals|Which animal's home is called a warren?|Rabbit|Fox|Badger|Mole
+animals|Which animal's home is called a den or earth?|Fox|Squirrel|Beaver|Hare
+animals|Which animal's home is called an eyrie?|Eagle|Owl|Swallow|Robin
+animals|Which animal's home is called a holt?|Otter|Badger|Beaver|Mole
+animals|What is a group of owls called?|Parliament|Murder|Gaggle|Flock
+animals|What is a group of geese in flight called?|Skein|Pride|Herd|Colony
+animals|What is a group of geese on the ground called?|Gaggle|Skein|Pack|Swarm
+animals|What is a group of whales called?|Pod|Pride|School only|Herd of waves
+animals|What is a group of cats called?|Clowder|Pride|Pack|Murder
+animals|What is a group of ants called?|Colony|Pride|Pod|Swarm only
+animals|What is a group of butterflies called?|Kaleidoscope|Murder|Pod|Gaggle
+animals|What is a group of flamingos called?|Flamboyance|Parliament|Pride|Colony of pink
+animals|What is a group of jellyfish called?|Smack|Pod|Pride|Colony only
+animals|What is a group of porcupines called?|Prickle|Pack|Pride|Herd
+animals|What is a group of giraffes called?|Tower|Pride|Herd of necks|Stack
+animals|What is a group of ravens called?|Unkindness|Murder|Parliament|Conspiracy of rooks
+animals|What is a group of hippos called?|Bloat|Pride|Pod of mud|Herd of hippos
+animals|How many hearts does an earthworm have (pairs of aortic arches)?|Five pairs|One|Two|Eight
+animals|Which fish is known for swimming upstream to spawn?|Salmon|Tuna|Cod|Trout only
+animals|Which fish can produce electricity?|Electric eel|Piranha|Pufferfish|Swordfish
+animals|Which fish inflates when threatened?|Pufferfish|Clownfish|Angelfish|Barracuda
+animals|Which fish has the nickname sea horse's cousin, the pipefish?|Seahorse|Sea dragon|Eel|Goby
+animals|In which animal does the male carry the babies?|Seahorse|Penguin|Frog|Crab
+animals|Which animal is a clownfish's famous home partner?|Sea anemone|Coral|Sponge|Urchin
+animals|Which animal has a shell and carries it on its back?|Turtle|Armadillo|Crab|Snail
+animals|Which animal rolls into a ball for protection?|Armadillo|Hedgehog|Pangolin|Possum
+animals|Which animal has quills?|Porcupine|Hedgehog only|Echidna only|Rat
+animals|Which of these is a monotreme (egg-laying mammal)?|Echidna|Opossum|Sloth|Tapir
+animals|Which animal is black with a white face and found in Antarctica or the Arctic?|Penguin|Puffin|Seal|Polar bear
+animals|Which polar animal is found in the Arctic, not Antarctica?|Polar bear|Penguin|Emperor penguin|Leopard seal
+animals|Which animal has the most powerful kick of any bird?|Ostrich|Emu|Swan|Goose
+animals|Which tiny animal can lift many times its own weight?|Ant|Ladybird|Moth|Flea
+animals|Which insect can jump the furthest for its size?|Flea|Grasshopper|Cricket|Ant
+animals|Which insect glows to attract a mate?|Firefly|Moth|Beetle|Wasp
+animals|Which insect has a famous life cycle: egg, larva, pupa, adult?|Butterfly|Cockroach|Grasshopper|Dragonfly nymph
+animals|Which animal is the fastest swimmer among fish?|Sailfish|Tuna|Marlin|Shark
+animals|Which animal is the slowest mammal?|Sloth|Koala|Tortoise|Hedgehog
+animals|Which animal is the national animal of India?|Tiger|Lion|Elephant|Peacock
+animals|Which animal is the national bird of India?|Peacock|Parrot|Sparrow|Eagle
+animals|Which animal is the national animal of Canada?|Beaver|Moose|Polar bear|Maple deer
+animals|Which animal is the national animal of New Zealand's emblem?|Kiwi|Tuatara|Kea|Fantail
+animals|Which animal is the symbol of Wales on its flag?|Red dragon|Lion|Eagle|Stag
+animals|Which animal is on the flag of Mexico?|Eagle|Condor|Jaguar|Falcon
+animals|Which bird is on the Mexican flag eating a snake?|Eagle|Hawk|Vulture|Owl

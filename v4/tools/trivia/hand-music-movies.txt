@@ -1,0 +1,131 @@
+music|How many strings does a standard guitar have?|Six|Four|Five|Seven
+music|How many strings does a standard bass guitar have?|Four|Six|Five|Three
+music|How many strings does a standard ukulele have?|Four|Six|Three|Five
+music|How many strings does a harp usually have (concert)?|47|24|12|60
+music|How many keys does a full-size piano have?|88|76|66|100
+music|Which instrument has pedals and 88 keys?|Piano|Organ|Accordion|Harpsichord
+music|Which instrument has black and white keys and pipes?|Organ|Piano|Accordion|Keyboard only
+music|Which instrument is the largest string instrument in an orchestra?|Double bass|Cello|Viola|Harp
+music|Which instrument is played with a bow and is the smallest in a string quartet?|Violin|Viola|Cello|Bass
+music|Which brass instrument has a slide?|Trombone|Trumpet|Tuba|French horn
+music|Which is the largest brass instrument?|Tuba|Trombone|Trumpet|French horn
+music|Which woodwind instrument has a single reed and a curved metal neck?|Saxophone|Oboe|Flute|Bassoon
+music|Which woodwind instrument is made without a reed?|Flute|Clarinet|Oboe|Bassoon
+music|Which percussion instrument has a pair of metal plates?|Cymbals|Triangle|Maracas|Tambourine
+music|Which instrument is Yo-Yo Ma famous for?|Cello|Violin|Piano|Flute
+music|What is the term for loud in music?|Forte|Piano|Lento|Allegro
+music|What is the term for soft in music?|Piano|Forte|Allegro|Presto
+music|What is the term for fast in music?|Allegro|Lento|Adagio|Largo
+music|What is the term for slow in music?|Adagio|Allegro|Presto|Vivace
+music|What do you call a group of four musicians?|Quartet|Trio|Quintet|Octet
+music|What do you call a group of three musicians?|Trio|Duet|Quartet|Quintet
+music|How many lines are on a musical staff?|Five|Four|Six|Three
+music|What is the symbol at the start of a staff called?|Clef|Sharp|Rest|Bar
+music|Which clef is used for high notes?|Treble clef|Bass clef|Alto clef|Tenor clef
+music|How many notes are in an octave of a major scale (counting the repeat)?|Eight|Seven|Six|Twelve
+music|What are the solfege syllables starting the major scale?|Do, re, mi|Ah, bee, see|La, ti, do|One, two, three
+music|Which composer wrote the Four Seasons?|Antonio Vivaldi|Johann Bach|Wolfgang Mozart|Ludwig Beethoven
+music|Which composer wrote the Moonlight Sonata?|Ludwig van Beethoven|Wolfgang Mozart|Frederic Chopin|Franz Schubert
+music|Which composer wrote The Magic Flute?|Wolfgang Amadeus Mozart|Ludwig van Beethoven|Joseph Haydn|Antonio Vivaldi
+music|Which composer wrote the Brandenburg Concertos?|Johann Sebastian Bach|Georg Handel|Antonio Vivaldi|Joseph Haydn
+music|Which composer wrote Swan Lake?|Pyotr Tchaikovsky|Sergei Rachmaninoff|Igor Stravinsky|Johannes Brahms
+music|Which composer wrote The Nutcracker?|Pyotr Tchaikovsky|Sergei Prokofiev|Igor Stravinsky|Johann Strauss
+music|Which composer wrote The Rite of Spring?|Igor Stravinsky|Pyotr Tchaikovsky|Sergei Prokofiev|Claude Debussy
+music|Which composer wrote Clair de Lune?|Claude Debussy|Maurice Ravel|Erik Satie|Frederic Chopin
+music|Which composer wrote Bolero?|Maurice Ravel|Claude Debussy|Erik Satie|Georges Bizet
+music|Which composer wrote the opera Carmen?|Georges Bizet|Giuseppe Verdi|Giacomo Puccini|Gioachino Rossini
+music|Which composer wrote La Traviata?|Giuseppe Verdi|Giacomo Puccini|Gioachino Rossini|Richard Wagner
+music|Which composer wrote La Boheme?|Giacomo Puccini|Giuseppe Verdi|Gioachino Rossini|Georges Bizet
+music|Which composer wrote the Ring Cycle?|Richard Wagner|Giuseppe Verdi|Johannes Brahms|Franz Liszt
+music|Which composer wrote The Blue Danube waltz?|Johann Strauss II|Franz Lehar|Franz Schubert|Johannes Brahms
+music|Which composer wrote the Ode to Joy melody?|Ludwig van Beethoven|Johannes Brahms|Franz Schubert|Joseph Haydn
+music|Which composer wrote the Messiah oratorio?|George Frideric Handel|Johann Sebastian Bach|Joseph Haydn|Henry Purcell
+music|Which composer wrote Rhapsody in Blue?|George Gershwin|Aaron Copland|Leonard Bernstein|Duke Ellington
+music|Which composer wrote West Side Story's music?|Leonard Bernstein|George Gershwin|Aaron Copland|Stephen Sondheim
+music|Which composer wrote the music for Star Wars?|John Williams|Hans Zimmer|Howard Shore|Danny Elfman
+music|Which composer wrote the music for The Lion King score?|Hans Zimmer|John Williams|Alan Menken|Howard Shore
+music|Which composer wrote the music for The Lord of the Rings films?|Howard Shore|John Williams|Hans Zimmer|James Horner
+music|Which composer wrote the music for Titanic (1997)?|James Horner|John Williams|Hans Zimmer|Alan Silvestri
+music|Who is known as the King of Pop?|Michael Jackson|Elvis Presley|Prince|Justin Timberlake
+music|Who is known as the King of Rock and Roll?|Elvis Presley|Chuck Berry|Little Richard|Jerry Lee Lewis
+music|Who is known as the Queen of Pop?|Madonna|Beyonce|Britney Spears|Lady Gaga
+music|Which band's members were John, Paul, George and Ringo?|The Beatles|The Rolling Stones|The Who|The Kinks
+music|Which band's lead singer was Freddie Mercury?|Queen|Led Zeppelin|Pink Floyd|The Who
+music|Which band released the album The Dark Side of the Moon?|Pink Floyd|Led Zeppelin|The Beatles|Queen
+music|Which band released Stairway to Heaven?|Led Zeppelin|Deep Purple|Pink Floyd|The Who
+music|Which band's lead singer is Mick Jagger?|The Rolling Stones|The Beatles|The Who|Queen
+music|Which band's lead singer is Bono?|U2|Coldplay|R.E.M.|Oasis
+music|Which band's lead singer is Chris Martin?|Coldplay|U2|Muse|Radiohead
+music|Which band's lead singer is Thom Yorke?|Radiohead|Coldplay|Muse|Oasis
+music|Which band's lead singers were brothers Liam and Noel Gallagher?|Oasis|Blur|Pulp|The Verve
+music|Which band released the album Nevermind?|Nirvana|Pearl Jam|Soundgarden|Metallica
+music|Which band released the album Back in Black?|AC/DC|Metallica|Guns N' Roses|Van Halen
+music|Which band released Smells Like Teen Spirit?|Nirvana|Pearl Jam|Green Day|Foo Fighters
+music|Which band released Bohemian Rhapsody?|Queen|Led Zeppelin|The Beatles|Deep Purple
+music|Which band released Hotel California?|Eagles|Fleetwood Mac|Steely Dan|Doobie Brothers
+music|Which band released Rumours (1977)?|Fleetwood Mac|Eagles|ABBA|Boston
+music|Which Swedish group sang Dancing Queen?|ABBA|Roxette|Europe|The Cardigans
+music|Which band sang Mr. Brightside?|The Killers|Kings of Leon|Arctic Monkeys|The Strokes
+music|Which band sang Seven Nation Army?|The White Stripes|The Black Keys|The Strokes|Queens of the Stone Age
+music|Which artist released the album Thriller?|Michael Jackson|Prince|Stevie Wonder|Lionel Richie
+music|Which artist released the album Purple Rain?|Prince|Michael Jackson|David Bowie|Stevie Wonder
+music|Which artist released the album 21?|Adele|Taylor Swift|Lorde|Amy Winehouse
+music|Which artist released the album 1989?|Taylor Swift|Katy Perry|Ariana Grande|Selena Gomez
+music|Which artist released the album Lemonade?|Beyonce|Rihanna|Adele|Alicia Keys
+music|Which artist released the album Divide?|Ed Sheeran|Sam Smith|Shawn Mendes|Harry Styles
+music|Which artist released the album Future Nostalgia?|Dua Lipa|Ariana Grande|Billie Eilish|Doja Cat
+music|Which artist released the album When We All Fall Asleep, Where Do We Go?|Billie Eilish|Lorde|Halsey|Olivia Rodrigo
+music|Which artist released the album Sour (2021)?|Olivia Rodrigo|Billie Eilish|Dua Lipa|Taylor Swift
+music|Which artist released the album Folklore?|Taylor Swift|Lana Del Rey|Phoebe Bridgers|Lorde
+music|Which artist is known for the song Shake It Off?|Taylor Swift|Katy Perry|Selena Gomez|Meghan Trainor
+music|Which artist is known for the song Roar?|Katy Perry|Lady Gaga|Taylor Swift|Kesha
+music|Which artist is known for the song Poker Face?|Lady Gaga|Katy Perry|Rihanna|Pink
+music|Which artist is known for the song Umbrella?|Rihanna|Beyonce|Alicia Keys|Ciara
+music|Which artist is known for the song Rolling in the Deep?|Adele|Duffy|Amy Winehouse|Florence Welch
+music|Which artist is known for the song Shape of You?|Ed Sheeran|Justin Bieber|Harry Styles|Shawn Mendes
+music|Which artist is known for the song Blinding Lights?|The Weeknd|Bruno Mars|Drake|Post Malone
+music|Which artist is known for the song Uptown Funk (with Mark Ronson)?|Bruno Mars|The Weeknd|Pharrell Williams|Justin Timberlake
+music|Which artist is known for the song Happy?|Pharrell Williams|Bruno Mars|Justin Timberlake|Will Smith
+music|Which artist is known for the song Despacito?|Luis Fonsi|Enrique Iglesias|Ricky Martin|J Balvin
+music|Which South Korean group sang Dynamite?|BTS|Blackpink|EXO|Twice
+music|Which South Korean act sang Gangnam Style?|Psy|BTS|BigBang|Super Junior
+music|Which group released the album Born Pink?|Blackpink|Twice|Red Velvet|Itzy
+music|Which rapper is known as Slim Shady?|Eminem|Jay-Z|Nas|Kanye West
+music|Which rapper released the album The Marshall Mathers LP?|Eminem|Dr. Dre|Snoop Dogg|50 Cent
+music|Which rapper's real name is Shawn Carter?|Jay-Z|Nas|Kanye West|Drake
+music|Which rapper released the album good kid, m.A.A.d city?|Kendrick Lamar|J. Cole|Drake|Travis Scott
+music|Which artist released the album Graduation?|Kanye West|Drake|Jay-Z|Lil Wayne
+music|What genre is Bob Marley known for?|Reggae|Ska|Soul|Funk
+music|What genre is Louis Armstrong known for?|Jazz|Blues|Country|Soul
+music|What genre is Johnny Cash known for?|Country|Jazz|Reggae|Funk
+music|What genre is Aretha Franklin known for?|Soul|Country|Punk|Metal
+music|What genre is Metallica known for?|Heavy metal|Punk|Reggae|Pop
+music|What genre is Daft Punk known for?|Electronic|Country|Jazz|Folk
+music|What is the term for music with no words?|Instrumental|Acapella|Chant|Lyrical
+music|What is the term for singing without instruments?|A cappella|Instrumental|Solo|Opera
+music|What is the highest male singing voice?|Tenor|Bass|Baritone|Alto
+music|What is the lowest male singing voice?|Bass|Tenor|Baritone|Alto
+music|What is the highest female singing voice?|Soprano|Alto|Mezzo-soprano|Contralto
+music|What is a large group of musicians that plays classical music called?|Orchestra|Band|Choir|Ensemble only
+music|What does a conductor use to lead an orchestra?|A baton|A wand|A mallet|A bow
+music|Which country is the birthplace of jazz?|United States|France|Cuba|Brazil
+music|Which country is the birthplace of reggae?|Jamaica|Cuba|Brazil|Trinidad
+music|Which country is the birthplace of the tango?|Argentina|Spain|Brazil|Mexico
+music|Which country is the birthplace of flamenco?|Spain|Portugal|Mexico|Italy
+music|Which country is the birthplace of samba?|Brazil|Argentina|Cuba|Portugal
+music|Which country is the birthplace of K-pop?|South Korea|Japan|China|Thailand
+music|Which country is the bagpipe most associated with?|Scotland|Spain|Italy|Greece
+music|Which country is the didgeridoo most associated with?|Australia|India|Mexico|Greece
+music|Which country is the sitar most associated with?|India|Japan|Egypt|Turkey
+music|Which country is the koto most associated with?|Japan|China|Korea|Vietnam
+music|Which country is the balalaika most associated with?|Russia|Greece|Ireland|Poland
+music|Which country is the bouzouki most associated with?|Greece|Italy|Spain|Turkey
+music|Which festival takes place in a field in Somerset, England?|Glastonbury|Coachella|Woodstock|Reading
+music|Which festival is held in the California desert?|Coachella|Glastonbury|Lollapalooza|Burning Man
+music|Which 1969 festival is the most famous US music festival?|Woodstock|Monterey Pop|Altamont|Live Aid
+music|What was the name of the 1985 charity concert for famine relief?|Live Aid|Band Aid|Farm Aid|Live 8
+music|Which music streaming service is from Sweden?|Spotify|Pandora|Tidal|Deezer
+music|Which device did Apple release in 2001 to play music?|iPod|iPhone|iPad|iMac
+music|Which format did the Walkman originally play?|Cassette|Vinyl|CD|MiniDisc
+music|Which format replaced vinyl in the 1980s?|CD|Cassette|MP3|Eight-track
+music|What does MP3 stand for (the Layer)?|MPEG Audio Layer III|Music Player 3|Media Pack 3|Multi Pulse 3

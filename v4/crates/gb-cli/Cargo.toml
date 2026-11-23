@@ -1,0 +1,22 @@
+[package]
+name = "gb-cli"
+description = "Good Boy 4 command line: check a Good Boy database and bring 3.x data across."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "goodboy"
+path = "src/main.rs"
+
+[dependencies]
+gb-data = { path = "../gb-data" }
+gb-core = { path = "../gb-core" }
+gb-discord = { path = "../gb-discord" }
+gb-host = { path = "../gb-host" }
+tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
+serde_json.workspace = true
+rpassword = "7"
+
+[dev-dependencies]
+tempfile = "3"
