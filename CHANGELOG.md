@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.1
+**Fixes the app's update check.** Publishing Good Boy 4 made GitHub call it the "latest" release, and Good Boy 3's updater (which looks for its own update file in the latest release) then said "No version has been published yet". Good Boy 3 releases are now the latest again, and Good Boy 4 releases are never marked latest, so Good Boy 3 keeps finding its updates, including the move to Good Boy 4.
+
+<!-- members -->
+a small fix behind the scenes 🔧
+<!-- /members -->
+
 ## 3.2.0
 **The way to Good Boy 4, your own art on the dashboard, and a steadier dashboard.** Nothing changes until Good Boy 4 is published; then this app offers the move.
 
