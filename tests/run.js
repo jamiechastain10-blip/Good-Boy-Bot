@@ -528,6 +528,7 @@ await (await import('./v23b.js')).default({ test, rejectsWith });
 await (await import('./v30.js')).default({ test, rejectsWith });
 await (await import('./v31.js')).default({ test, rejectsWith });
 await (await import('./v312.js')).default({ test, rejectsWith });
+await (await import('./v32.js')).default({ test, rejectsWith });
 await (await import('./update.js')).default({ test, rejectsWith });
 await (await import('./desktop.js')).default({ test, rejectsWith });
 await (await import('./defer.js')).default({ test, rejectsWith });

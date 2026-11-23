@@ -84,3 +84,21 @@ export function clearArt(kind, name) {
   for (const f of files) fs.rmSync(f, { force: true });
   return files.length;
 }
+
+// ------------------------------------------------------------------ 3.2: for the dashboard's "Your art" page
+const fileName = (f) => (/^[\w.-]{1,80}\.(png|jpe?g|gif|webp)$/i.test(String(f ?? '')) && !String(f).startsWith('.') ? String(f) : null);
+/** The path of one of a name's art files, or null when there is no such file (only files listArt knows are ever opened). */
+export function artFile(kind, name, file) {
+  const f = fileName(file); if (!f || !KINDS[kind]) return null;
+  return listArt(kind, name).find((p) => path.basename(p) === f) ?? null;
+}
+/** Removes one picture. Returns true when it was there. */
+export function removeArt(kind, name, file) {
+  const p = artFile(kind, name, file); if (!p) return false;
+  fs.rmSync(p, { force: true }); return true;
+}
+/** Everything the page shows: each kind, each name, and that name's pictures. */
+export function overview() {
+  return Object.entries(KINDS).map(([kind, k]) => ({ kind, label: k.label, help: k.help,
+    names: k.names().map((name) => ({ name, files: listArt(kind, name).map((p) => ({ file: path.basename(p), bytes: fs.statSync(p).size })) })) }));
+}

@@ -3,7 +3,10 @@
 Good Boy draws its own roleplay animations and critter pictures. You can replace any of them with your own pictures
 or GIFs. Your art is used in **every server** the bot is in. Only the person who runs the bot can change it.
 
-## Two ways to add art
+## Three ways to add art
+**On the dashboard (easiest):** Settings → **Your art**. Every roleplay action and critter is shown with the picture it uses now.
+Drag a picture onto a card, or press **Add your picture**. **✨ Show me how** gives a short guided tour.
+
 **In Discord:** `/art add` opens a form: pick *Roleplay action* or *Critter*, type the name, attach the picture or GIF.
 `/art list` shows what you have replaced and every name. `/art remove` puts the built-in look back.
 
