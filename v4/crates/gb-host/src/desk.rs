@@ -65,6 +65,9 @@ pub struct Desk {
     rt: std::sync::OnceLock<tokio::runtime::Handle>,
     web_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     web_error: Arc<Mutex<Option<String>>>,
+    /// An update found by the last check, and how far the download has got (0 to 100, or none).
+    update_found: Mutex<Option<crate::update::Release>>,
+    update_percent: std::sync::atomic::AtomicI32,
 }
 
 fn text(e: impl std::fmt::Display) -> String {
@@ -74,7 +77,7 @@ fn text(e: impl std::fmt::Display) -> String {
 impl Desk {
     pub fn new(folders: Folders) -> Desk {
         let prefs = std::fs::read_to_string(folders.data.join("launcher.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-        let desk = Desk { folders, runner: Runner::default(), prefs: Mutex::new(prefs), bot: Mutex::new(None), session_token: Mutex::new(None), session_helpers: Mutex::new(Default::default()), rt: std::sync::OnceLock::new(), web_task: Mutex::new(None), web_error: Arc::new(Mutex::new(None)) };
+        let desk = Desk { folders, runner: Runner::default(), prefs: Mutex::new(prefs), bot: Mutex::new(None), session_token: Mutex::new(None), session_helpers: Mutex::new(Default::default()), rt: std::sync::OnceLock::new(), web_task: Mutex::new(None), web_error: Arc::new(Mutex::new(None)), update_found: Mutex::new(None), update_percent: std::sync::atomic::AtomicI32::new(-1) };
         desk.carry_licence();
         desk.prune_v3_backup();
         desk
@@ -177,10 +180,19 @@ impl Desk {
     }
     /// Puts back whatever part of the Good Boy look is missing (free installs only: a licence means the look is theirs).
     pub async fn brand_keep(&self, force: bool) -> Result<Value, String> {
-        if self.whitelabel() { return Err("Your licence lets you choose your own look, so Good Boy leaves it alone.".into()); }
         let token = self.token().ok_or("Add the bot's token first.")?;
         let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().map_err(text)?;
         let cur = crate::brand::current(&http, crate::brand::API, &token).await?;
+        if self.whitelabel() {
+            // a licence means the look is the owner's, and only the credit line at the end of the description is kept current
+            return match crate::brand::credit_refresh(&cur.description, crate::brand::VERSION) {
+                None => Ok(json!({ "changed": [], "problems": {} })),
+                Some(text) => match crate::brand::set_description(&http, crate::brand::API, &token, &text).await {
+                    Ok(()) => Ok(json!({ "changed": ["description"], "problems": {} })),
+                    Err(e) => Ok(json!({ "changed": [], "problems": { "description": e } })),
+                },
+            };
+        }
         let applied = self.prefs().brand_applied;
         let parts: Vec<&str> = if force { crate::brand::PARTS.to_vec() } else { crate::brand::missing(&cur, &applied) };
         if parts.is_empty() { return Ok(json!({ "changed": [], "problems": {} })); }
@@ -240,7 +252,11 @@ impl Desk {
     /// Good Boy 3 can take its token back.
     pub async fn adopt_handoff(&self, file: &std::path::Path) -> Result<(), String> {
         let h = crate::handoff::read(file)?;
-        self.setup_data(true)?;
+        // The move brings Good Boy 3's data across, even when this computer already holds Good Boy 4 data from a test
+        // build: that is set aside (kept in "before-the-move"), never used instead and never deleted.
+        let from = Some(PathBuf::from(&h.data)).filter(|d| !h.data.is_empty() && d.join("eclipse.db").is_file()).or_else(|| self.old_data())
+            .ok_or("Good Boy 3's data could not be found, so nothing was changed.")?;
+        self.replace_with_3x(from, "before-the-move")?;
         self.token_save(&h.token).await?;
         if !h.license.is_empty() { let _ = self.licence_set(&h.license); }
         let mut next = self.prefs();
@@ -405,9 +421,14 @@ impl Desk {
             return Err("Stop Good Boy 4 first (Home > Stop), then copy again.".into());
         }
         let from = self.old_data().ok_or("Good Boy 3's data was not found on this computer.")?;
+        self.replace_with_3x(from, "before-recopy")
+    }
+    /// Puts a copy of Good Boy 3's data in place of whatever Good Boy 4 holds. What is there now is moved into a dated
+    /// folder called `folder` first, never deleted; if the copy fails it is all put back. Good Boy 3's own data is only read.
+    fn replace_with_3x(&self, from: PathBuf, folder: &str) -> Result<Value, String> {
         let data = &self.folders.data;
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let aside = data.join("before-recopy").join(stamp.to_string());
+        let aside = data.join(folder).join(stamp.to_string());
         let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
         if data.is_dir() {
             for e in std::fs::read_dir(data).map_err(text)?.flatten() {
@@ -850,6 +871,49 @@ impl Desk {
     pub fn ticket_view(&self, guild: &str, number: i64) -> Result<Value, String> {
         self.bot()?.ticket_thread(guild, number).ok_or_else(|| "There is no ticket with that number.".to_string())
     }
+    fn update_asset(&self) -> &'static str {
+        crate::update::asset_for(&std::env::current_exe().unwrap_or_default())
+    }
+    /// What the Updates page shows: this version, the newer one if the last check found one, and the download's progress.
+    pub fn update_status(&self) -> Value {
+        let found = self.update_found.lock().unwrap().clone();
+        let pct = self.update_percent.load(std::sync::atomic::Ordering::Relaxed);
+        json!({
+            "current": gb_core::botnews::VERSION,
+            "available": found.map(|r| json!({ "version": r.version, "notes": r.notes, "size": r.size })),
+            "percent": if pct >= 0 { json!(pct) } else { Value::Null },
+            "can_install": !cfg!(debug_assertions),
+        })
+    }
+    /// Asks GitHub whether a newer Good Boy 4 is out. A GitHub that cannot be reached is an error the page words kindly.
+    pub async fn update_check(&self) -> Result<Value, String> {
+        let found = crate::update::check(gb_core::botnews::VERSION, self.update_asset(), false).await?;
+        *self.update_found.lock().unwrap() = found;
+        Ok(self.update_status())
+    }
+    /// Downloads and checks the update, stops the bot, swaps the program and starts the new one. Returns once the new
+    /// program is running; the caller then closes this one. If anything fails the old program is left exactly as it was.
+    pub async fn update_install(&self) -> Result<Value, String> {
+        if cfg!(debug_assertions) { return Err("A development build does not update itself.".into()); }
+        let rel = self.update_found.lock().unwrap().clone().ok_or("There is no update to install. Check for updates first.")?;
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let new = exe.with_extension("exe.new");
+        crate::update::clean_up(&exe);
+        self.update_percent.store(0, std::sync::atomic::Ordering::Relaxed);
+        let pct = &self.update_percent;
+        let got = crate::update::download(&rel, &new, |p| pct.store(p as i32, std::sync::atomic::Ordering::Relaxed)).await;
+        if let Err(e) = got { self.update_percent.store(-1, std::sync::atomic::Ordering::Relaxed); return Err(e); }
+        // the file arrived and matched; check it again from the disk, then stop the bot (it must let go of Discord first)
+        if let Err(e) = crate::update::verify(&new, rel.size, &rel.sha256) { let _ = std::fs::remove_file(&new); self.update_percent.store(-1, std::sync::atomic::Ordering::Relaxed); return Err(e); }
+        self.stop().await;
+        let started = crate::update::swap_in(&exe, &new).and_then(|_| {
+            std::process::Command::new(&exe).arg("--updated").arg(std::process::id().to_string()).spawn()
+                .map(|_| ()).map_err(|e| { let _ = crate::update::swap_back(&exe); format!("The new version would not start, so the old one was put back: {e}") })
+        });
+        self.update_percent.store(-1, std::sync::atomic::Ordering::Relaxed);
+        if let Err(e) = started { if self.prefs().start_with_app { let _ = self.start(); } return Err(e); }
+        Ok(json!({ "version": rel.version }))
+    }
     /// What changed, newest first: {version, sections: [{title, body}]} from this build's change notes.
     pub fn whatsnew(&self) -> Value {
         let mut sections: Vec<(String, Vec<&str>)> = Vec::new();
@@ -1154,6 +1218,34 @@ mod tests {
         assert!(d.db_file().is_file());
         assert_eq!(d.v3_check().unwrap()["problems"], 0);
         assert!(old.join("eclipse.db").is_file(), "Good Boy 3's own data is untouched");
+    }
+
+    #[test]
+    fn the_move_brings_good_boy_3s_data_across_even_when_a_test_build_left_data_behind() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Good Boy 3's real data, with something only it has
+        let old = tmp.path().join("appdata").join("Good Boy").join("bot-data");
+        std::fs::create_dir_all(&old).unwrap();
+        { let v3 = Store::create(old.join("eclipse.db")).unwrap(); v3.data_set("g1", "community", "who", &json!("good boy 3")).unwrap(); }
+        let d = Desk::new(Folders { data: tmp.path().join("gb4"), old_app_data: Some(tmp.path().join("appdata")) });
+        // an earlier test build of Good Boy 4 left its own data (with levels) in the data folder
+        std::fs::create_dir_all(tmp.path().join("gb4")).unwrap();
+        { let t = Store::create(d.db_file()).unwrap(); t.data_set("g1", "community", "who", &json!("old test build")).unwrap(); }
+        assert_eq!(d.setup_data(true).unwrap()["how"], "kept", "this is the situation that used to win");
+        let r = d.replace_with_3x(old.clone(), "before-the-move").unwrap();
+        let now = Store::open_read_only(d.db_file()).unwrap();
+        assert_eq!(now.data_get("g1", "community", "who").unwrap(), Some(json!("good boy 3")), "Good Boy 3's data is what Good Boy 4 holds now");
+        let kept = r["kept"].as_str().expect("the test build's data is kept, not deleted");
+        assert!(kept.contains("before-the-move"));
+        let aside = Store::open_read_only(std::path::Path::new(kept).join("eclipse.db")).unwrap();
+        assert_eq!(aside.data_get("g1", "community", "who").unwrap(), Some(json!("old test build")), "and it can be got back");
+        assert!(old.join("eclipse.db").is_file(), "Good Boy 3's own data is untouched");
+        // a Good Boy 3 folder that cannot be copied leaves Good Boy 4's data exactly as it was
+        let bad = tmp.path().join("bad");
+        std::fs::create_dir_all(&bad).unwrap();
+        std::fs::write(bad.join("eclipse.db"), b"this is not a database").unwrap();
+        assert!(d.replace_with_3x(bad, "before-the-move").is_err());
+        assert_eq!(Store::open_read_only(d.db_file()).unwrap().data_get("g1", "community", "who").unwrap(), Some(json!("good boy 3")), "put back as it was");
     }
 
     #[test]

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the troubleshooting list first
+    url: https://github.com/jamiechastain10-blip/Good-Boy-Bot#troubleshooting
+    about: Most problems (a missing intent, the bot's role too low, an old copy still running) are answered there.

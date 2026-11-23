@@ -1,0 +1,31 @@
+name: Something is not working
+description: Tell us what happened so it can be fixed.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for telling us. Please never paste your bot token or client secret here.
+  - type: dropdown
+    id: which
+    attributes:
+      label: Which Good Boy are you using?
+      options: [Good Boy 4 (Windows app), Good Boy 3 (Windows app), Good Boy 3 (from the code), Not sure]
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown on the Updates page in Good Boy 4, or in the app's title or About in Good Boy 3.
+      placeholder: "for example 4.0.1"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include the page or command, and any message you saw.
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we make it happen again?
+      placeholder: "1. Open ...  2. Press ...  3. See ..."

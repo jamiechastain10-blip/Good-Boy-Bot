@@ -10,6 +10,7 @@ pub mod licence;
 pub mod runner;
 pub mod secrets;
 pub mod setup;
+pub mod update;
 pub mod web;
 
 pub use desk::{Desk, Prefs};

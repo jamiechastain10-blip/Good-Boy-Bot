@@ -1,5 +1,14 @@
 # Good Boy 4 changes
 
+## 4.0.1
+**The version is shown on the bot's profile again.** The bot's description on Discord ends with "Good Boy v4.0.1 · Basic Ghost Labs" (as in Good Boy 3), and the number is refreshed after each update. Bots with a licence keep their own words; only the credit line at the end is brought up to date (a minute after Good Boy starts, and again after each update).
+
+**Good Boy 4 has an installer.** Download Good-Boy-4-Setup.exe from the releases page and run it. It installs for you only (no administrator password), adds a Start menu entry and an optional desktop shortcut, shows up in Windows' installed apps, and uninstalls cleanly, keeping your data unless you choose to delete it. Running it over an older copy updates that copy in place, even while Good Boy is open. It installs in a folder the program can write to, so self-updates keep working, and Windows' installed-apps list stays on the right version. The same installer script will package the recording software and the Minecraft launcher later, side by side with Good Boy. The plain Good-Boy-4.exe and the no-window program for web hosts are still published.
+
+**Good Boy 4 now updates itself.** It checks GitHub for a newer Good Boy 4 a little after it opens and every six hours. Home shows a card when one is ready, and the new Updates page has an Update now button. The file is downloaded, checked against its sha256 checksum and size (a mismatch is refused and nothing changes), the bot is stopped, the program is swapped for the new one and reopened. If the new one cannot start, the old one is put back. Settings, data and the token are never touched. Only releases of this project are accepted, test builds are skipped, and a bot on a web host with the window-less program gets the window-less update. **Anyone on 4.0.0 has to install 4.0.1 by hand once** (download Good-Boy-4.exe from the releases page); from then on updates come by themselves.
+
+**Fix: moving from Good Boy 3 now always brings Good Boy 3's data.** If an earlier Good Boy 4 test build had left its own data on the computer (old levels and coins), the move used to keep that instead of copying Good Boy 3's. Now Good Boy 3's data wins, and what was there is kept in a dated `before-the-move` folder inside the data folder, never deleted. If you were affected, open Settings, Your data, and press "Copy Good Boy 3's data again".
+
 ## 4.0.0
 **Good Boy, rebuilt.** Good Boy 4 is the same bot, written again from scratch for speed and for running on your own computer or a host: one program, one window that is also the dashboard, a phone web app, and the same data. Your settings, levels, coins, tickets, licence and bot token came with you from Good Boy 3 (it was a one-time move, because the whole bot was rebuilt). Everything Good Boy 3 did is here, plus what is listed below.
 
@@ -7,6 +16,9 @@
 Good Boy got rebuilt from the ground up, so it should be quicker and steadier. Everything you had (levels, coins, tickets) is still here, and there are some new things to try: a /help command, better image quotes with different looks, and a party finder that pings roles and joins your voice call 🎉
 <!-- /members -->
 
+
+## Guide and setup wording
+- The "What is in this test build" page is now "What is in this version" and says what Good Boy 4 really does. Setup and the guide no longer tell you to use a separate test bot or say that phone sign-in, games and the shop are still to come.
 
 ## Music: it joins the call you are in
 - The Music page now knows which voice call you are in (the person who runs the bot in the app, or whoever is signed in on the web). Press play and Good Boy joins that call; no channel to pick. If you choose another channel yourself the page keeps your choice. If the bot is playing somewhere else, **Move to my call** brings it to you.

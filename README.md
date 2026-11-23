@@ -7,9 +7,13 @@
 **One Discord bot instead of ten.** Moderation, tickets, levels, an economy, games, music and more, in modules you
 switch on per server. You run it yourself, so your community's data stays with you.
 
-[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Setup.exe)
+[![Download Good Boy 4 for Windows](https://img.shields.io/badge/Download_Good_Boy_4_for_Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/download/v4.0.1/Good-Boy-4-Setup.exe)
 
-[![Windows portable](https://img.shields.io/badge/Windows-Portable_.exe-3A6EA5?style=flat-square&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Portable.exe)
+New here? Press the blue button, run the file, and follow the steps. **Already using Good Boy 3?** You don't need to download anything: it offers to move you to Good Boy 4 by itself and brings your settings, levels and coins with you.
+
+Older downloads (Good Boy 3):
+[![Good Boy 3 installer](https://img.shields.io/badge/Good_Boy_3-Windows_installer-3A6EA5?style=flat-square&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Setup.exe)
+[![Windows portable](https://img.shields.io/badge/Good_Boy_3-Portable_.exe-3A6EA5?style=flat-square&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Portable.exe)
 [![Mac](https://img.shields.io/badge/Mac-.dmg_(Apple_silicon)-555555?style=flat-square&logo=apple&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Mac.dmg)
 [![Android](https://img.shields.io/badge/Android-phone_app-3DDC84?style=flat-square&logo=android&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Android.apk)
 [![Latest release](https://img.shields.io/github/v/release/jamiechastain10-blip/Good-Boy-Bot?style=flat-square&label=latest&color=F2A93B)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest)
@@ -65,14 +69,25 @@ roles, logs, starboard, welcome, join roles, custom commands) and offers to set 
 ## Get started
 
 ### The easy way: the Windows app
-1. Download the **installer** (the big button above) and run it.
+1. Press the blue **Download Good Boy 4 for Windows** button above and run **Good-Boy-4-Setup.exe**. It installs for you
+   only, so it never asks for an administrator password. If Windows says it "protected your PC", choose **More info**,
+   then **Run anyway** (the app isn't code-signed yet).
 2. Follow the setup. It walks you through making your bot on Discord, pasting its token, and inviting it to your server.
-3. That's it. The app starts the bot, shows the dashboard, and updates itself when a new version comes out.
+3. That's it. The app starts the bot, is its dashboard, and updates itself: it looks for a new version when it opens,
+   shows a card on Home, and the **Updates** page has an **Update now** button.
 
-The portable `.exe` runs without installing (it tells you about updates instead of installing them). The Mac app isn't
-signed yet: right-click it and choose **Open** the first time.
+**Good to know**
+- Your settings, levels, coins and bot token are kept outside the program, so installing again or updating never
+  changes them. **Uninstalling** (Windows Settings → Apps) keeps them too unless you tick the box to delete them.
+- **Coming from Good Boy 3?** Let Good Boy 3 move you (it makes a backup first and puts itself back if anything goes
+  wrong). Starting Good Boy 4 yourself later? Open **Settings → Your data → Copy Good Boy 3's data again**.
+- Only one program can run a bot at a time, so close Good Boy 3 before starting Good Boy 4 with the same bot.
+- Running the bot on a web host with no screen? Use `Good-Boy-4-no-window.exe` from the [releases page](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases).
+- The Mac app (Good Boy 3) isn't signed yet: right-click it and choose **Open** the first time.
 
 ### From the code
+(This is Good Boy 3. Good Boy 4 is the Rust program in [`v4/`](v4): `cd v4 && cargo build --release`.)
+
 You need [Node.js](https://nodejs.org) **22.13 or newer**.
 
 1. **Make the bot on Discord.** Go to the [Developer Portal](https://discord.com/developers/applications) and choose
@@ -211,7 +226,20 @@ The dashboard serves `/terms` and `/privacy` pages you can give Discord (set `LE
 
 ## Troubleshooting
 
-**The Windows app is blank or won't update.** Download the [installer](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Setup.exe)
+**Windows says it protected my PC when I open the installer.** The app isn't code-signed yet, so Windows asks first.
+Choose **More info**, then **Run anyway**.
+
+**Good Boy 4 shows old levels or coins.** Open **Settings → Your data** and press **Copy Good Boy 3's data again**. What
+the app held before is kept in a dated folder, not deleted.
+
+**An update failed.** Nothing is changed when an update fails, and the old version is put back. Check you are online and
+press **Check again** on the Updates page. If it keeps failing, run **Good-Boy-4-Setup.exe** again: it installs over the
+top and keeps your data.
+
+**Good Boy 4 opens and closes straight away.** It is probably already open (look in the taskbar or the tray). Only one
+copy can run.
+
+**The Good Boy 3 app is blank or won't update.** Download the [installer](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest/download/Good-Boy-Setup.exe)
 again and run it. Your bot, settings and data stay. **Ctrl+R** reloads the window. The app keeps a log at
 `%APPDATA%\Good Boy\app.log`; send it with any bug report.
 
