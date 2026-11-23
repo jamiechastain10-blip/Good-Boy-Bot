@@ -3,6 +3,8 @@
 # When the build passes on main, the same way as Good Boy 3 (desktop.yml), the programs are published as a release in the
 # public repository jamiechastain10-blip/Good-Boy-Bot, which is where the last Good Boy 3 looks for Good Boy 4. Running in
 # that repository it uses its own built-in token; running anywhere else it needs the RELEASES_TOKEN secret.
+# A Good Boy 4 release is never marked "latest": Good Boy 3 installs look for their own update in the latest release, and
+# would find no update file there. Only Good Boy 3 releases are the latest.
 # A version is published once: raise "version" in v4/Cargo.toml to publish a new one. A version with a dash in it
 # (4.0.0-dev.8) is published as a pre-release, which Good Boy 3 never moves anyone to.
 name: Good Boy 4 test build
@@ -109,6 +111,6 @@ jobs:
             exit 0
           fi
           printf 'Good Boy %s\n\nThe rebuilt Good Boy. Installed copies of Good Boy 3 offer to move to it by themselves: your settings, levels, coins and licence come with you, and Good Boy 3 is put back if anything goes wrong.\n' "$v" > notes.md
-          gh release create "v$v" out/Good-Boy-4.exe out/Good-Boy-4-no-window.exe -R "$REPO" --title "Good Boy $v" --notes-file notes.md $pre
+          gh release create "v$v" out/Good-Boy-4.exe out/Good-Boy-4-no-window.exe -R "$REPO" --title "Good Boy $v" --notes-file notes.md --latest=false $pre
           echo "Published https://github.com/$REPO/releases/tag/v$v"
 
