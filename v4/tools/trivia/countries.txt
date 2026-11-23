@@ -1,0 +1,193 @@
+# country|capital|continent|currency (blank when not asked)
+Afghanistan|Kabul|Asia|Afghani
+Albania|Tirana|Europe|Lek
+Algeria|Algiers|Africa|Algerian dinar
+Andorra|Andorra la Vella|Europe|Euro
+Angola|Luanda|Africa|Kwanza
+Argentina|Buenos Aires|South America|Argentine peso
+Armenia|Yerevan|Asia|Dram
+Australia|Canberra|Oceania|Australian dollar
+Austria|Vienna|Europe|Euro
+Azerbaijan|Baku|Asia|Manat
+Bahamas|Nassau|North America|Bahamian dollar
+Bahrain|Manama|Asia|Bahraini dinar
+Bangladesh|Dhaka|Asia|Taka
+Barbados|Bridgetown|North America|Barbadian dollar
+Belarus|Minsk|Europe|Belarusian ruble
+Belgium|Brussels|Europe|Euro
+Belize|Belmopan|North America|Belize dollar
+Benin|Porto-Novo|Africa|CFA franc
+Bhutan|Thimphu|Asia|Ngultrum
+Bolivia|Sucre|South America|Boliviano
+Bosnia and Herzegovina|Sarajevo|Europe|Convertible mark
+Botswana|Gaborone|Africa|Pula
+Brazil|Brasilia|South America|Real
+Brunei|Bandar Seri Begawan|Asia|Brunei dollar
+Bulgaria|Sofia|Europe|Lev
+Burkina Faso|Ouagadougou|Africa|CFA franc
+Burundi|Gitega|Africa|Burundian franc
+Cambodia|Phnom Penh|Asia|Riel
+Cameroon|Yaounde|Africa|CFA franc
+Canada|Ottawa|North America|Canadian dollar
+Cape Verde|Praia|Africa|Cape Verdean escudo
+Central African Republic|Bangui|Africa|CFA franc
+Chad|N'Djamena|Africa|CFA franc
+Chile|Santiago|South America|Chilean peso
+China|Beijing|Asia|Yuan
+Colombia|Bogota|South America|Colombian peso
+Comoros|Moroni|Africa|Comorian franc
+Costa Rica|San Jose|North America|Colon
+Croatia|Zagreb|Europe|Euro
+Cuba|Havana|North America|Cuban peso
+Cyprus|Nicosia|Europe|Euro
+Czech Republic|Prague|Europe|Koruna
+DR Congo|Kinshasa|Africa|Congolese franc
+Denmark|Copenhagen|Europe|Danish krone
+Djibouti|Djibouti|Africa|Djiboutian franc
+Dominican Republic|Santo Domingo|North America|Dominican peso
+Ecuador|Quito|South America|US dollar
+Egypt|Cairo|Africa|Egyptian pound
+El Salvador|San Salvador|North America|US dollar
+Equatorial Guinea|Malabo|Africa|CFA franc
+Eritrea|Asmara|Africa|Nakfa
+Estonia|Tallinn|Europe|Euro
+Eswatini|Mbabane|Africa|Lilangeni
+Ethiopia|Addis Ababa|Africa|Birr
+Fiji|Suva|Oceania|Fijian dollar
+Finland|Helsinki|Europe|Euro
+France|Paris|Europe|Euro
+Gabon|Libreville|Africa|CFA franc
+Gambia|Banjul|Africa|Dalasi
+Georgia|Tbilisi|Asia|Lari
+Germany|Berlin|Europe|Euro
+Ghana|Accra|Africa|Cedi
+Greece|Athens|Europe|Euro
+Grenada|St. George's|North America|East Caribbean dollar
+Guatemala|Guatemala City|North America|Quetzal
+Guinea|Conakry|Africa|Guinean franc
+Guinea-Bissau|Bissau|Africa|CFA franc
+Guyana|Georgetown|South America|Guyanese dollar
+Haiti|Port-au-Prince|North America|Gourde
+Honduras|Tegucigalpa|North America|Lempira
+Hungary|Budapest|Europe|Forint
+Iceland|Reykjavik|Europe|Icelandic krona
+India|New Delhi|Asia|Indian rupee
+Indonesia|Jakarta|Asia|Rupiah
+Iran|Tehran|Asia|Rial
+Iraq|Baghdad|Asia|Iraqi dinar
+Ireland|Dublin|Europe|Euro
+Israel|Jerusalem|Asia|Shekel
+Italy|Rome|Europe|Euro
+Ivory Coast|Yamoussoukro|Africa|CFA franc
+Jamaica|Kingston|North America|Jamaican dollar
+Japan|Tokyo|Asia|Yen
+Jordan|Amman|Asia|Jordanian dinar
+Kazakhstan|Astana|Asia|Tenge
+Kenya|Nairobi|Africa|Kenyan shilling
+Kiribati|Tarawa|Oceania|Australian dollar
+Kosovo|Pristina|Europe|Euro
+Kuwait|Kuwait City|Asia|Kuwaiti dinar
+Kyrgyzstan|Bishkek|Asia|Som
+Laos|Vientiane|Asia|Kip
+Latvia|Riga|Europe|Euro
+Lebanon|Beirut|Asia|Lebanese pound
+Lesotho|Maseru|Africa|Loti
+Liberia|Monrovia|Africa|Liberian dollar
+Libya|Tripoli|Africa|Libyan dinar
+Liechtenstein|Vaduz|Europe|Swiss franc
+Lithuania|Vilnius|Europe|Euro
+Luxembourg|Luxembourg|Europe|Euro
+Madagascar|Antananarivo|Africa|Ariary
+Malawi|Lilongwe|Africa|Kwacha
+Malaysia|Kuala Lumpur|Asia|Ringgit
+Maldives|Male|Asia|Rufiyaa
+Mali|Bamako|Africa|CFA franc
+Malta|Valletta|Europe|Euro
+Marshall Islands|Majuro|Oceania|US dollar
+Mauritania|Nouakchott|Africa|Ouguiya
+Mauritius|Port Louis|Africa|Mauritian rupee
+Mexico|Mexico City|North America|Mexican peso
+Micronesia|Palikir|Oceania|US dollar
+Moldova|Chisinau|Europe|Leu
+Monaco|Monaco|Europe|Euro
+Mongolia|Ulaanbaatar|Asia|Tugrik
+Montenegro|Podgorica|Europe|Euro
+Morocco|Rabat|Africa|Dirham
+Mozambique|Maputo|Africa|Metical
+Myanmar|Naypyidaw|Asia|Kyat
+Namibia|Windhoek|Africa|Namibian dollar
+Nauru|Yaren|Oceania|Australian dollar
+Nepal|Kathmandu|Asia|Nepalese rupee
+Netherlands|Amsterdam|Europe|Euro
+New Zealand|Wellington|Oceania|New Zealand dollar
+Nicaragua|Managua|North America|Cordoba
+Niger|Niamey|Africa|CFA franc
+Nigeria|Abuja|Africa|Naira
+North Korea|Pyongyang|Asia|North Korean won
+North Macedonia|Skopje|Europe|Denar
+Norway|Oslo|Europe|Norwegian krone
+Oman|Muscat|Asia|Omani rial
+Pakistan|Islamabad|Asia|Pakistani rupee
+Palau|Ngerulmud|Oceania|US dollar
+Panama|Panama City|North America|Balboa
+Papua New Guinea|Port Moresby|Oceania|Kina
+Paraguay|Asuncion|South America|Guarani
+Peru|Lima|South America|Sol
+Philippines|Manila|Asia|Philippine peso
+Poland|Warsaw|Europe|Zloty
+Portugal|Lisbon|Europe|Euro
+Qatar|Doha|Asia|Qatari riyal
+Republic of the Congo|Brazzaville|Africa|CFA franc
+Romania|Bucharest|Europe|Romanian leu
+Russia|Moscow|Europe|Russian ruble
+Rwanda|Kigali|Africa|Rwandan franc
+Saint Lucia|Castries|North America|East Caribbean dollar
+Samoa|Apia|Oceania|Tala
+San Marino|San Marino|Europe|Euro
+Sao Tome and Principe|Sao Tome|Africa|Dobra
+Saudi Arabia|Riyadh|Asia|Saudi riyal
+Senegal|Dakar|Africa|CFA franc
+Serbia|Belgrade|Europe|Serbian dinar
+Seychelles|Victoria|Africa|Seychellois rupee
+Sierra Leone|Freetown|Africa|Leone
+Singapore|Singapore|Asia|Singapore dollar
+Slovakia|Bratislava|Europe|Euro
+Slovenia|Ljubljana|Europe|Euro
+Solomon Islands|Honiara|Oceania|Solomon Islands dollar
+Somalia|Mogadishu|Africa|Somali shilling
+South Africa|Pretoria|Africa|Rand
+South Korea|Seoul|Asia|South Korean won
+South Sudan|Juba|Africa|South Sudanese pound
+Spain|Madrid|Europe|Euro
+Sri Lanka|Colombo|Asia|Sri Lankan rupee
+Sudan|Khartoum|Africa|Sudanese pound
+Suriname|Paramaribo|South America|Surinamese dollar
+Sweden|Stockholm|Europe|Swedish krona
+Switzerland|Bern|Europe|Swiss franc
+Syria|Damascus|Asia|Syrian pound
+Taiwan|Taipei|Asia|New Taiwan dollar
+Tajikistan|Dushanbe|Asia|Somoni
+Tanzania|Dodoma|Africa|Tanzanian shilling
+Thailand|Bangkok|Asia|Baht
+Timor-Leste|Dili|Asia|US dollar
+Togo|Lome|Africa|CFA franc
+Tonga|Nuku'alofa|Oceania|Pa'anga
+Trinidad and Tobago|Port of Spain|North America|Trinidad and Tobago dollar
+Tunisia|Tunis|Africa|Tunisian dinar
+Turkey|Ankara|Asia|Turkish lira
+Turkmenistan|Ashgabat|Asia|Turkmen manat
+Tuvalu|Funafuti|Oceania|Australian dollar
+Uganda|Kampala|Africa|Ugandan shilling
+Ukraine|Kyiv|Europe|Hryvnia
+United Arab Emirates|Abu Dhabi|Asia|UAE dirham
+United Kingdom|London|Europe|Pound sterling
+United States|Washington, D.C.|North America|US dollar
+Uruguay|Montevideo|South America|Uruguayan peso
+Uzbekistan|Tashkent|Asia|Som
+Vanuatu|Port Vila|Oceania|Vatu
+Vatican City|Vatican City|Europe|Euro
+Venezuela|Caracas|South America|Bolivar
+Vietnam|Hanoi|Asia|Dong
+Yemen|Sanaa|Asia|Yemeni rial
+Zambia|Lusaka|Africa|Zambian kwacha
+Zimbabwe|Harare|Africa|Zimbabwe dollar

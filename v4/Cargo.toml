@@ -1,0 +1,26 @@
+# Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+[workspace]
+resolver = "2"
+members = ["crates/gb-data", "crates/gb-core", "crates/gb-art", "crates/gb-discord", "crates/gb-host", "crates/gb-cli", "crates/gb-launcher"]
+
+[workspace.package]
+version = "4.0.0"
+edition = "2021"
+license-file = "../LICENSE.txt"
+publish = false
+
+[workspace.dependencies]
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+# Test and debug builds keep line numbers for backtraces but not full debug info: the build folder is several times smaller.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
