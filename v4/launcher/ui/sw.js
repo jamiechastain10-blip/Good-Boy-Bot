@@ -2,8 +2,8 @@
 // The phone app's service worker. It keeps the app's own screens ready so it opens at once and shows a calm message when
 // there is no connection. It never keeps anything from /api or /auth (what the bot says is always asked for fresh).
 'use strict';
-const KEEP = 'goodboy-shell-v1';
-const SHELL = ['/', '/ui.css', '/boot.css', '/music.css', '/tour.css', '/pixel.css', '/look.js', '/fonts/PressStart2P.woff2', '/fonts/VT323.woff2', '/bridge.js', '/guide.js', '/boot.js', '/tour.js', '/music.js', '/app.js', '/mascot.png', '/manifest.webmanifest'];
+const KEEP = 'goodboy-shell-v2';
+const SHELL = ['/', '/ui.css', '/boot.css', '/music.css', '/tour.css', '/pixel.css', '/bgl.css', '/look.js', '/fonts/PressStart2P.woff2', '/fonts/VT323.woff2', '/fonts/Figtree-400.ttf', '/fonts/Figtree-500.ttf', '/fonts/Figtree-600.ttf', '/fonts/Figtree-700.ttf', '/fonts/BowlbyOne-400.ttf', '/bridge.js', '/guide.js', '/boot.js', '/tour.js', '/music.js', '/app.js', '/mascot.png', '/manifest.webmanifest'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(KEEP).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((names) => Promise.all(names.filter((n) => n !== KEEP).map((n) => caches.delete(n)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
