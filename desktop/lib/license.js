@@ -49,7 +49,7 @@ export function verifyLicense(key, publicKey, { appId = null, now = Date.now(), 
 }
 
 /** Where Good Boy apps download the list of cancelled licences. Licence Studio makes and signs it. */
-export const CANCEL_LIST_URL = 'https://raw.githubusercontent.com/jamiechastain10-blip/Good-Boy-Bot/main/licences/revoked.json';
+export const CANCEL_LIST_URL = 'https://goodboyhub.pages.dev/v1/cancel-list/goodboy';
 
 /** Reads a cancel list from Licence Studio. Returns { at, revoked } only if it was signed with the owner's key. */
 export function readCancelList(text, publicKey) {

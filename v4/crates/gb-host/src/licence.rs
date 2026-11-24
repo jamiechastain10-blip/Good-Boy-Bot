@@ -12,7 +12,7 @@ use serde::Deserialize;
 /// The public key every Good Boy checks licences with (the same file Good Boy 3 ships).
 pub const PUBLIC_KEY_PEM: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAqqEyB1bxUMqXHZloy4OrSZFbRRcXPjAyNrYvmpqqVEo=\n-----END PUBLIC KEY-----\n";
 /// Where the owner publishes the list of cancelled licences (signed by Licence Studio).
-pub const CANCEL_LIST_URL: &str = "https://raw.githubusercontent.com/jamiechastain10-blip/Good-Boy-Bot/main/licences/revoked.json";
+pub const CANCEL_LIST_URL: &str = "https://goodboyhub.pages.dev/v1/cancel-list/goodboy";
 const PREFIX: &str = "GB1";
 
 /// What a key says.

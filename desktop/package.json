@@ -104,10 +104,8 @@
     ],
     "publish": [
       {
-        "provider": "github",
-        "owner": "jamiechastain10-blip",
-        "repo": "Good-Boy-Bot",
-        "releaseType": "release"
+        "provider": "generic",
+        "url": "https://goodboyhub.pages.dev/v1/releases/goodboy/feed"
       }
     ]
   }
