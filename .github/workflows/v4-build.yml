@@ -63,7 +63,7 @@ jobs:
           $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
           $core = ($v -split '[-+]')[0]
           $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          & $nsis "-DPRODUCT=Good Boy" -DSLUG=GoodBoy4 -DEXE=Good-Boy-4.exe "-DVERSION=$core" "-DDATADIR=Good Boy 4" "-DSOURCE=$PWD\target\release\out\Good-Boy-4.exe" "-DICON=$PWD\crates\gb-launcher\icons\icon.ico" "-DOUT=$PWD\target\release\out\Good-Boy-4-Setup.exe" installer\product.nsi
+          & $nsis "-DPRODUCT=Good Boy" "-DSLUG=GoodBoy4" "-DEXE=Good-Boy-4.exe" "-DVERSION=$core" "-DDATADIR=Good Boy 4" "-DSOURCE=$PWD\target\release\out\Good-Boy-4.exe" "-DICON=$PWD\crates\gb-launcher\icons\icon.ico" "-DOUT=$PWD\target\release\out\Good-Boy-4-Setup.exe" installer\product.nsi
           if ($LASTEXITCODE -ne 0) { throw "The installer did not build." }
           Get-Item target\release\out\Good-Boy-4-Setup.exe | Format-List Name, Length
       # The test build goes on this private repository's Releases page as a pre-release that each build replaces.
