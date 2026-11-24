@@ -505,7 +505,7 @@
         };
         slot.replaceChildren(box);
         await draw();
-        whileShown(box, 5000, async () => { if (box.querySelector('textarea:focus')) return; await draw(); });
+        whileShown(box, 5000, async () => { if (box.querySelector('input:focus, textarea:focus, select:focus')) return; await draw(); });
       };
       // closing asks how it ended (kept in the staff log)
       const closeAsk = (t, then) => {
