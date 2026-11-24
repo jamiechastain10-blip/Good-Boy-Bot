@@ -137,6 +137,56 @@ fn a_level_up_posts_a_card_and_gives_reward_roles() {
 }
 
 #[test]
+fn a_level_up_can_ping_say_it_quietly_or_show_the_members_own_rank_card() {
+    let (_tmp, _dir, bot, wrote) = world();
+    let (g, rowan) = (wrote["guild"].as_str().unwrap(), wrote["rowan"].as_str().unwrap());
+    let rowan_m = member(rowan, "Rowan");
+    let mut t = 1_900_000_000_000i64;
+    let mut up = |style: &str| -> Action {
+        bot.settings.set(g, levels::MODULE, "levelUpStyle", &json!(style)).unwrap();
+        bot.db.get().data_set(g, "community", &format!("user:{rowan}"), &json!({ "xp": 90, "messages": 7, "lastXp": 0 })).unwrap();
+        t += 600_000;
+        let mut gain = |_: i64, _: i64| 25;
+        bot.on_message(&says(g, &rowan_m, GENERAL, t), &mut gain).remove(0)
+    };
+    // the default is the message that pings them
+    assert_eq!(bot.settings.text(g, levels::MODULE, "levelUpStyle").as_deref(), Some("ping"));
+    match up("ping") { Action::Send { ping, card, .. } => { assert_eq!(ping, vec![rowan.to_string()]); assert!(card.lines.iter().any(|l| l.contains(&format!("<@{rowan}>")))); } other => panic!("{other:?}") }
+    // quiet: the same message, nobody is pinged and their name is not a mention
+    match up("quiet") {
+        Action::Send { ping, card, .. } => {
+            assert!(ping.is_empty(), "no ping");
+            assert_eq!(card.title.as_deref(), Some("Rowan reached level 1"));
+            assert!(card.lines.iter().any(|l| l.contains("**Rowan**")) && !card.lines.iter().any(|l| l.contains("<@")), "{:?}", card.lines);
+            assert!(card.art.is_none());
+        }
+        other => panic!("{other:?}"),
+    }
+    // card: their own rank card, no ping and no mention
+    match up("card") {
+        Action::Send { ping, card, .. } => {
+            assert!(ping.is_empty(), "no ping");
+            assert_eq!(card.title.as_deref(), Some("Rowan reached level 1"));
+            assert!(!card.lines.iter().any(|l| l.contains("<@")), "{:?}", card.lines);
+            match card.art { Some(gb_core::Art::Rank(r)) => assert_eq!((r.name.as_str(), r.level, r.messages), ("Rowan", 1, 8)), other => panic!("a rank card is drawn: {other:?}") }
+            assert!(card.buttons.iter().any(|b| b.label == "View rank"));
+        }
+        other => panic!("{other:?}"),
+    }
+    // it is THEIR card: the theme and colours they picked with /rank's Customise button are used
+    bot.db.get().data_set(g, "community", &format!("card:{rowan}"), &json!({ "theme": "sunset", "accent": "#ff3366", "accent2": "#ffaa00" })).unwrap();
+    match up("card") {
+        Action::Send { card, .. } => match card.art { Some(gb_core::Art::Rank(r)) => assert_eq!((r.theme.as_deref(), r.accent.as_deref(), r.accent2.as_deref()), (Some("sunset"), Some("#ff3366"), Some("#ffaa00"))), other => panic!("{other:?}") },
+        other => panic!("{other:?}"),
+    }
+    // pictures off for the server: the same message in text, still without a ping
+    bot.settings.set(g, levels::MODULE, "rankCards", &json!("off")).unwrap();
+    match up("card") { Action::Send { ping, card, .. } => { assert!(ping.is_empty() && card.art.is_none()); assert!(card.lines.iter().any(|l| l.contains("XP to level 2"))); } other => panic!("{other:?}") }
+    // and only the three styles are accepted
+    assert!(bot.settings.set(g, levels::MODULE, "levelUpStyle", &json!("loud")).is_err());
+}
+
+#[test]
 fn no_xp_where_it_is_switched_off_in_tickets_or_when_levels_are_off_and_boosts_multiply() {
     let (_tmp, _dir, bot, wrote) = world();
     let (g, kai) = (wrote["guild"].as_str().unwrap(), wrote["kai"].as_str().unwrap());

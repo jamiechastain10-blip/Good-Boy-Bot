@@ -19,6 +19,7 @@
       { id: 'economy', name: 'Money', about: 'Coins, a daily reward with streaks, work, paying each other and the rich list. /money.' },
       { id: 'moderation', name: 'Moderation', about: 'Warn, time out, kick, ban (for good or for a while), bulk delete, each member\'s history, AutoMod, a strike ladder and server logs. Raid protection is still to come.' },
       { id: 'critters', name: 'Critters', about: 'Catch, collect, trade and battle characters from your own roster.', commands: [], },
+      { id: 'eclipseid', name: 'Eclipse ID', about: 'A gaming profile members control, one card per person.', commands: [] },
       { id: 'member-management', name: 'Welcome', about: 'Welcome and goodbye messages, and a waiting role for new members. Needs Server Members on the bot\'s page. Verification, profile roles and birthdays are still to come.' },
       { id: 'roles', name: 'Role menus', about: 'Buttons or a dropdown for members to pick roles, reaction roles, roles given on join, and roles that run out. /rolemenu, /reactionrole, /autorole.' },
       { id: 'support', name: 'Tickets', about: 'Tickets with categories and urgency, popups, a staff watch log for reports, required close notes, transcripts, ratings and a history. /ticket.' },
@@ -106,10 +107,24 @@
     { key: 'allowUploads', label: 'Members can upload songs to play', kind: 'toggle', default: true },
   ];
   DEFS.roles = [{ key: 'gameRoleRemove', label: 'Remove a game role when the member stops playing', kind: 'toggle', default: true }];
+  DEFS.eclipseid = [
+    { key: 'autoDetect', label: 'Pick up the games and platforms members play from their Discord status', kind: 'toggle', default: true },
+    { key: 'robloxLookup', label: 'Let /id roblox check that a Roblox username exists', kind: 'toggle', default: false },
+  ];
   DEFS['member-management'] = [
     { key: 'welcomeEnabled', label: 'Send welcome messages', kind: 'toggle', default: false },
     { key: 'welcomeChannel', label: 'Welcome channel', kind: 'channel', default: null },
     { key: 'welcomeMessage', label: 'Welcome message ({user} {username} {server} {count})', kind: 'text', max: 1900, default: 'Welcome {user} to **{server}**! You are member #{count}.' },
+    { key: 'welcomeLook', label: 'Welcome message look', kind: 'select', options: ['plain', 'card'], default: 'plain' },
+    { key: 'welcomeCardTitle', label: 'Welcome card: big words', kind: 'text', max: 120, default: 'Welcome, {username}!' },
+    { key: 'welcomeCardLine', label: 'Welcome card: smaller words', kind: 'text', max: 160, default: 'You are member #{count} of {server}' },
+    { key: 'welcomeCardAccent', label: 'Welcome card: ring and bar colour', kind: 'colour', default: '#6b93ff' },
+    { key: 'welcomeCardTheme', label: 'Welcome card: colours behind your picture', kind: 'select', options: ['dark', 'light', 'midnight', 'sunset', 'forest', 'ocean', 'candy'], default: 'midnight' },
+    { key: 'goodbyeLook', label: 'Goodbye message look', kind: 'select', options: ['plain', 'card'], default: 'plain' },
+    { key: 'goodbyeCardTitle', label: 'Goodbye card: big words', kind: 'text', max: 120, default: 'Goodbye, {username}' },
+    { key: 'goodbyeCardLine', label: 'Goodbye card: smaller words', kind: 'text', max: 160, default: 'We hope to see you again' },
+    { key: 'goodbyeCardAccent', label: 'Goodbye card: ring and bar colour', kind: 'colour', default: '#b07cff' },
+    { key: 'goodbyeCardTheme', label: 'Goodbye card: colours behind your picture', kind: 'select', options: ['dark', 'light', 'midnight', 'sunset', 'forest', 'ocean', 'candy'], default: 'dark' },
     { key: 'goodbyeEnabled', label: 'Send goodbye messages', kind: 'toggle', default: false },
     { key: 'goodbyeChannel', label: 'Goodbye channel', kind: 'channel', default: null },
     { key: 'goodbyeMessage', label: 'Goodbye message ({username} {server} {count})', kind: 'text', max: 1900, default: '**{username}** has left the server.' },
@@ -230,6 +245,64 @@
     licence_refresh: () => LICENCE(),
     setup_data: async ({ copy }) => { await wait(500); const c = copy && S.old; S.data = c ? { servers: 2, modules_on: 31, settings: 148, records: 12840 } : { servers: 0, modules_on: 0, settings: 0, records: 0 }; if (!c) S.servers = []; return Object.assign({ how: c ? 'copied' : 'fresh', files: c ? 12 : 0 }, S.data); },
     images_view: async () => { await wait(80); return { welcome: S.pics?.welcome ? { has: true, name: 'welcome-1.png', size: 12345, preview: S.pics.welcome } : { has: false }, goodbye: S.pics?.goodbye ? { has: true, name: 'goodbye-1.png', size: 12345, preview: S.pics.goodbye } : { has: false } }; },
+    // an approximation of the picture (the real one is drawn by the program); enough to try the screen
+    greeting_preview: async ({ guild, kind, tried }) => {
+      await wait(60);
+      const t = (x) => String(x || '').replace(/\{username\}/g, 'Alex').replace(/\{server\}/g, 'Ghost Town').replace(/\{count\}/g, '123').replace(/\{user\}/g, '@Alex');
+      const bg = { dark: ['#151a26', '#0f131c'], light: ['#f6f8fc', '#e4e9f2'], midnight: ['#0b1030', '#1d0b33'], sunset: ['#3b1630', '#5c2a14'], forest: ['#0e2a1b', '#17331f'], ocean: ['#0a2338', '#063a40'], candy: ['#3a1838', '#24194a'] }[tried.theme] || ['#0b1030', '#1d0b33'];
+      const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bg[0]}"/><stop offset="1" stop-color="${bg[1]}"/></linearGradient></defs><rect width="1000" height="360" rx="28" fill="url(#g)"/><circle cx="500" cy="118" r="80" fill="${tried.accent || '#6b93ff'}"/><text x="500" y="252" font-size="46" font-weight="800" fill="#fff" text-anchor="middle" font-family="sans-serif">${esc(t(tried.title))}</text><text x="500" y="298" font-size="24" fill="#cbd" text-anchor="middle" font-family="sans-serif">${esc(t(tried.line))}</text><rect y="346" width="1000" height="14" fill="${tried.accent || '#6b93ff'}"/></svg>`;
+      return { text: t(tried.message), image: tried.look === 'card' ? 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg))) : null, has_picture: !!(S.pics && S.pics[kind]) };
+    },
+    setup_view: async () => {
+      await wait(80);
+      const tree = (s) => s.map(([name, priv, ch]) => ({ name, private: priv, channels: ch.map(([n, v, ro, pr]) => ({ name: n, voice: !!v, read_only: !!ro, private: !!pr })) }));
+      const community = tree([['Info', false, [['welcome', 0, 1], ['rules', 0, 1], ['announcements', 0, 1]]], ['Community', false, [['general'], ['introductions'], ['media'], ['bot-commands'], ['suggestions']]], ['Voice', false, [['General', 1], ['Music', 1], ['Chill', 1]]], ['Support', false, [['open-a-ticket', 0, 1]]], ['Staff', true, [['staff-chat', 0, 0, 1], ['mod-log', 0, 0, 1], ['server-log', 0, 0, 1], ['ticket-log', 0, 0, 1]]]]);
+      return { fixes: [['connect', 'Connect these channels'], ['empty', 'Remove the empty categories'], ['everyone', 'Take these away from everyone'], ['logs', 'Add a logs area']], scan: S.scan || null, last: S.lastSetup || null,
+        layouts: [{ id: 'community', name: 'Community', about: 'A friendly general server with info, chat, voice, tickets and a staff area.', roles: ['Admin', 'Moderator'], channels: 15, tree: community, modules: ['Moderation', 'Welcome', 'Levels', 'Tickets'] },
+          { id: 'gaming', name: 'Gaming', about: 'Looking-for-group, clips, squad voice rooms and everything in Community.', roles: ['Admin', 'Moderator'], channels: 19, tree: community, modules: ['Moderation', 'Welcome', 'Levels', 'Tickets', 'Party finder'] },
+          { id: 'small', name: 'Small group of friends', about: 'Just the basics, kept simple.', roles: ['Admin', 'Moderator'], channels: 6, tree: tree([['Text', false, [['general'], ['memes']]], ['Voice', false, [['Hangout', 1]]]]), modules: ['Moderation', 'Welcome', 'Levels'] }] };
+    },
+    setup_run: async ({ step, what }) => {
+      await wait(150);
+      if (step === 'scan') setTimeout(() => { S.scan = { at: Date.now(), channels: 24, roles: 9, findings: [
+        { id: 'everyone', level: 'warn', title: 'Everyone has powers they should not', detail: 'The @everyone role can: Mention @everyone, Manage Messages. Anyone who joins gets these.', fix: 'everyone' },
+        { id: 'logs', level: 'warn', title: 'No moderation log', detail: 'Warnings, bans and timeouts have nowhere to be written down. Add a staff-only logs area.', fix: 'logs' },
+        { id: 'connect', level: 'tip', title: '2 channels the bot is not using yet', detail: '#welcome looks like the welcome channel; #introductions looks like the introductions channel. Connect them so the bot posts there.', fix: 'connect' },
+        { id: 'empty', level: 'tip', title: '1 empty category', detail: 'Old Stuff has nothing in it. They only add clutter to the channel list.', fix: 'empty' },
+        { id: 'quiet', level: 'tip', title: '2 channels with no messages for 3 months', detail: '#old-news, #test. Archive or delete the ones nobody uses.', fix: null }] }; }, 1200);
+      else S.lastSetup = null, setTimeout(() => { S.lastSetup = { at: Date.now(), what: step, text: step === 'build' ? 'Added 2 roles and 15 channels. Welcome messages → #welcome; Moderation log → #mod-log; Turned on Moderation' : 'Done.' }; if (step === 'fix') { S.scan = { ...S.scan, at: Date.now(), findings: S.scan.findings.filter((f) => f.fix !== what) }; } }, 1200);
+    },
+    eclipse_view: async () => { await wait(60); return { cards: 14, here: 31, picked: 9, auto: true, presence: false }; },
+    commands_guide: async () => ({ groups: [], modules: [
+      { id: 'moderation', name: 'Moderation', about: 'Warn, time out, kick and ban, with a history for every member.', commands: [
+        { name: 'ban', path: '/mod → ban', about: 'Ban a user', staff: false, note: null, options: [{ name: 'user', about: 'Who', required: true, takes: 'a member' }, { name: 'reason', about: 'Why', required: false, takes: 'text' }], subs: [] }] },
+      { id: 'member-management', name: 'Welcome', about: 'Welcome and goodbye messages with a picture.', commands: [
+        { name: 'images', path: '/server → images', about: "The server's picture gallery", staff: true, note: 'Every picture saved for the bot lives here so it can be used again.', options: [], subs: [{ name: 'list', about: 'See the saved pictures', staff: false, options: [] }, { name: 'use', about: 'Use a saved picture', staff: false, options: [{ name: 'number', about: 'Its number', required: true, takes: 'a whole number from 1 to 60' }] }] }] },
+    ] }),
+    gallery_view: async () => {
+      await wait(80);
+      const list = (S.gallery ||= []);
+      const slots = [['welcome', 'Welcome message'], ['goodbye', 'Goodbye message'], ['rank', 'Rank card background for everyone']];
+      return { max: 60, slots, pictures: list.map((p) => ({ id: p.id, name: p.name, size: p.size, at: p.at, preview: p.data, uses: slots.map((x) => x[0]).filter((k) => (k === 'rank' ? S.rankBg : S.pics?.[k]) === p.data) })) };
+    },
+    gallery_add: async ({ name, data }) => {
+      await wait(120);
+      if (!/\.(png|jpe?g|gif|webp)$/i.test(name)) throw new Error('Use a PNG, JPG, GIF or WebP picture.');
+      const list = (S.gallery ||= []);
+      if (list.length >= 60) throw new Error('The gallery is full (60 pictures). Remove one first.');
+      const id = `${Date.now()}-${list.length}.png`;
+      list.push({ id, name: name.replace(/\.[^.]+$/, ''), size: Math.round(data.length * 0.75), at: Date.now(), data });
+      return id;
+    },
+    gallery_rename: async ({ id, name }) => { await wait(60); const p = (S.gallery || []).find((x) => x.id === id); if (!p) throw new Error('That picture is not in the gallery.'); p.name = name; },
+    gallery_remove: async ({ id }) => { await wait(60); S.gallery = (S.gallery || []).filter((x) => x.id !== id); },
+    gallery_use: async ({ id, slot }) => {
+      await wait(80);
+      const p = (S.gallery || []).find((x) => x.id === id); if (!p) throw new Error('That picture is not in the gallery.');
+      if (slot === 'rank') S.rankBg = p.data; else (S.pics ||= {})[slot] = p.data;
+    },
+    gallery_stop: async ({ slot }) => { await wait(60); if (slot === 'rank') S.rankBg = null; else if (S.pics) delete S.pics[slot]; },
     greeting_image_set: async ({ kind, name, data }) => { await wait(150); if (!/\.(png|jpe?g|gif|webp)$/i.test(name)) throw new Error('Use a PNG, JPG, GIF or WebP picture.'); (S.pics ||= {})[kind] = data; },
     greeting_image_clear: async ({ kind }) => { await wait(80); (S.pics ||= {})[kind] = null; },
     critters_view: async () => { await wait(80); return { characters: (S.critters ||= [{ id: 'mister-nine', name: 'Mister Nine', element: 'fire', rarity: 'rare', hp: 80, atk: 70, def: 60, spd: 90, picture: null }]), types: [['🔥 Fire', 'fire'], ['💧 Water', 'water'], ['🍃 Leaf', 'leaf'], ['⚡ Spark', 'spark']], rarities: [['Common', 'common'], ['Rare', 'rare'], ['Legendary', 'legendary']], most: 200 }; },
@@ -300,6 +373,7 @@
     inactive_kick: async ({ ids }) => { await wait(300); const gone = IN.snapshot.rows.filter((r) => ids.includes(r.id)); IN.snapshot.rows = IN.snapshot.rows.filter((r) => !ids.includes(r.id)); IN.log.unshift({ at: Date.now(), by: '1', count: gone.length, how: 'launcher', members: gone.map((g) => ({ id: g.id, name: g.name })) }); return ids.length; },
     inactive_keep: async ({ user, keep }) => { await wait(100); if (keep) { IN.keeps.unshift({ id: user, at: Date.now() }); IN.snapshot.rows = IN.snapshot.rows.filter((r) => r.id !== user); } else IN.keeps = IN.keeps.filter((k) => k.id !== user); },
     economy: async () => { await wait(120); return EC; },
+    treasury_add: async ({ amount, note }) => { await wait(200); if (!(amount > 0)) throw new Error('Type an amount from 1 to 1,000,000,000,000.'); EC.treasury.balance += amount; EC.treasury.collected += amount; EC.log.unshift({ at: Date.now(), delta: amount, kind: 'staff', note }); return EC.treasury.balance; },
     treasury_give: async ({ amount, reason }) => { await wait(200); if (!reason) throw new Error('Give a reason: it is kept in the treasury\'s record.'); if (amount > EC.treasury.balance) throw new Error('The treasury only has ' + EC.treasury.balance.toLocaleString() + ' 🪙.'); EC.treasury.balance -= amount; EC.treasury.paid_out += amount; EC.log.unshift({ at: Date.now(), delta: -amount, kind: 'grant', user: '700000000000000001', note: reason }); return EC.treasury.balance; },
     members_lookup: async ({ ids }) => { await wait(60); const out = {}; for (const id of ids) { const m = PEOPLE.find((x) => x.id === id); if (m) out[id] = m.name; } return out; },
     members_search: async ({ q }) => { await wait(80); const s = String(q || '').toLowerCase(); return PEOPLE.filter((m) => !m.bot && m.name.toLowerCase().includes(s)).slice(0, 12); },

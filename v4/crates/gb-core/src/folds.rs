@@ -19,7 +19,7 @@ pub const GROUPS: &[(&str, &str, &[&str])] = &[
     ("me", "Your profile, birthday, time zone and system", &["profile", "introduce", "birthday", "afk", "timezone", "id", "plural"]),
     ("social", "Marriage, families, roleplay, quotes and looking for a group", &["marry", "family", "rp", "quote", "party", "highlight"]),
     ("voice", "Voice rooms and text-to-speech", &["tts", "room", "voicehub"]),
-    ("server", "Server setup and tools (staff)", &["greeting", "verify", "deadchat", "announce", "suggestion", "starboard", "feed", "minecraft", "webhook", "notifications", "backup", "invites", "logs", "say", "sticky", "botnews", "clips", "tags"]),
+    ("server", "Server setup and tools (staff)", &["greeting", "images", "setup", "verify", "deadchat", "announce", "suggestion", "starboard", "feed", "minecraft", "webhook", "notifications", "backup", "invites", "logs", "say", "sticky", "botnews", "clips", "tags"]),
 ];
 
 fn foldable(c: &CommandSpec) -> bool {

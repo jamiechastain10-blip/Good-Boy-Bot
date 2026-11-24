@@ -172,3 +172,21 @@
 :root[data-look="pixel"] .stat span,:root[data-look="pixel"] .stat small,:root[data-look="pixel"] .saved,:root[data-look="pixel"] .confirm-q{font-size:19px}
 :root[data-look="pixel"] .case .muted,:root[data-look="pixel"] .tfoot,:root[data-look="pixel"] .hint{font-size:19px}
 :root[data-look="pixel"] .gbm small,:root[data-look="pixel"] .gbm .gbm-muted{font-size:18px}
+
+/* The menu is taller than a short window, so it scrolls (ui.css) and gets tighter as the window gets shorter, so on a tall
+   screen it fits whole and nothing is cut off. The phone layout (a row along the edge) is not touched. */
+@media (min-width: 701px) and (max-height: 1600px) {
+  :root[data-look="pixel"] .side { padding: 12px 10px; gap: 2px; }
+  :root[data-look="pixel"] .nav { padding: 6px 10px; border-width: 3px; }
+  :root[data-look="pixel"] .navgroup { padding: 8px 12px 2px; }
+  :root[data-look="pixel"] .brand { padding: 2px 6px 8px; }
+  :root[data-look="pixel"] .pup-corner .dog { width: 56px; }
+}
+@media (min-width: 701px) and (max-height: 1250px) {
+  :root[data-look="pixel"] .nav { padding: 4px 10px; border-width: 2px; }
+  :root[data-look="pixel"] .pup-corner { display: none; }
+}
+
+@media (min-width: 1800px) { :root[data-look="pixel"] .page { max-width: 1500px; } }
+:root[data-look="pixel"] button.chip{cursor:pointer;padding:4px 10px}
+:root[data-look="pixel"] button.chip[aria-pressed="true"]{background:var(--accent);color:var(--dark)}

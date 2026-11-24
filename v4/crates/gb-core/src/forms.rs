@@ -23,7 +23,7 @@ const NS: &str = "gbc";
 const DRAFT_MS: i64 = 15 * 60_000;
 
 /// Commands (and parts) that open a popup of their own, as in Good Boy 3. Empty until those popups are rebuilt.
-pub const OWN_POPUP: &[(&str, &str)] = &[("ticket", "panel"), ("ticket", "setup"), ("warn", "*"), ("rolemenu", "create"), ("greeting", "*"), ("verify", "setup"), ("introduce", "*"), ("pay", "*"), ("economy-admin", "*"), ("remind", "team"), ("giveaway", "start"), ("id", "edit"), ("party", "create"), ("deadchat", "*"), ("poll", "create"), ("suggest", "*"), ("suggestion", "edit"), ("announce", "*")];
+pub const OWN_POPUP: &[(&str, &str)] = &[("ticket", "panel"), ("ticket", "setup"), ("warn", "*"), ("rolemenu", "create"), ("greeting", "*"), ("images", "add"), ("verify", "setup"), ("introduce", "*"), ("pay", "*"), ("economy-admin", "*"), ("remind", "team"), ("giveaway", "start"), ("id", "edit"), ("party", "create"), ("deadchat", "*"), ("poll", "create"), ("suggest", "*"), ("suggestion", "edit"), ("announce", "*")];
 pub fn owns_popup(name: &str, sub: Option<&str>) -> bool {
     OWN_POPUP.iter().any(|(n, s)| *n == name && (*s == "*" || Some(*s) == sub))
 }

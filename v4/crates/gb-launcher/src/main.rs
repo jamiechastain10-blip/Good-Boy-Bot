@@ -158,6 +158,36 @@ fn images_view(desk: Held, guild: String) -> Result<Value, String> {
     desk.images_view(&guild)
 }
 #[tauri::command]
+async fn greeting_preview(desk: Held<'_>, guild: String, kind: String, tried: Value) -> Result<Value, String> {
+    // drawing a picture takes a moment, so it is kept off the window's own thread
+    let desk = desk.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || desk.greeting_preview(&guild, &kind, &tried)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn setup_view(desk: Held, guild: String) -> Result<Value, String> { desk.setup_view(&guild) }
+#[tauri::command]
+fn setup_run(desk: Held, guild: String, step: String, what: Option<String>) -> Result<(), String> { desk.setup_run(&guild, &step, &what.unwrap_or_default()) }
+#[tauri::command]
+fn eclipse_view(desk: Held, guild: String) -> Result<Value, String> { desk.eclipse_view(&guild) }
+#[tauri::command]
+fn commands_guide(desk: Held) -> Value { desk.commands_guide() }
+#[tauri::command]
+async fn gallery_view(desk: Held<'_>, guild: String) -> Result<Value, String> {
+    // small previews are drawn the first time, so it is kept off the window's own thread
+    let desk = desk.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || desk.gallery_view(&guild)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn gallery_add(desk: Held, guild: String, name: String, data: String) -> Result<String, String> { desk.gallery_add(&guild, &name, &data) }
+#[tauri::command]
+fn gallery_rename(desk: Held, guild: String, id: String, name: String) -> Result<(), String> { desk.gallery_rename(&guild, &id, &name) }
+#[tauri::command]
+fn gallery_remove(desk: Held, guild: String, id: String) -> Result<(), String> { desk.gallery_remove(&guild, &id) }
+#[tauri::command]
+fn gallery_use(desk: Held, guild: String, id: String, slot: String) -> Result<(), String> { desk.gallery_use(&guild, &id, &slot) }
+#[tauri::command]
+fn gallery_stop(desk: Held, guild: String, slot: String) -> Result<(), String> { desk.gallery_stop(&guild, &slot) }
+#[tauri::command]
 fn greeting_image_set(desk: Held, guild: String, kind: String, name: String, data: String) -> Result<(), String> {
     desk.greeting_image_set(&guild, &kind, &name, &data)
 }
@@ -218,6 +248,10 @@ fn inactive_keep(desk: Held, guild: String, user: String, keep: bool) -> Result<
 #[tauri::command]
 fn economy(desk: Held, guild: String) -> Result<Value, String> {
     desk.economy(&guild)
+}
+#[tauri::command]
+fn treasury_add(desk: Held, guild: String, amount: i64, note: Option<String>) -> Result<i64, String> {
+    desk.treasury_add(&guild, amount, &note.unwrap_or_default())
 }
 #[tauri::command]
 fn treasury_give(desk: Held, guild: String, user: String, amount: i64, reason: String) -> Result<i64, String> {
@@ -417,7 +451,7 @@ fn main() {
         }))
         .manage(desk)
         .invoke_handler(tauri::generate_handler![
-            overview, update_status, update_check, update_install, whatsnew, announce_restart, brand_status, brand_keep, brand_custom, prefs_set, licence_set, licence_refresh, setup_data, pulse, panel, panel_action, permissions, permission_set, role_menus, role_menu_delete, health, v3_status, v3_folder_set, v3_recopy, v3_check, token_test, token_save, token_forget, helpers_list, helper_add, helper_remove, secret_save, secret_forget, bot_start, bot_stop, bot_restart, servers, module_set, settings, setting_set, off_channels_set, ticket_view, ticket_transcript, commands_view, directory, command_run, images_view, greeting_image_set, greeting_image_clear, critters_view, critter_save, critter_remove, dashboard, cases, tickets, music_api, inactive_scan, inactive_view, inactive_kick, inactive_keep, economy, treasury_give, members_lookup, members_search, leavers, leaver_forget, ticket_action, shop, shop_save, shop_remove, boards, staff_action, activity, economy_reset, post_panel, panel_preview, backup_now, open
+            overview, update_status, update_check, update_install, whatsnew, announce_restart, brand_status, brand_keep, brand_custom, prefs_set, licence_set, licence_refresh, setup_data, pulse, panel, panel_action, permissions, permission_set, role_menus, role_menu_delete, health, v3_status, v3_folder_set, v3_recopy, v3_check, token_test, token_save, token_forget, helpers_list, helper_add, helper_remove, secret_save, secret_forget, bot_start, bot_stop, bot_restart, servers, module_set, settings, setting_set, off_channels_set, ticket_view, ticket_transcript, commands_view, directory, command_run, images_view, commands_guide, setup_view, setup_run, eclipse_view, gallery_view, gallery_add, gallery_rename, gallery_remove, gallery_use, gallery_stop, greeting_preview, greeting_image_set, greeting_image_clear, critters_view, critter_save, critter_remove, dashboard, cases, tickets, music_api, inactive_scan, inactive_view, inactive_kick, inactive_keep, economy, treasury_add, treasury_give, members_lookup, members_search, leavers, leaver_forget, ticket_action, shop, shop_save, shop_remove, boards, staff_action, activity, economy_reset, post_panel, panel_preview, backup_now, open
         ])
         .setup(move |_app| {
             let prefs = at_start.prefs();

@@ -19,10 +19,12 @@ pub static SETTINGS: &[Def] = &[
     Def { key: "xpCooldownSeconds", label: "Seconds between XP gains", kind: Kind::Number { min: 5, max: 3600 }, default: Fallback::Int(60) },
     Def { key: "noXpChannels", label: "No XP in these channels or categories", kind: Kind::List, default: Fallback::None },
     Def { key: "levelUpEnabled", label: "Announce level-ups", kind: Kind::Toggle, default: Fallback::Bool(true) },
+    Def { key: "levelUpStyle", label: "Level-up style: ping (message that pings them), quiet (same message, no ping), card (their rank card, no ping)", kind: Kind::Select(&["ping", "quiet", "card"]), default: Fallback::Str("ping") },
     Def { key: "levelUpChannel", label: "Level-up channel (empty = where they chatted)", kind: Kind::Channel, default: Fallback::None },
     Def { key: "levelUpMessage", label: "Level-up message", kind: Kind::Text { max_len: 2000 }, default: Fallback::Str(DEFAULT_LEVEL_UP) },
     Def { key: "rankCards", label: "/rank shows a picture card (text if pictures are off)", kind: Kind::Toggle, default: Fallback::Bool(true) },
     Def { key: "pixelPictures", label: "Draw profile pictures as pixel art on rank cards", kind: Kind::Toggle, default: Fallback::Bool(true) },
+    Def { key: "cardDefaultBackground", label: "Rank card background for everyone who has not chosen their own (set from the Images gallery)", kind: Kind::Text { max_len: 80 }, default: Fallback::Str("") },
     Def { key: "cardBackgrounds", label: "Members can put their own picture behind their rank card", kind: Kind::Toggle, default: Fallback::Bool(true) },
     Def { key: "stackRewards", label: "Keep earlier level rewards (off = only the newest)", kind: Kind::Toggle, default: Fallback::Bool(true) },
     Def { key: "reactionXp", label: "Reaction XP: members earn a little XP for reacting to other people's messages", kind: Kind::Toggle, default: Fallback::Bool(true) },
@@ -127,7 +129,9 @@ pub(crate) fn level_up(db: &Db, settings: &Settings, g: &str, who: &crate::Membe
     db.seen().note(g, "level", &format!("{} reached level {level}", if who.name.is_empty() { "A member" } else { who.name.as_str() }));
     if settings.bool(g, MODULE, "levelUpEnabled") {
         let channel = settings.text(g, MODULE, "levelUpChannel").unwrap_or_else(|| here.to_string());
-        actions.push(Action::Send { channel, card: level_up_card(db, settings, g, who, level, total_xp), ping: vec![who.id.clone()], roles: Vec::new() });
+        let style = settings.text(g, MODULE, "levelUpStyle").unwrap_or_else(|| "ping".into());
+        let ping = if style == "ping" { vec![who.id.clone()] } else { Vec::new() };
+        actions.push(Action::Send { channel, card: level_up_card(db, settings, g, who, level, total_xp, &style), ping, roles: Vec::new() });
     }
     if let Some(roles) = rewards(db, settings, g, &who.roles, level) {
         actions.push(Action::Roles { user: who.id.clone(), add: roles.0, remove: roles.1, reason: format!("Level {level} reward") });
@@ -154,14 +158,26 @@ pub(crate) fn grant(db: &Db, g: &str, user: &str, change: impl FnOnce(&mut serde
     gained.map(|_| (level_of(xp).level, level_of(total).level, total))
 }
 
-fn level_up_card(db: &Db, settings: &Settings, g: &str, who: &crate::Member, level: u32, total_xp: i64) -> Card {
+fn level_up_card(db: &Db, settings: &Settings, g: &str, who: &crate::Member, level: u32, total_xp: i64, style: &str) -> Card {
     let now = level_of(total_xp);
+    if style == "card" {
+        // their own rank card, as /rank would show it, with a line saying who levelled up (no mention: it must not ping)
+        let rec = db.get().data_get(g, MODULE, &format!("user:{}", who.id)).ok().flatten().unwrap_or(Value::Null);
+        let pos = db.get().xp_rank(g, &who.id).ok().flatten().map(|(r, _)| r as i64);
+        let mut card = Card::new(Area::General).title(format!("{} reached level {level}", who.name)).picture(who.avatar.clone())
+            .line(format!("{}\n{} / {} XP to level {}", bar16(now.into, now.needed), now.into, now.needed, level + 1));
+        if settings.bool(g, MODULE, "rankCards") {
+            let style = db.get().data_get(g, MODULE, &format!("card:{}", who.id)).ok().flatten().unwrap_or(Value::Null);
+            card.art = Some(rank_art(settings, g, who, total_xp, rec["messages"].as_i64().unwrap_or(0), pos, &style));
+        }
+        return card.button(format!("rank:{}", who.id), "View rank", ButtonStyle::Plain);
+    }
     let custom = settings.text(g, MODULE, "levelUpMessage").filter(|t| t != DEFAULT_LEVEL_UP);
     let mut card = Card::new(Area::General).picture(who.avatar.clone());
     card = match custom {
         // the server wrote its own message: it is shown as they wrote it
         Some(text) => card.line(text.replace("{user}", &format!("<@{}>", who.id)).replace("{username}", &who.name).replace("{level}", &level.to_string())),
-        None => card.title(format!("{} reached level {level}", who.name)).line(format!("🎉 <@{}>", who.id)),
+        None => card.title(format!("{} reached level {level}", who.name)).line(if style == "quiet" { format!("🎉 **{}**", who.name) } else { format!("🎉 <@{}>", who.id) }),
     };
     if let Ok(Some((rank, total))) = db.get().xp_rank(g, &who.id) {
         card = card.line(format!("Rank {} of {} in the server", group(rank as i64), group(total as i64)));
@@ -182,6 +198,17 @@ pub(crate) fn rewards(db: &Db, settings: &Settings, guild: &str, has: &[String],
     if add.is_empty() && remove.is_empty() { None } else { Some((add, remove)) }
 }
 
+/// The picture rank card for a member, in the style they chose (theme, colours, background).
+pub(crate) fn rank_art(settings: &Settings, g: &str, who: &crate::Member, xp: i64, messages: i64, pos: Option<i64>, style: &Value) -> crate::Art {
+    let level = level_of(xp);
+    let text = |k: &str| style[k].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+    crate::Art::Rank(crate::RankArt {
+        name: who.name.clone(), avatar_url: who.avatar.clone().map(|a| a.replace("size=128", "size=256")), level: level.level as i64, into: level.into, needed: level.needed,
+        rank: pos, xp, messages, accent: text("accent"), accent2: text("accent2"), theme: text("theme"),
+        background: if settings.bool(g, MODULE, "cardBackgrounds") { text("background").or_else(|| settings.text(g, MODULE, "cardDefaultBackground").filter(|s| !s.is_empty())) } else { None },
+        pixel: settings.bool(g, MODULE, "pixelPictures"),
+    })
+}
 /// /rank: a member's level, place and progress.
 /// Rank card themes, as Good Boy 3 offers them: (id, label).
 pub const CARD_THEMES: &[(&str, &str)] = &[("dark", "Dark"), ("light", "Light"), ("midnight", "Midnight"), ("sunset", "Sunset"), ("forest", "Forest"), ("ocean", "Ocean"), ("candy", "Candy")];
@@ -220,13 +247,7 @@ pub fn rank(db: &Db, settings: &Settings, ev: &CommandEvent) -> Action {
         .line(format!("**Rank** {} · **Total XP** {xp} · **Messages** {messages} · **Reputation** {rep}", pos.map(|p| format!("#{p}")).unwrap_or_else(|| "—".into())));
     if settings.bool(&ev.guild, MODULE, "rankCards") {
         let style = store.data_get(&ev.guild, MODULE, &format!("card:{}", who.id)).ok().flatten().unwrap_or(Value::Null);
-        let text = |k: &str| style[k].as_str().filter(|s| !s.is_empty()).map(str::to_string);
-        card.art = Some(crate::Art::Rank(crate::RankArt {
-            name: who.name.clone(), avatar_url: who.avatar.clone().map(|a| a.replace("size=128", "size=256")), level: level.level as i64, into: level.into, needed: level.needed,
-            rank: pos, xp, messages, accent: text("accent"), accent2: text("accent2"), theme: text("theme"),
-            background: if settings.bool(&ev.guild, MODULE, "cardBackgrounds") { text("background") } else { None },
-            pixel: settings.bool(&ev.guild, MODULE, "pixelPictures"),
-        }));
+        card.art = Some(rank_art(settings, &ev.guild, who, xp, messages, pos, &style));
         // your own card can be styled
         if who.id == ev.member.id { card = card.button_with(format!("rankstyle:open:{}", ev.member.id), "Customise", ButtonStyle::Plain, Some("🎨".into())); }
     }

@@ -186,7 +186,7 @@ window.GBGroups = {
   me: ['profile', 'introduce', 'birthday', 'afk', 'timezone', 'id', 'plural'],
   social: ['marry', 'family', 'rp', 'quote', 'party', 'highlight'],
   voice: ['tts', 'room', 'voicehub'],
-  server: ['greeting', 'verify', 'deadchat', 'announce', 'suggestion', 'starboard', 'feed', 'minecraft', 'webhook', 'notifications', 'backup', 'invites', 'logs', 'say', 'sticky', 'botnews', 'clips', 'tags'],
+  server: ['greeting', 'images', 'setup', 'verify', 'deadchat', 'announce', 'suggestion', 'starboard', 'feed', 'minecraft', 'webhook', 'notifications', 'backup', 'invites', 'logs', 'say', 'sticky', 'botnews', 'clips', 'tags'],
 };
 (function () {
   const group = {};

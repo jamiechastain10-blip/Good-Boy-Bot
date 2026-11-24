@@ -43,6 +43,8 @@
     lists: 'M8 6h13M8 12h13M8 18h13M3.500 6h.01M3.500 12h.01M3.500 18h.01',
     permissions: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v2',
     commands: 'M4 6l6 6-6 6M12 18h8',
+    setup: 'M14.700 6.300a1 1 0 0 0 0 1.400l1.600 1.600a1 1 0 0 0 1.400 0l3.770-3.770a6 6 0 0 1-7.940 7.940l-6.910 6.910a2.120 2.120 0 0 1-3-3l6.910-6.910a6 6 0 0 1 7.940-7.940z',
+    images: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.500 9.500h.01',
     rolemenus: 'M20.600 13.400 13.400 20.600a2 2 0 0 1-2.800 0L3 13V3h10l7.600 7.600a2 2 0 0 1 0 2.800zM7.500 7.500h.01',
     checkup: 'M3 12h4l2-5 4 10 2-5h6',
     switch: 'M7 7h11l-3-3M17 17H6l3 3',
@@ -66,6 +68,8 @@
     automod: ['########', '#......#', '#.#..#.#', '#..##..#', '#..##..#', '.#.##.#.', '..#..#..', '...##...'],
     economy: ['..####..', '.######.', '##.##.##', '##.##...', '.######.', '...##.##', '.######.', '..####..'],
     shop: ['..####..', '.#....#.', '########', '#......#', '#......#', '#......#', '#......#', '########'],
+    setup: ['..####..', '.##..##.', '.##.....', '..####..', '.....##.', '.##..##.', '..####..', '........'],
+    images: ['########', '#......#', '#.#....#', '#......#', '#...##.#', '#..####.', '########', '........'],
     rolemenus: ['..#####.', '.######.', '########', '###..###', '###..###', '.######.', '..####..', '........'],
     lists: ['........', '##.#####', '........', '##.#####', '........', '##.#####', '........', '........'],
     commands: ['........', '##......', '.##.....', '..##....', '.##.....', '##..####', '........', '........'],
@@ -750,7 +754,7 @@
 
 
   // ---- Economy: the treasury, taxes and the second currency
-  const KIND_WORDS = { 'tax:pay': 'Tax on payments', 'tax:income': 'Tax on daily and work', 'tax:withdraw': 'Bank withdrawal fees', 'tax:winnings': 'Tax on game winnings', shop: 'Shop sales', 'fee:exchange': 'Exchange fees', grant: 'Paid out', donation: 'Gifts from members' };
+  const KIND_WORDS = { 'tax:pay': 'Tax on payments', 'tax:income': 'Tax on daily and work', 'tax:withdraw': 'Bank withdrawal fees', 'tax:winnings': 'Tax on game winnings', shop: 'Shop sales', 'fee:exchange': 'Exchange fees', grant: 'Paid out', donation: 'Gifts from members', staff: 'Added by staff' };
   function pageEconomy() {
     return withServer('Economy', 'The treasury, taxes and the second currency', async (guild) => {
       const box = h('div', { class: 'stack big' });
@@ -777,6 +781,18 @@
         return h('div', { class: 'card' }, h('h3', {}, 'Pay out from the treasury'), h('p', { class: 'muted small' }, 'Prizes, event rewards, refunds. The reason is kept in the record. It never pays more than it has.'),
           h('div', { class: 'grid2' }, f('Member', pick.el), f('Amount', amount)), f('Reason', reason), h('div', { class: 'btns' }, go));
       }
+      function addCoins() {
+        const amount = h('input', { type: 'text', placeholder: 'e.g. 50000' });
+        const note = h('input', { type: 'text', maxlength: 100, placeholder: 'What it is for (optional)' });
+        const go = h('button', { class: 'btn', type: 'button' }, 'Add to the treasury');
+        go.addEventListener('click', () => busy(go, async () => {
+          const total = await call('treasury_add', { guild, amount: Number(String(amount.value).replace(/[, ]/g, '')) || 0, note: note.value });
+          toast(`Added. The treasury has ${n(total)}.`); amount.value = ''; note.value = ''; await reload();
+        }));
+        const f = (l, el) => h('div', { class: 'field' }, h('label', {}, l), el);
+        return h('div', { class: 'card' }, h('h3', {}, 'Add coins to the treasury'), h('p', { class: 'muted small' }, 'Puts new coins in the treasury, for prizes and rewards you pay out later. It shows in the record as added by staff.'),
+          h('div', { class: 'grid2' }, f('Amount', amount), f('Note', note)), h('div', { class: 'btns' }, go));
+      }
       function paint() {
         const t = v.treasury;
         const kinds = (rows) => rows.length ? h('div', { class: 'list' }, rows.map(([k, x]) => h('div', {}, h('span', {}, KIND_WORDS[k] || k), h('b', {}, `${x < 0 ? '−' : '+'}${n(Math.abs(x))}`)))) : h('p', { class: 'muted' }, 'Nothing yet.');
@@ -794,7 +810,7 @@
             v.rates.gemsEnabled ? h('div', { class: 'grid2' }, num('exchangeRate', `${v.rates.currencyName || 'Coins'} for one ${v.rates.gemName || 'gem'}`, null, 1000000), num('exchangeFee', 'Exchange fee, either way (%)', 'Goes to the treasury')) : null,
             v.rates.gemsEnabled && v.top_gems.length ? h('div', { class: 'list' }, v.top_gems.map((g, i) => h('div', {}, h('span', {}, `${i + 1}. ${who(g.user)}`), h('b', {}, `${n(g.gems)} ${v.rates.gemEmoji || ''}`)))) : null,
             h('p', { class: 'muted small' }, 'The name and emoji are in Modules > Money > Settings.')),
-          give(),
+          addCoins(), give(),
           h('div', { class: 'card' }, h('h3', {}, 'Record'), v.log.length ? h('div', { class: 'list' }, v.log.map((e) => h('div', { class: 'case' }, h('div', { class: 'text' }, h('b', {}, `${e.delta < 0 ? '−' : '+'}${n(Math.abs(e.delta))} · ${KIND_WORDS[e.kind] || e.kind}`), h('p', { class: 'muted small' }, [e.user ? who(e.user) : null, e.note].filter(Boolean).join(' · ') || ' ')), h('span', { class: 'muted small' }, when(e.at))))) : h('p', { class: 'muted' }, 'No taxes or fees collected yet.')));
       }
       paint();
@@ -843,6 +859,107 @@
   }
 
 
+  // ---- Images: every picture uploaded for the bot, kept in the server's gallery so it is saved and can be used again
+  function pageImages() {
+    return withServer('Images', 'Pictures saved for the bot, ready to use again', async (guild) => {
+      const box = h('div', { class: 'stack big' });
+      const draw = async () => {
+        const v = await call('gallery_view', { guild });
+        const slotName = Object.fromEntries(v.slots);
+        const input = h('input', { type: 'file', multiple: true, accept: 'image/png,image/jpeg,image/gif,image/webp', class: 'hidden-file', 'aria-label': 'Add pictures', onchange: async () => {
+          const files = [...input.files]; input.value = '';
+          let ok = 0; const bad = [];
+          for (const f of files) { try { const pic = await readPicture(f); await call('gallery_add', { guild, name: pic.name, data: pic.data }); ok++; } catch (e) { bad.push(`${f.name}: ${e.message || e}`); } }
+          if (ok) toast(ok === 1 ? 'Picture saved to the gallery.' : `${ok} pictures saved to the gallery.`);
+          if (bad.length) toast(bad.join(' · '), true);
+          await draw();
+        } });
+        const add = h('div', { class: 'row' }, h('div', {}, h('b', {}, `${v.pictures.length} of ${v.max} pictures`), h('p', { class: 'muted small' }, 'PNG, JPG, GIF or WebP, each under 8 MB. Pick as many as you like.')),
+          h('div', { class: 'btns' }, input, h('button', { class: 'btn', type: 'button', onclick: () => input.click() }, 'Add pictures')));
+        const using = v.slots.map(([id, label]) => [label, v.pictures.find((p) => p.uses.includes(id))]);
+        const where = h('div', { class: 'card' }, h('h3', {}, 'Where pictures are used'), h('div', { class: 'list' }, using.map(([label, p]) => h('div', {}, h('span', {}, label), h('span', { class: 'muted' }, p ? p.name : 'Nothing yet')))),
+          h('p', { class: 'muted small' }, 'Pick a picture below and choose where to use it. Welcome and goodbye pictures can also be designed on the Welcome module page. Characters have their own pictures on the Critters page.'));
+        const tile = (p) => {
+          const menu = h('select', { 'aria-label': `Use ${p.name} for`, onchange: async (e) => {
+            const slot = e.target.value; e.target.value = '';
+            if (!slot) return;
+            try { await call('gallery_use', { guild, id: p.id, slot }); toast(`${p.name} is now the ${slotName[slot].toLowerCase()}.`); await draw(); } catch (er) { toast(er.message || String(er), true); }
+          } }, h('option', { value: '' }, 'Use for…'), v.slots.map(([id, label]) => h('option', { value: id }, label)));
+          return h('div', { class: 'gtile' },
+            p.preview ? h('img', { src: p.preview, alt: p.name, loading: 'lazy' }) : h('div', { class: 'gnone muted' }, 'No preview'),
+            h('b', { class: 'gname', title: p.name }, p.name),
+            h('span', { class: 'muted small' }, `${p.size >= 1048576 ? (p.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(p.size / 1024)) + ' KB'} · ${when(p.at)}`),
+            p.uses.length ? h('div', { class: 'tags' }, p.uses.map((u) => h('span', { class: 'tag' }, slotName[u]))) : null,
+            h('div', { class: 'btns' }, menu,
+              h('button', { class: 'btn quiet small', type: 'button', onclick: (e) => busy(e.target, async () => {
+                const name = prompt('New name for this picture', p.name);
+                if (name === null || !name.trim()) return;
+                await call('gallery_rename', { guild, id: p.id, name }); await draw();
+              }) }, 'Rename'),
+              h('button', { class: 'btn quiet small', type: 'button', onclick: (e) => busy(e.target, async () => {
+                if (!confirm(`Delete ${p.name} from the gallery? Anywhere it is already in use keeps its own copy.`)) return;
+                await call('gallery_remove', { guild, id: p.id }); toast('Picture deleted.'); await draw();
+              }) }, 'Delete')));
+        };
+        box.replaceChildren(h('div', { class: 'card' }, add),
+          v.pictures.length ? h('div', { class: 'ggrid' }, [...v.pictures].reverse().map(tile)) : h('div', { class: 'card empty' }, h('h2', {}, 'No pictures yet'), h('p', { class: 'muted' }, 'Add pictures here, or with /images add in Discord. Everything you upload for the bot is kept here.')),
+          where);
+      };
+      await draw();
+      return [box];
+    });
+  }
+  // ---- Server setup: build a layout's roles and channels and connect them to the bot, or check a server that is already set up
+  function pageSetup() {
+    return withServer('Server setup', 'Build the roles and channels a server needs, or tidy the one you have', async (guild) => {
+      const box = h('div', { class: 'stack big' });
+      const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+      // the work happens in Discord and takes a little while: ask, then look every second or two for the answer
+      const run = async (btn, step, what, doneWhen, say) => {
+        const before = await call('setup_view', { guild });
+        await call('setup_run', { guild, step, what });
+        toast(say);
+        for (let k = 0; k < 40; k++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const v = await call('setup_view', { guild });
+          if (doneWhen(v, before)) { await draw(v); return v; }
+        }
+        toast('Still working. Look again in a moment.', true);
+        await draw();
+      };
+      const sel = { id: null };
+      const draw = async (given) => {
+        const v = given || await call('setup_view', { guild });
+        const scan = v.scan; const last = v.last;
+        const check = h('div', { class: 'card' }, h('div', { class: 'row' }, h('div', {}, h('h2', {}, 'Check my server'),
+            h('p', { class: 'muted small' }, scan ? `Last checked ${ago(scan.at)}: ${scan.channels} channels, ${scan.roles} roles.` : 'Looks for clutter, risky permissions and channels the bot is not using. Nothing changes until you press a Fix button.')),
+          h('div', { class: 'btns' }, h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.target, () => run(e.target, 'scan', '', (n, b) => n.scan && (!b.scan || n.scan.at > b.scan.at), 'Checking your server…')) }, scan ? 'Check again' : 'Check now'))),
+          scan ? (scan.findings.length ? h('div', { class: 'stack' }, scan.findings.map((f) => h('div', { class: 'finding ' + f.level },
+              h('div', {}, h('b', {}, (f.level === 'warn' ? '⚠️ ' : '💡 ') + f.title), h('p', { class: 'muted small' }, f.detail)),
+              f.fix ? h('button', { class: 'btn quiet small', type: 'button', onclick: (e) => busy(e.target, async () => {
+                const label = (v.fixes.find((x) => x[0] === f.fix) || [])[1] || 'Fix';
+                if (!confirm(`${label}?\n\n${f.title}\n${f.detail}`)) return;
+                await run(e.target, 'fix', f.fix, (n, b) => n.last && (!b.last || n.last.at > b.last.at), 'Working on it…');
+              }) }, (v.fixes.find((x) => x[0] === f.fix) || [])[1] || 'Fix') : null))) : h('p', { class: 'ok' }, '✅ Nothing to tidy. Your channels, roles and bot connections look good.')) : null);
+        const pick = (l) => h('button', { type: 'button', class: 'layout' + (sel.id === l.id ? ' on' : ''), 'aria-pressed': String(sel.id === l.id), onclick: () => { sel.id = l.id; draw(v); } },
+          h('b', {}, l.name), h('span', { class: 'muted small' }, l.about), h('span', { class: 'muted small' }, `${l.roles.length} roles · ${l.channels} channels`));
+        const chosen = v.layouts.find((l) => l.id === sel.id);
+        const tree = chosen ? h('div', { class: 'tree' }, chosen.tree.map((c) => h('div', {}, h('b', {}, (c.private ? '🔒 ' : '') + c.name), h('ul', {}, c.channels.map((ch) => h('li', {}, (ch.voice ? '🔊 ' : '# ') + ch.name, ch.private ? ' 🔒' : ch.read_only ? ' (read only)' : ''))))),
+          h('p', { class: 'muted small' }, `Roles: ${chosen.roles.join(', ')}. Turns on: ${chosen.modules.join(', ')}. Connects the welcome, log, ticket and suggestion channels, posts the rules and the ticket buttons.`)) : null;
+        const build = h('div', { class: 'card' }, h('h2', {}, 'Build a layout'),
+          h('p', { class: 'muted small' }, 'Pick one, look at what it adds, then build. It only adds what is missing and never changes or deletes anything you already have. The bot needs Manage Roles and Manage Channels.'),
+          h('div', { class: 'layouts' }, v.layouts.map(pick)), tree,
+          chosen ? h('div', { class: 'btns' }, h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.target, async () => {
+            if (!confirm(`Build the ${chosen.name} layout? It adds the roles and channels this server is missing, and connects them to the bot.`)) return;
+            await run(e.target, 'build', chosen.id, (n, b) => n.last && (!b.last || n.last.at > b.last.at), 'Building… this takes up to a minute.');
+          }) }, `Build the ${chosen.name} layout`)) : h('p', { class: 'muted small' }, 'Pick a layout to see what it would add.'));
+        const result = last ? h('div', { class: 'card' }, h('h3', {}, 'Last result'), h('p', {}, last.text), h('p', { class: 'muted small' }, `${last.what === 'build' ? 'Build' : last.what === 'error' ? 'Problem' : 'Fix'} · ${ago(last.at)}`)) : null;
+        box.replaceChildren(check, build, result);
+      };
+      await draw();
+      return [box];
+    });
+  }
   // ---- List pages (giveaways, custom commands, backups, top inviters, counting): what Good Boy 3's dashboard showed
   const LISTS = [['giveaways', 'Giveaways'], ['commands', 'Custom commands'], ['inviters', 'Top inviters'], ['counting', 'Counting'], ['backups', 'Backups']];
   function pageLists() {
@@ -1160,9 +1277,18 @@
   }
 
   // Modules as Good Boy 3's dashboard shows them: a grid of app tiles in groups, each opening its own page.
-  const MOD_CAT = { moderation: 0, support: 0, community: 1, 'member-management': 1, economy: 2, fun: 2, counting: 2, giveaways: 2, tags: 3, roles: 3, music: 4, reminders: 5, timezones: 5, altwatch: 0, plural: 1 };
-  const MOD_CATS = ['Safety & moderation', 'Community & levels', 'Fun & games', 'Messages & roles', 'Voice', 'Tools'];
-  const MOD_ICON = { moderation: '🛡️', support: '🎫', community: '⭐', 'member-management': '👋', economy: '🪙', fun: '🎲', counting: '🔢', giveaways: '🎉', tags: '📝', roles: '🏷️', music: '🎵', reminders: '⏰', timezones: '🕒', altwatch: '🕵️', plural: '🧩' };
+  const MOD_CATS = ['Safety & support', 'Welcome & members', 'Levels & stats', 'Money', 'Games & fun', 'Social & profiles', 'Roles & messages', 'Music & voice', 'Connections', 'Tools & backup'];
+  const MOD_CAT = { moderation: 0, altwatch: 0, modmail: 0, support: 0,
+    'member-management': 1, invites: 1, deadchat: 1,
+    community: 2, stats: 2, achievements: 2,
+    economy: 3,
+    fun: 4, games: 4, critters: 4, counting: 4, roleplay: 4, giveaways: 4,
+    eclipseid: 5, family: 5, plural: 5, partyfinder: 5, quotes: 5, timezones: 5,
+    roles: 6, tags: 6, messages: 6, engagement: 6, botnews: 6,
+    music: 7, voice: 7, tempvoice: 7,
+    integrations: 8, clips: 8,
+    reminders: 9, utility: 9, backup: 9 };
+  const MOD_ICON = { moderation: '🛡️', support: '🎫', modmail: '📬', altwatch: '🕵️', community: '⭐', 'member-management': '👋', invites: '🔗', deadchat: '💬', stats: '📊', achievements: '🏆', economy: '🪙', fun: '🎲', games: '🎮', critters: '🐾', counting: '🔢', roleplay: '🤗', giveaways: '🎉', eclipseid: '🪪', family: '👪', plural: '🧩', partyfinder: '🧭', quotes: '❝', timezones: '🕒', roles: '🏷️', tags: '📝', messages: '📣', engagement: '🗳️', botnews: '📰', music: '🎵', voice: '🗣️', tempvoice: '🔊', integrations: '🔌', clips: '🎬', reminders: '⏰', utility: '🧰', backup: '💾' };
   const TAB_OF = (kind) => (kind === 'channel' || kind === 'category' || kind === 'role' ? 'setup' : kind === 'toggle' || kind === 'select' || kind === 'colour' ? 'settings' : 'advanced');
   function modStatus(m) {
     if (m.needs_setup) return h('span', { class: 'mstatus warn' }, h('i'), 'Needs setup');
@@ -1195,18 +1321,21 @@
     return [body];
   }
   function moduleGrid(g, picker, invite) {
-    S.modq = S.modq || ''; S.modf = S.modf || 'all';
+    S.modq = S.modq || ''; S.modf = S.modf || 'all'; S.modc = S.modc ?? -1;
     const list = h('div', { class: 'modlist' });
     const search = h('input', { type: 'search', placeholder: 'Search modules', 'aria-label': 'Search modules', value: S.modq, oninput: (e) => { S.modq = e.target.value.toLowerCase(); paint(); } });
     const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Show' }, [['all', 'All'], ['on', 'On'], ['off', 'Off'], ['setup', 'Needs setup']].map(([k, l]) =>
       h('button', { type: 'button', 'aria-pressed': String(S.modf === k), onclick: (e) => { S.modf = k; for (const b of seg.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); paint(); } }, l)));
+    const cats = h('div', { class: 'chips', role: 'group', 'aria-label': 'Category' }, [[-1, 'Everything'], ...MOD_CATS.map((c, k) => [k, c])].map(([k, label]) =>
+      h('button', { type: 'button', class: 'chip', 'aria-pressed': String(S.modc === k), onclick: (e) => { S.modc = k; for (const b of cats.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); paint(); } }, label)));
     function paint() {
       const shown = g.modules.filter((m) => (!S.modq || `${m.name} ${m.id} ${m.about}`.toLowerCase().includes(S.modq))
+        && (S.modc < 0 || (MOD_CAT[m.id] ?? 9) === S.modc)
         && (S.modf === 'all' || (S.modf === 'on' && m.on) || (S.modf === 'off' && !m.on) || (S.modf === 'setup' && m.needs_setup)));
-      const groups = MOD_CATS.map((c, ci) => [c, shown.filter((m) => (MOD_CAT[m.id] ?? 5) === ci)]).filter(([, ms]) => ms.length);
+      const groups = MOD_CATS.map((c, ci) => [c, shown.filter((m) => (MOD_CAT[m.id] ?? 9) === ci)]).filter(([, ms]) => ms.length);
       list.replaceChildren(...(groups.length ? groups.flatMap(([c, ms]) => [h('h3', { class: 'section-title' }, c), h('div', { class: 'tiles' }, ms.map((m) =>
         h('div', { class: 'tile', role: 'button', tabindex: '0', onclick: () => { S.open = m.id; S.modTab = null; draw(); }, onkeydown: (e) => { if (e.key === 'Enter') { S.open = m.id; S.modTab = null; draw(); } } },
-          h('div', { class: 'ttop' }, h('span', { class: 'ticon', 'data-cat': String(MOD_CAT[m.id] ?? 5), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'), h('strong', {}, m.name)),
+          h('div', { class: 'ttop' }, h('span', { class: 'ticon', 'data-cat': String(MOD_CAT[m.id] ?? 9), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'), h('strong', {}, m.name)),
           h('p', { class: 'tdesc' }, m.about),
           h('div', { class: 'tfoot' }, modStatus(m), moduleSwitch(g, m, paint)))))]) : [h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'No modules match. Try another word.'))]));
     }
@@ -1214,6 +1343,7 @@
     return [
       h('div', { class: 'card modhead' }, h('div', {}, h('h1', {}, 'Modules'), h('p', { class: 'muted' }, 'Turn features on or off. Click one to set it up.')),
         h('div', { class: 'modtools' }, picker, h('label', { class: 'msearch' }, h('span', { 'aria-hidden': 'true' }, '🔍'), search), seg, invite)),
+      cats,
       list,
       g.waiting ? h('p', { class: 'note' }, `${plural(g.waiting, 'more module from Good Boy 3 is', 'more modules from Good Boy 3 are')} turned on in this server. Their settings and data are kept, and each one returns as it is rebuilt.`) : null,
     ].filter(Boolean);
@@ -1372,24 +1502,91 @@
     } });
     return [input, h('button', { class: 'btn quiet', type: 'button', onclick: () => input.click() }, label)];
   }
-  /** Welcome module: the pictures shown with welcome and goodbye messages. */
+  /** Welcome module: design the welcome and goodbye messages, with a live preview drawn the way Discord will get it. */
+  const THEME_CHOICES = [['dark', 'Dark'], ['light', 'Light'], ['midnight', 'Midnight'], ['sunset', 'Sunset'], ['forest', 'Forest'], ['ocean', 'Ocean'], ['candy', 'Candy']];
+  const HOLES = [['{user}', 'Mention them'], ['{username}', 'Their name'], ['{server}', 'Server name'], ['{count}', 'Member number']];
+  /** Discord shows **words** in bold; the preview does the same (and nothing else, so nothing can be injected). */
+  function boldWords(text) {
+    return String(text).split('**').map((part, i) => (i % 2 ? h('b', {}, part) : part));
+  }
   function greetingPicturesCard(g, r) {
-    const body = h('div', { class: 'picgrid' }, h('p', { class: 'muted' }, 'Loading…'));
-    const load = async () => {
-      let v; try { v = await call('images_view', { guild: g.id }); } catch (e) { body.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
-      body.replaceChildren(...[['welcome', 'Welcome picture', 'Shown with the message when someone joins.'], ['goodbye', 'Goodbye picture', 'Shown with the message when someone leaves.']].map(([kind, title, about]) => {
-        const one = v[kind];
-        const raw = ((r && r.settings.find((d) => d.key === `${kind}Message`)) || {}).value || '';
-        const shown = String(raw).replace(/\{user\}/g, '@NewMember').replace(/\{username\}/g, 'NewMember').replace(/\{server\}/g, g.name || 'your server').replace(/\{count\}/g, '123');
-        return h('div', { class: 'pic' }, h('b', {}, title), h('p', { class: 'muted small' }, about),
-          h('div', { class: 'msgprev', 'aria-label': `How the ${kind} message will look` }, h('b', {}, 'Good Boy ', h('span', { class: 'tagapp' }, 'APP')), h('div', {}, shown || h('span', { class: 'muted' }, 'No message written yet')),
-            one.has ? h('img', { class: 'picprev', src: one.preview, alt: `${title}, as saved` }) : h('div', { class: 'picprev none' }, 'No picture: the message is plain text')),
-          h('div', { class: 'btns' }, ...pictureButton(one.has ? 'Change picture' : 'Choose a picture', async (f) => { await call('greeting_image_set', { guild: g.id, kind, name: f.name, data: f.data }); toast('Saved.'); load(); }),
-            one.has ? h('button', { class: 'btn quiet', type: 'button', onclick: async () => { try { await call('greeting_image_clear', { guild: g.id, kind }); toast('Removed.'); load(); } catch (e) { toast(e.message || String(e), true); } } }, 'Remove') : null));
-      }));
+    const get = (key) => ((r && r.settings.find((d) => d.key === key)) || {}).value;
+    const root = h('div', { class: 'card gdesign-card' });
+    let kind = 'welcome';
+    const build = async () => {
+      const keys = { look: `${kind}Look`, message: `${kind}Message`, title: `${kind}CardTitle`, line: `${kind}CardLine`, accent: `${kind}CardAccent`, theme: `${kind}CardTheme` };
+      const v = {}; for (const [f, key] of Object.entries(keys)) v[f] = get(key) ?? '';
+      if (!v.look) v.look = 'plain';
+      let pics; try { pics = await call('images_view', { guild: g.id }); } catch (e) { root.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
+      const pic = pics[kind];
+      const preview = h('div', { class: 'gpreview', 'aria-live': 'polite' });
+      let timer = 0;
+      const paint = async () => {
+        let out; try { out = await call('greeting_preview', { guild: g.id, kind, tried: v }); } catch (e) { preview.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
+        const img = out.image || (v.look === 'plain' && pic.has ? pic.preview : null);
+        preview.replaceChildren(
+          h('div', { class: 'msgprev', 'aria-label': `How the ${kind} message will look` }, h('b', {}, 'Good Boy ', h('span', { class: 'tagapp' }, 'APP')),
+            h('div', { class: 'msgtext' }, out.text ? boldWords(out.text) : h('span', { class: 'muted' }, 'No message written yet')),
+            img ? h('img', { class: 'picprev wide', src: img, alt: 'The picture, as it will be sent' }) : null),
+          v.look === 'card' && !out.has_picture ? h('p', { class: 'muted small' }, 'No background picture yet, so the card uses its colour theme. Add one to make it yours.') : null);
+      };
+      const soon = () => { clearTimeout(timer); timer = setTimeout(paint, 250); };
+      const field = (label, el, hint) => h('div', { class: 'field' }, h('label', {}, label), el, hint ? h('span', { class: 'hint' }, hint) : null);
+      const box = (f, max, area, ph) => { const el = area ? h('textarea', { rows: 3, maxlength: max, placeholder: ph || '' }) : h('input', { type: 'text', maxlength: max, placeholder: ph || '' }); el.value = v[f]; el.addEventListener('input', () => { v[f] = el.value; soon(); }); return el; };
+      const message = box('message', 1900, true);
+      const holes = h('div', { class: 'btns holes' }, HOLES.map(([code, label]) => h('button', { class: 'btn quiet small', type: 'button', title: `Adds ${code}`, onclick: () => { const at = message.selectionStart ?? message.value.length; message.value = message.value.slice(0, at) + code + message.value.slice(message.selectionEnd ?? at); v.message = message.value; message.focus(); message.setSelectionRange(at + code.length, at + code.length); soon(); } }, label)));
+      const wheel = h('input', { type: 'color', class: 'colourwheel', value: /^#[0-9a-f]{6}$/i.test(v.accent) ? v.accent : '#6b93ff', 'aria-label': 'Ring and bar colour (picker)' });
+      const code = h('input', { type: 'text', class: 'colourcode', maxlength: 7, value: v.accent, placeholder: '#rrggbb', spellcheck: 'false', 'aria-label': 'Ring and bar colour (code)' });
+      wheel.addEventListener('input', () => { code.value = v.accent = wheel.value; soon(); });
+      code.addEventListener('input', () => { v.accent = code.value; if (/^#[0-9a-f]{6}$/i.test(code.value)) { wheel.value = code.value; soon(); } });
+      const theme = h('select', { 'aria-label': 'Colours behind your picture', onchange: (e) => { v.theme = e.target.value; soon(); } }, THEME_CHOICES.map(([id, label]) => h('option', { value: id, selected: id === v.theme }, label)));
+      const cardFields = h('div', { class: 'stack', hidden: v.look !== 'card' },
+        field('Big words', box('title', 120, false), 'You can use {username}, {server} and {count} here too.'), field('Smaller words', box('line', 160, false)),
+        h('div', { class: 'row2' }, field('Ring and bar colour', h('div', { class: 'colourrow' }, wheel, code)), field('Colours behind your picture', theme)));
+      const look = h('div', { class: 'seg', role: 'group', 'aria-label': 'Look' }, [['plain', 'Words'], ['card', 'Picture card']].map(([id, label]) => h('button', { type: 'button', 'aria-pressed': String(v.look === id), onclick: (e) => { v.look = id; for (const b of e.currentTarget.parentNode.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); cardFields.hidden = id !== 'card'; soon(); } }, label)));
+      const reload = () => build();
+      const picture = h('div', { class: 'field' }, h('label', {}, 'Upload a picture'),
+        h('p', { class: 'muted small' }, v.look === 'card' ? 'Goes behind the card. PNG, JPG, GIF or WebP under 8 MB.' : 'Sent with the message. PNG, JPG, GIF or WebP under 8 MB. A moving GIF stays moving.'),
+        h('div', { class: 'btns' }, ...pictureButton(pic.has ? 'Change picture' : 'Choose a picture', async (f) => { await call('greeting_image_set', { guild: g.id, kind, name: f.name, data: f.data }); toast('Picture saved.'); reload(); }),
+          pic.has ? h('button', { class: 'btn quiet', type: 'button', onclick: async () => { try { await call('greeting_image_clear', { guild: g.id, kind }); toast('Picture removed.'); reload(); } catch (e) { toast(e.message || String(e), true); } } }, 'Remove') : null));
+      const save = h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.target, async () => {
+        for (const [f, key] of Object.entries(keys)) { const kept = await call('setting_set', { guild: g.id, module: 'member-management', key, value: v[f] }); const d = r.settings.find((x) => x.key === key); if (d) d.value = kept; }
+        toast('Saved. New members get this.'); await paint();
+      }) }, 'Save');
+      const tabs = h('div', { class: 'seg', role: 'tablist', 'aria-label': 'Which message' }, [['welcome', 'Welcome'], ['goodbye', 'Goodbye']].map(([id, label]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(kind === id), onclick: () => { kind = id; build(); } }, label)));
+      root.replaceChildren(h('div', { class: 'row' }, h('h2', {}, 'Welcome and goodbye designer'), tabs),
+        h('p', { class: 'muted' }, kind === 'welcome' ? 'What new members get when they join. Change anything and the preview updates. Nothing changes for members until you press Save.' : 'What is posted when someone leaves. Change anything and the preview updates. Nothing changes until you press Save.'),
+        h('div', { class: 'gdesign' },
+          h('div', { class: 'stack' }, picture, field('Look', look), field('Message', message, 'The words members read above the picture.'), holes, cardFields, h('div', { class: 'btns' }, save)),
+          h('div', { class: 'stack' }, h('b', {}, 'Preview'), h('p', { class: 'muted small' }, 'With a sample member called Alex.'), preview)));
+      paint();
     };
-    load();
-    return h('div', { class: 'card' }, h('h2', {}, 'Pictures'), h('p', { class: 'muted' }, 'PNG, JPG, GIF or WebP under 8 MB. A moving GIF stays moving.'), body);
+    build();
+    return root;
+  }
+  /** Eclipse ID module: what it does here, the two switches that matter, and how many people use it. */
+  function eclipseCard(g, r) {
+    const get = (key) => ((r && r.settings.find((d) => d.key === key)) || {}).value;
+    const root = h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Loading…'));
+    (async () => {
+      let v; try { v = await call('eclipse_view', { guild: g.id }); } catch (e) { root.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
+      const sw = (key, label, hint) => {
+        const input = h('input', { type: 'checkbox', class: 'toggle', role: 'switch', checked: !!get(key), 'aria-label': label, onchange: async (e) => {
+          try { const kept = await call('setting_set', { guild: g.id, module: 'eclipseid', key, value: e.target.checked }); const d = r.settings.find((x) => x.key === key); if (d) d.value = kept; toast('Saved'); } catch (er) { e.target.checked = !e.target.checked; toast(er.message || String(er), true); }
+        } });
+        return h('label', { class: 'setting inline' }, h('span', {}, h('b', {}, label), h('br'), h('span', { class: 'muted small' }, hint)), input);
+      };
+      const stat = (n, label) => h('div', { class: 'stat' }, h('b', {}, Number(n).toLocaleString()), h('span', {}, label));
+      root.replaceChildren(h('h2', {}, 'Eclipse ID'),
+        h('p', { class: 'muted' }, 'A gaming profile each member controls. It is one card per person, the same in every server that runs Good Boy, so members fill it in once. They choose who sees each part and which servers show it.'),
+        h('div', { class: 'stats' }, stat(v.cards, 'Cards made'), stat(v.here, 'People seen here'), stat(v.picked, 'With games picked up')),
+        sw('autoDetect', 'Pick up what members play', 'Reads the game a member is playing from their Discord status and adds it to their card as "picked up automatically", with the kind of device. Members can switch this off for themselves with /id auto, hide it, or erase it.'),
+        v.auto && !v.presence ? h('p', { class: 'note' }, 'Discord is not sending statuses yet, so nothing can be picked up. Turn on "Presence Intent" on your application\'s Bot page in the Discord developer portal, then restart the bot. Servers with 100 or more members also need Discord to approve it.') : null,
+        sw('robloxLookup', 'Let /id roblox check a Roblox name', 'Contacts Roblox to see that a username exists. It does not prove the account is theirs.'),
+        h('h3', {}, 'What members can do'),
+        h('ul', {}, [['/id edit', 'fill in their card'], ['/id privacy', 'choose who sees each part'], ['/id share', 'choose which servers show it'], ['/id auto', 'pick up games, or stop it and forget'], ['/id find', 'find members who play a game'], ['/id export and /id import', 'move the card to another Good Boy with a code']].map(([c, t]) => h('li', {}, h('code', {}, c), ' · ' + t))));
+    })();
+    return root;
   }
   /** Critters module: the server's own characters, each with its picture. */
   function crittersCard(g) {
@@ -1439,7 +1636,7 @@
   function modulePage(g, m) {
     const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));
     const bar = h('div', { class: 'seg modtabs', role: 'tablist' });
-    const head = h('div', { class: 'card mhead' }, h('span', { class: 'ticon big', 'data-cat': String(MOD_CAT[m.id] ?? 5), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'),
+    const head = h('div', { class: 'card mhead' }, h('span', { class: 'ticon big', 'data-cat': String(MOD_CAT[m.id] ?? 9), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'),
       h('div', { class: 'grow' }, h('h1', {}, m.name), h('p', { class: 'muted' }, m.about)), modStatus(m), moduleSwitch(g, m, () => draw()));
     call('settings', { guild: g.id, module: m.id }).then((r) => {
       const tabs = [['setup', 'Setup'], ['settings', 'Settings'], ['advanced', 'Advanced'], ['where', 'Where it works'], ['who', 'Who can use it'], ['commands', m.commands.length ? 'Commands' : 'About'], ['history', 'History']]
@@ -1456,8 +1653,8 @@
           return;
         }
         const intro = { setup: 'The channels and roles this module uses.', settings: 'Switches and choices.', advanced: 'Numbers, lists and text you can fine-tune.' }[S.modTab];
-        const part = { ...r, settings: r.settings.filter((d) => TAB_OF(d.kind) === S.modTab) };
-        body.replaceChildren(...(S.modTab === 'setup' && PANELS[m.id] ? [panelCard(g, m, r)] : []), ...(S.modTab === 'setup' && m.id === 'member-management' ? [greetingPicturesCard(g, r)] : []), ...(S.modTab === 'setup' && m.id === 'critters' ? [crittersCard(g)] : []), ...(m.id === 'economy' && S.modTab === 'settings' ? [resetZone(g)] : []), h('div', { class: 'card' }, h('p', { class: 'muted' }, intro), ...grouped(g.id, m.id, part)));
+        const part = { ...r, settings: r.settings.filter((d) => TAB_OF(d.kind) === S.modTab && !(m.id === 'member-management' && /^(welcome|goodbye)(Look|Message|Image|Card[A-Za-z]*)$/.test(d.key)) && !(m.id === 'eclipseid' && /^(autoDetect|robloxLookup)$/.test(d.key))) };
+        body.replaceChildren(...(S.modTab === 'setup' && PANELS[m.id] ? [panelCard(g, m, r)] : []), ...(S.modTab === 'setup' && m.id === 'member-management' ? [greetingPicturesCard(g, r)] : []), ...(S.modTab === 'setup' && m.id === 'critters' ? [crittersCard(g)] : []), ...((S.modTab === 'setup' || S.modTab === 'settings') && m.id === 'eclipseid' ? [eclipseCard(g, r)] : []), ...(m.id === 'economy' && S.modTab === 'settings' ? [resetZone(g)] : []), h('div', { class: 'card' }, h('p', { class: 'muted' }, intro), ...grouped(g.id, m.id, part)));
       }
       tab();
     }, (e) => body.replaceChildren(h('p', { class: 'msg bad' }, e.message)));
@@ -1726,6 +1923,28 @@
     }, (e) => box.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))));
     return [h('div', { class: 'head' }, h('h1', {}, "What's new"), h('p', { class: 'muted' }, `Good Boy ${(S.o && S.o.version) || ''} and what came with each update`)), box];
   }
+  /** The Commands guide: every command, its parts and what each box takes, written from the bot's own list. */
+  function commandsGuide() {
+    const box = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));
+    const paint = (ref) => {
+      const q = (S.cfind || '').trim().toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
+      const hay = (c) => JSON.stringify([c.name, c.path, c.about, c.note, c.subs.map((x) => [x.name, x.about]), c.options.map((o) => o.name)]).toLowerCase();
+      const opts = (list) => list.length ? h('ul', { class: 'cmdopts' }, list.map((o) => h('li', {}, h('code', {}, o.name), o.required ? '' : ' (optional)', ' · ', o.takes, h('span', { class: 'muted' }, ' — ' + o.about)))) : null;
+      const card = (c) => h('details', { class: 'cmd', open: words.length > 0 && ref.count < 8 || null },
+        h('summary', {}, h('code', {}, c.path), ' ', h('span', { class: 'muted' }, c.about), c.staff ? h('span', { class: 'tag' }, 'Staff') : null),
+        c.note ? h('p', {}, c.note) : null, opts(c.options),
+        c.subs.length ? h('div', {}, h('b', {}, 'Parts'), h('ul', { class: 'cmdsubs' }, c.subs.map((x) => h('li', {}, h('code', {}, x.name), ' · ', x.about, x.staff ? h('span', { class: 'tag' }, 'Staff') : null, opts(x.options))))) : null);
+      const sections = ref.modules.map((m) => ({ m, list: m.commands.filter((c) => words.every((w) => hay(c).includes(w) || m.name.toLowerCase().includes(w))) })).filter((x) => x.list.length);
+      ref.count = sections.reduce((n, x) => n + x.list.length, 0);
+      box.replaceChildren(h('p', { class: 'muted small' }, `${ref.count} ${ref.count === 1 ? "command" : "commands"}. In Discord, type /help command: and a name to see the same thing. Commands inside a group (like /server) are opened from the group's menu.`),
+        ...(sections.length ? sections.map(({ m, list }) => h('div', { class: 'card' }, h('h3', {}, m.name), h('p', { class: 'muted small' }, m.about), h('div', { class: 'stack' }, list.map(card)))) : [h('div', { class: 'card empty' }, h('h2', {}, 'Nothing matches that'), h('p', { class: 'muted' }, 'Try a command name or a word like "ban" or "picture".'))]));
+    };
+    const search = h('input', { type: 'search', id: 'cfind', value: S.cfind || '', placeholder: 'Find a command, e.g. ban, picture, music', 'aria-label': 'Find a command' });
+    (async () => { try { S.cref = S.cref || await call('commands_guide'); paint(S.cref); } catch (e) { box.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); } })();
+    search.addEventListener('input', () => { S.cfind = search.value; if (S.cref) paint(S.cref); });
+    return [h('div', { class: 'field' }, search), box];
+  }
   function pageHelp() {
     const guide = window.GBGuide;
     const textOf = (t) => (t.title + ' ' + t.blocks.map((b) => (Array.isArray(b[1]) ? b[1].join(' ') : b[1])).join(' ')).toLowerCase();
@@ -1738,8 +1957,10 @@
       : b[0] === 'note' ? h('p', { class: 'note' }, b[1]) : h('div', {}, h('button', { class: 'btn quiet', type: 'button', onclick: () => go(b[2]) }, b[1]));
     const search = h('input', { type: 'search', id: 'find', value: S.find, placeholder: 'Search the guide, e.g. reset token', 'aria-label': 'Search the guide' });
     search.addEventListener('input', () => { S.find = search.value; S.picked = null; const at = search.selectionStart; draw(); const again = document.getElementById('find'); again.focus(); again.setSelectionRange(at, at); });
+    const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Help section' }, [['guide', 'Guide'], ['commands', 'Commands']].map(([id, label]) => h('button', { type: 'button', 'aria-pressed': String((S.helpTab || 'guide') === id), onclick: () => { S.helpTab = id; draw(); } }, label)));
+    if (S.helpTab === 'commands') return [h('div', { class: 'row' }, h('div', { class: 'head' }, h('h1', {}, 'Help'), h('p', { class: 'muted' }, 'Every command, what its parts do and what each box takes.')), tabs), ...commandsGuide()];
     return [
-      h('div', { class: 'row' }, h('div', { class: 'head' }, h('h1', {}, 'Help'), h('p', { class: 'muted' }, 'The guide to everything in this app.')),
+      h('div', { class: 'row' }, h('div', { class: 'head' }, h('h1', {}, 'Help'), h('p', { class: 'muted' }, 'The guide to everything in this app.'), tabs),
         h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => window.GBTour.app(0) }, 'Show me around'), h('button', { class: 'btn', type: 'button', onclick: () => window.GBTour.showcase(0) }, 'What can Good Boy do?'))),
       h('div', { class: 'field' }, search),
       topic ? h('div', { class: 'guide' },
@@ -1750,7 +1971,41 @@
   }
 
   // the same names and order as the Good Boy 3 dashboard, so nobody has to learn a new map
-  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], updates: ['Updates', pageUpdates, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'] };
+  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], setup: ['Server setup', pageSetup, ''], images: ['Images', pageImages, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], updates: ['Updates', pageUpdates, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'] };
+  // The menu on the left, in sections that fold away so it never gets long. The section you are in stays open.
+  const SECTIONS = [
+    ['', ['home', 'servers']],
+    ['People', ['server', 'inactive', 'leavers', 'tickets', 'rolemenus', 'images']],
+    ['Safety', ['cases', 'automod', 'permissions']],
+    ['Money', ['economy', 'shop']],
+    ['Fun', ['arcade', 'fishing', 'music']],
+    ['Tools', ['setup', 'lists', 'commands']],
+    ['Bot', ['checkup', 'switch', 'activity', 'updates', 'whatsnew', 'bot', 'help']],
+  ];
+  function navMenu(pages) {
+    let kept = {}; try { kept = JSON.parse(localStorage.getItem('gb-nav') || '{}'); } catch { /* the choice is only a convenience */ }
+    const known = SECTIONS.flatMap(([, ids]) => ids);
+    const button = (id) => h('button', { class: 'nav', type: 'button', 'aria-current': id === S.page ? 'page' : null, onclick: () => go(id) }, icon(id), PAGES[id][0]);
+    const out = [];
+    for (const [name, ids] of SECTIONS) {
+      const shown = ids.filter((id) => pages.includes(id) && PAGES[id]);
+      if (!shown.length) continue;
+      if (!name) { out.push(...shown.map(button)); continue; }
+      const here = shown.includes(S.page);
+      const open = here || kept[name] === true;
+      const head = h('button', { class: 'navgroup navfold', type: 'button', 'aria-expanded': String(open), onclick: (e) => {
+        const now = e.currentTarget.getAttribute('aria-expanded') !== 'true';
+        e.currentTarget.setAttribute('aria-expanded', String(now));
+        e.currentTarget.nextElementSibling.hidden = !now;
+        kept[name] = now; try { localStorage.setItem('gb-nav', JSON.stringify(kept)); } catch { /* ignore */ }
+      } }, h('span', {}, name), h('span', { class: 'chev', 'aria-hidden': 'true' }, '▾'));
+      out.push(head, h('div', { class: 'navsub', hidden: !open }, shown.map(button)));
+    }
+    // pages that are in no section still get a place
+    const rest = pages.filter((id) => PAGES[id] && !known.includes(id));
+    if (rest.length) out.push(...rest.map(button));
+    return out;
+  }
   function go(page) { S.page = page; draw(); document.querySelector('.main')?.scrollTo(0, 0); }
   // On the web some things stay on the computer (tokens, the move from Good Boy 3, this computer's settings), and only the
   // person who runs the bot sees the bot's own controls.
@@ -1779,7 +2034,7 @@
     const kept = SCROLLS.map((q) => [q, document.querySelector(q)?.scrollTop || 0]);
     app.replaceChildren(h('div', { class: 'shell' },
       h('nav', { class: 'side', 'aria-label': 'Pages' }, h('div', { class: 'brand' }, h('img', { src: 'mascot.png', alt: '', width: 40, height: 40, class: 'pup-logo' }), h('span', {}, 'Good Boy')),
-        Object.entries(PAGES).filter(([id]) => pages.includes(id)).flatMap(([id, [label, , group]], i, all) => [group && group !== (all[i - 1]?.[1][2] ?? '') ? h('div', { class: 'navgroup' }, group) : null, h('button', { class: 'nav', type: 'button', 'aria-current': id === S.page ? 'page' : null, onclick: () => go(id) }, icon(id), label)]),
+        navMenu(pages),
         h('span', { class: 'grow' }), h('div', { class: 'pup-corner' }, h('div', { class: 'pup-bubble', role: 'status' }), h('div', { class: 'dog' }, h('img', { src: 'mascot.png', alt: '' })), h('span', {}, 'On duty')), h('div', { class: 'state' }, h('span', { class: `dot ${dot}` }), h('span', {}, line)),
         window.GB.web ? h('button', { class: 'nav signout', type: 'button', title: `Signed in as ${S.o.web ? S.o.web.name : ''}`, onclick: async () => { try { await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'x-gb': '1' } }); } catch { /* leave anyway */ } location.reload(); } }, 'Sign out') : null),
       h('main', { class: 'main' }, h('div', { class: 'page' }, PAGES[S.page][1]()))));

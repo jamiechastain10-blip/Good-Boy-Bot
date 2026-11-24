@@ -274,6 +274,45 @@ impl Link {
         match action {
             Action::Send { channel, card, ping, roles } => {
                 let Ok(channel) = channel.parse::<Id<ChannelMarker>>() else { return Ok(()) };
+                // a card with a rank picture (a level-up shown as the member's own card): the picture goes up with the card's
+                // buttons and a line of text, and nobody is pinged unless the action says so. If it cannot be drawn, the text card goes instead.
+                // a welcome or goodbye card: the picture goes up with the message's words; the text card goes if it cannot be drawn
+                if let Some(gb_core::Art::Greeting(art)) = &card.art {
+                    let mentions = AllowedMentions { parse: Vec::new(), replied_user: false, roles: Vec::new(), users: ping.iter().filter_map(|u| u.parse::<Id<UserMarker>>().ok()).collect() };
+                    if let Some(bytes) = self.draw_greeting(art).await {
+                        let said = card.lines.join("\n");
+                        let file = twilight_model::http::attachment::Attachment::from_bytes("greeting.png".into(), bytes, 0);
+                        self.http.create_message(channel).content(&said).attachments(&[file]).allowed_mentions(Some(&mentions)).await.map_err(|e| post_refusal(channel, &e))?;
+                        return Ok(());
+                    }
+                    let mut text = card.clone();
+                    text.art = None;
+                    let parts = components(&text)?;
+                    self.http.create_message(channel).flags(flags(&text)).components(&parts).allowed_mentions(Some(&mentions)).await.map_err(|e| post_refusal(channel, &e))?;
+                    return Ok(());
+                }
+                if let Some(gb_core::Art::Rank(art)) = &card.art {
+                    if let Some((name, bytes)) = self.draw_rank(&guild.to_string(), art).await {
+                        let buttons: Vec<serde_json::Value> = card.buttons.iter().map(|b| {
+                            let mut x = json!({ "type": 2, "style": 2, "custom_id": b.id, "label": b.label });
+                            if let Some(e) = &b.emoji { x["emoji"] = json!({ "name": e }); }
+                            x
+                        }).collect();
+                        let rows = if buttons.is_empty() { json!([]) } else { json!([{ "type": 1, "components": buttons }]) };
+                        let parts = serde_json::from_value::<Vec<Component>>(rows).unwrap_or_default();
+                        let mentions = AllowedMentions { parse: Vec::new(), replied_user: false, roles: Vec::new(), users: ping.iter().filter_map(|u| u.parse::<Id<UserMarker>>().ok()).collect() };
+                        let file = twilight_model::http::attachment::Attachment::from_bytes(name.into(), bytes, 0);
+                        let said = card.title.clone().unwrap_or_default();
+                        self.http.create_message(channel).content(&said).components(&parts).attachments(&[file]).allowed_mentions(Some(&mentions)).await.map_err(|e| post_refusal(channel, &e))?;
+                        return Ok(());
+                    }
+                    let mut text = card.clone();
+                    text.art = None;
+                    let parts = components(&text)?;
+                    let mentions = AllowedMentions { parse: Vec::new(), replied_user: false, roles: Vec::new(), users: ping.iter().filter_map(|u| u.parse::<Id<UserMarker>>().ok()).collect() };
+                    self.http.create_message(channel).flags(flags(&text)).components(&parts).allowed_mentions(Some(&mentions)).await.map_err(|e| post_refusal(channel, &e))?;
+                    return Ok(());
+                }
                 let parts = components(&card)?;
                 // only the people and roles the card names may be pinged; never everyone
                 let mentions = AllowedMentions { parse: Vec::new(), replied_user: false, roles: roles.iter().filter_map(|r| r.parse::<Id<RoleMarker>>().ok()).collect(), users: ping.iter().filter_map(|u| u.parse::<Id<UserMarker>>().ok()).collect() };
@@ -535,6 +574,8 @@ impl Link {
                 }
             }
             Action::Later { .. } | Action::Quote(_) | Action::Roblox { .. } | Action::Translate { .. } | Action::RpGifs { .. } | Action::TenorKey { .. } | Action::Backup { .. } => {}
+            // server setup asked for from the dashboard (a command or button is answered in `on_interaction`)
+            Action::Setup(job) => { let _ = self.run_setup(guild, &job).await; }
             Action::Roles { user, add, remove, reason } => {
                 let user = user_id(&user)?;
                 for (roles, adding) in [(add, true), (remove, false)] {
@@ -756,7 +797,7 @@ impl Link {
         let mut kept: Vec<_> = roles.iter().filter(|r| r.id != guild.cast() && !r.managed).collect();
         kept.sort_by_key(|r| std::cmp::Reverse(r.position));
         #[allow(deprecated)]
-        let roles_json: Vec<serde_json::Value> = kept.iter().map(|r| json!({ "name": r.name, "color": r.color, "hoist": r.hoist, "mentionable": r.mentionable, "permissions": r.permissions.bits().to_string(), "position": r.position })).collect();
+        let roles_json: Vec<serde_json::Value> = kept.iter().map(|r| json!({ "id": r.id.to_string(), "name": r.name, "color": r.color, "hoist": r.hoist, "mentionable": r.mentionable, "permissions": r.permissions.bits().to_string(), "position": r.position })).collect();
         let other: Vec<&str> = roles.iter().filter(|r| r.managed || r.id == guild.cast()).map(|r| r.name.as_str()).collect();
         let kinds = gb_core::backup::KINDS;
         let mut chans: Vec<_> = channels.iter().filter(|c| kinds.contains(&(u8::from(c.kind) as i64))).collect();
@@ -765,10 +806,53 @@ impl Link {
         let channels_json: Vec<serde_json::Value> = chans.iter().map(|c| {
             let parent = c.parent_id.and_then(|p| channels.iter().find(|x| x.id == p).and_then(|x| x.name.clone()));
             let overwrites: Vec<serde_json::Value> = c.permission_overwrites.iter().flatten().filter(|o| o.kind == T::Role).filter_map(|o| Some(json!({ "role": role_name(o.id.get())?, "allow": o.allow.bits().to_string(), "deny": o.deny.bits().to_string() }))).collect();
-            json!({ "name": c.name, "type": u8::from(c.kind), "parent": parent, "position": c.position.unwrap_or(0), "topic": c.topic, "nsfw": c.nsfw.unwrap_or(false), "slowmode": c.rate_limit_per_user.unwrap_or(0), "bitrate": c.bitrate, "userLimit": c.user_limit, "overwrites": overwrites })
+            let last = c.last_message_id.map(|m| ((m.get() >> 22) + 1_420_070_400_000) as i64);
+            json!({ "id": c.id.to_string(), "parentId": c.parent_id.map(|p| p.to_string()), "lastMessage": last, "name": c.name, "type": u8::from(c.kind), "parent": parent, "position": c.position.unwrap_or(0), "topic": c.topic, "nsfw": c.nsfw.unwrap_or(false), "slowmode": c.rate_limit_per_user.unwrap_or(0), "bitrate": c.bitrate, "userLimit": c.user_limit, "overwrites": overwrites })
         }).collect();
         let everyone = roles.iter().find(|r| r.id == guild.cast()).map(|r| r.permissions.bits()).unwrap_or(0);
         Ok(json!({ "version": 1, "guildName": name, "at": now_ms(), "everyone": everyone.to_string(), "roles": roles_json, "otherRoles": other, "channels": channels_json }))
+    }
+    /// One step of server setup. The card is the answer for whoever asked; what happened is also kept for the dashboard.
+    async fn run_setup(&self, guild: Id<GuildMarker>, job: &gb_core::SetupJob) -> Card {
+        use gb_core::SetupStep as S;
+        let g = guild.to_string();
+        let warn = |t: String| Card::new(gb_core::Area::General).line(format!("⚠️ {t}")).private();
+        let layout = match self.layout(guild).await { Ok(l) => l, Err(why) => { self.bot.setup_note(&g, "error", &why, now_ms()); return warn(why); } };
+        match &job.step {
+            S::Plan(t) => self.bot.setup_plan(t, &layout, &job.by).unwrap_or_else(|| warn("I don't know that layout.".into())),
+            S::Scan => self.bot.setup_scan(&g, &layout, now_ms(), &job.by).0,
+            S::Build(t) => self.setup_build(guild, t, &layout).await,
+            S::Fix(what) => {
+                let plan = self.bot.setup_fix(&g, what, &layout);
+                let mut text = plan.text.clone();
+                if let Some(t) = plan.build { return self.setup_build(guild, t, &layout).await; }
+                for a in plan.actions { if let Err(e) = Box::pin(self.perform(guild, a)).await { text.push_str(&format!(" ({e})")); } }
+                if plan.everyone_remove != 0 {
+                    let now = layout["everyone"].as_str().and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
+                    let keep = twilight_model::guild::Permissions::from_bits_truncate(now & !plan.everyone_remove);
+                    if let Err(e) = self.http.update_role(guild, guild.cast()).permissions(keep).reason("Server check: take risky permissions off everyone").await { text = format!("I couldn't change @everyone: {e}. The bot needs Manage Roles, and its role must be above the one it changes."); }
+                }
+                self.bot.setup_note(&g, what, &text, now_ms());
+                Card::new(gb_core::Area::General).line(format!("✅ {text}")).private()
+            }
+        }
+    }
+    /// Makes what a layout needs, connects the bot to it, and posts the rules and ticket buttons.
+    async fn setup_build(&self, guild: Id<GuildMarker>, tid: &str, layout: &serde_json::Value) -> Card {
+        let g = guild.to_string();
+        let Some((roles, channels)) = self.bot.setup_missing(tid, layout) else { return Card::new(gb_core::Area::General).line("⚠️ I don't know that layout.").private() };
+        let (r, c, failed) = self.restore(guild, &roles, &channels, "Server setup").await;
+        // what is in the server now, by name, so the bot can be connected to it
+        let mut built = gb_core::setup::Built::default();
+        if let Ok(rs) = self.http.roles(guild).await { if let Ok(rs) = rs.models().await { built.roles = rs.iter().map(|x| (x.name.clone(), x.id.to_string())).collect(); } }
+        if let Ok(cs) = self.http.guild_channels(guild).await { if let Ok(cs) = cs.models().await {
+            built.channels = cs.iter().filter_map(|x| Some((x.name.clone()?, x.parent_id.and_then(|p| cs.iter().find(|y| y.id == p)).and_then(|p| p.name.clone()), x.id.to_string()))).collect();
+        } }
+        let (actions, wired) = self.bot.setup_wire(&g, tid, &built);
+        for a in actions { let _ = Box::pin(self.perform(guild, a)).await; }
+        let card = self.bot.setup_built_card(tid, (r, c), &failed, &wired);
+        self.bot.setup_note(&g, "build", &format!("Added {r} roles and {c} channels{}. {}", if failed.is_empty() { String::new() } else { format!(", {} failed ({})", failed.len(), failed.iter().take(3).cloned().collect::<Vec<_>>().join("; ")) }, wired.join("; ")), now_ms());
+        card
     }
     /// Puts back what a backup has and the server doesn't (Good Boy 3's restore): roles lowest first, then
     /// categories, then channels inside them. Gives (roles added, channels added, what failed).
@@ -1100,17 +1184,31 @@ impl Link {
         }
     }
 
-    /// Draws a rank card (Good Boy 3's picture) and sends it with the card's buttons. The answer is "thinking…" first, so
-    /// the pictures can take the time they need (a cold connection to Discord's picture server is slower than the three
-    /// seconds an answer is allowed). A member with a moving profile picture gets a moving card. When the card cannot
-    /// be drawn, the text version is sent instead.
-    async fn answer_rank_picture(&self, interaction: &Interaction, art: &gb_core::RankArt, card: &Card) {
-        let defer = InteractionResponse { kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource, data: None };
-        if self.http.interaction(self.app).create_response(interaction.id, &interaction.token, &defer).await.is_err() { return; }
+    /// Draws a welcome or goodbye picture: the server's background, the member's profile picture and two lines of words.
+    async fn draw_greeting(&self, art: &gb_core::GreetingArt) -> Option<Vec<u8>> {
+        let avatar = match &art.avatar_url {
+            Some(url) => {
+                let r = tokio::time::timeout(std::time::Duration::from_secs(6), self.web.get(url).send()).await.ok()?.ok().filter(|r| r.status().is_success());
+                match r {
+                    Some(r) => tokio::time::timeout(std::time::Duration::from_secs(8), r.bytes()).await.ok().and_then(|b| b.ok()).filter(|b| b.len() <= 8 << 20).map(|b| b.to_vec()),
+                    None => None,
+                }
+            }
+            None => None,
+        };
+        let a = art.clone();
+        tokio::task::spawn_blocking(move || {
+            let g = gb_art::Greeting { name: &a.name, avatar: avatar.as_deref(), background: a.background.as_deref(), title: &a.title, line: &a.line, accent: a.accent.as_deref(), theme: a.theme.as_deref(), pixel: a.pixel };
+            gb_art::greeting_card(&g)
+        }).await.ok().flatten()
+    }
+    /// Draws a rank card (the member's own theme, colours and background; a moving profile picture gives a moving card).
+    async fn draw_rank(&self, guild: &str, art: &gb_core::RankArt) -> Option<(&'static str, Vec<u8>)> {
+        let guild = guild.to_string();
         let fetch = |url: Option<String>, most: usize| {
             let web = self.web.clone();
             let bot = self.bot.clone();
-            let guild = interaction.guild_id.map(|g| g.to_string()).unwrap_or_default();
+            let guild = guild.clone();
             async move {
                 let url = url?;
                 // a background the member uploaded is kept on this computer
@@ -1128,14 +1226,23 @@ impl Link {
         let moving = art.avatar_url.as_deref().filter(|u| u.contains("/a_")).map(|u| u.replacen(".png", ".gif", 1));
         let (gif, still, background) = tokio::join!(fetch(moving, 6 << 20), fetch(art.avatar_url.clone(), 8 << 20), fetch(art.background.clone(), 8 << 20));
         let a = art.clone();
-        let drawn = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let r = gb_art::Rank {
                 name: &a.name, avatar: still.as_deref(), level: a.level, into: a.into, needed: a.needed, rank: a.rank, xp: a.xp, messages: a.messages,
                 accent: a.accent.as_deref(), accent2: a.accent2.as_deref(), theme: a.theme.as_deref(), background: background.as_deref(), pixel: a.pixel,
             };
             if let Some(g) = gif.as_deref() { if let Some(moving) = gb_art::rank_card_animated(&r, g) { return Some(("rank.gif", moving)); } }
             gb_art::rank_card(&r).map(|png| ("rank.png", png))
-        }).await.ok().flatten();
+        }).await.ok().flatten()
+    }
+    /// Draws a rank card (Good Boy 3's picture) and sends it with the card's buttons. The answer is "thinking…" first, so
+    /// the pictures can take the time they need (a cold connection to Discord's picture server is slower than the three
+    /// seconds an answer is allowed). A member with a moving profile picture gets a moving card. When the card cannot
+    /// be drawn, the text version is sent instead.
+    async fn answer_rank_picture(&self, interaction: &Interaction, art: &gb_core::RankArt, card: &Card) {
+        let defer = InteractionResponse { kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource, data: None };
+        if self.http.interaction(self.app).create_response(interaction.id, &interaction.token, &defer).await.is_err() { return; }
+        let drawn = self.draw_rank(&interaction.guild_id.map(|g| g.to_string()).unwrap_or_default(), art).await;
         let quiet = AllowedMentions::default();
         let Some((name, bytes)) = drawn else {
             // the text version
@@ -1823,6 +1930,20 @@ impl Link {
                 Err(why) => Card::new(gb_core::Area::General).line(format!("⚠️ {why}")).private(),
                 Ok(now) => match id { None => self.bot.backup_saved(&g, by, &now, now_ms()), Some(n) => self.bot.backup_preview(&g, *n, by, &now) },
             };
+            if let Ok(parts) = components(&card) { let _ = self.http.interaction(self.app).update_response(&i.token).flags(MessageFlags::IS_COMPONENTS_V2).components(Some(&parts)).await; }
+            return;
+        }
+        // server setup: the server is read first, so the answer takes a moment (a command is answered privately; a button updates its card)
+        if let (None, Some(Action::Setup(job))) = (&failed, &answer) {
+            let button = i.kind == twilight_model::application::interaction::InteractionType::MessageComponent;
+            if button {
+                let _ = self.http.interaction(self.app).create_response(i.id, &i.token, &InteractionResponse { kind: twilight_model::http::interaction::InteractionResponseType::DeferredUpdateMessage, data: None }).await;
+            } else {
+                let defer = InteractionResponse { kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource, data: Some(twilight_model::http::interaction::InteractionResponseData { flags: Some(MessageFlags::EPHEMERAL), ..Default::default() }) };
+                let _ = self.http.interaction(self.app).create_response(i.id, &i.token, &defer).await;
+                self.dismiss_answer(i, true);
+            }
+            let card = self.run_setup(guild, job).await;
             if let Ok(parts) = components(&card) { let _ = self.http.interaction(self.app).update_response(&i.token).flags(MessageFlags::IS_COMPONENTS_V2).components(Some(&parts)).await; }
             return;
         }
@@ -2529,6 +2650,14 @@ pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), S
                 let before = link.playing.lock().unwrap_or_else(|p| p.into_inner()).insert(format!("{guild}:{}", user.0), now.clone()).unwrap_or_default();
                 let who = Member { id: user.0.to_string(), name: user.2, ..Default::default() };
                 for action in link.bot.on_playing(&guild.to_string(), &who, &before, &now) { link.spawn(guild, action); }
+                // for Eclipse ID: the games, and the kind of app they are using (a PC or a phone; Discord does not say more)
+                let mut platforms: Vec<&str> = Vec::new();
+                if p.client_status.desktop.is_some() { platforms.push("pc"); }
+                if p.client_status.mobile.is_some() { platforms.push("mobile"); }
+                platforms.sort_unstable();
+                platforms.dedup();
+                let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+                if !now.is_empty() { link.bot.eid_presence(&guild.to_string(), &who.id, &now, &platforms, at); }
             }
             Event::InviteCreate(inv) => {
                 let mut all = link.invites.lock().unwrap_or_else(|p| p.into_inner());
@@ -2748,7 +2877,7 @@ mod tests {
         let parts = components(&music.card(60_000)).unwrap();
         let Component::Container(c) = &parts[0] else { panic!("one container") };
         let buttons: usize = c.components.iter().map(|x| if let Component::ActionRow(r) = x { r.components.len() } else { 0 }).sum();
-        assert_eq!(buttons, 13, "back, pause, skip, stop, add, quieter, louder, repeat, shuffle, queue, playlists, lyrics, media links");
+        assert_eq!(buttons, 14, "back, pause, skip, stop, add, start mine, quieter, louder, repeat, shuffle, queue, playlists, lyrics, media links");
         let _ = std::fs::remove_dir_all(dir);
     }
     #[test]

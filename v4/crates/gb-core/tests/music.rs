@@ -477,3 +477,55 @@ fn the_sound_filter_is_a_setting_that_rides_along_with_each_song_and_follows_the
     assert!(said(&set(&stranger, "off")[0]).contains("Only a DJ"));
     assert_eq!(bot.music_view(G, NOW)["filter"], "slowed");
 }
+
+
+fn press(bot: &Bot, who: &Member, id: &str, at: i64) -> Vec<Action> {
+    let ev = gb_core::ButtonEvent { guild: G.into(), place: Place::channel(CH), member: who.clone(), id: id.into(), at_ms: at, ..Default::default() };
+    bot.on_button(&ev, &|_| None, &mut |lo, _| lo)
+}
+fn form_id(out: &[Action]) -> Option<String> {
+    out.iter().find_map(|a| match a { Action::Form { id, .. } => Some(id.clone()), _ => None })
+}
+
+#[test]
+fn someone_in_another_call_starts_their_own_queue_instead_of_touching_the_others() {
+    let (_tmp, bot) = bot();
+    let (kai, rowan, third, nobody) = (member("1"), member("2"), member("3"), member("4"));
+    let (vc2, vc3) = ("800000000000000098", "800000000000000097");
+    bot.directory.set_helpers(vec![gb_core::bot::Helper { slot: 1, name: "Music Two".into(), id: "300".into() }]);
+    bot.directory.helper_in(G, 1, true);
+    bot.on_voice(G, &kai, Some(VC), true);
+    bot.on_voice(G, &rowan, Some(vc2), true);
+    bot.on_voice(G, &third, Some(vc3), true);
+    // Kai is alone in the call with the main bot, and it is playing his song
+    assert_eq!(slot_of(&play(&bot, &kai, "https://example.com/a.mp3", NOW)), Some(0));
+    // Rowan, in a different call, cannot stop it, even though Kai is the only one listening; he is told what to do instead
+    let no = said(&press(&bot, &rowan, "mu:stop", NOW + 1000)[0]);
+    assert!(no.contains("different voice channel") && no.contains("Start mine"), "{no}");
+    assert!(bot.players.with(&gb_core::music::slot_key(G, 0), |p| p.now.is_some() || !p.queue.is_empty()), "Kai's queue is untouched");
+    // Kai can still control his own
+    assert!(matches!(press(&bot, &kai, "mu:pause", NOW + 1500)[0], Action::Update { .. }), "Kai can pause his own player");
+    // Start mine opens the Add popup for the FREE helper, so Rowan's songs play in Rowan's call
+    assert_eq!(form_id(&press(&bot, &rowan, "mu:start", NOW + 2000)).as_deref(), Some("mu~1:add"));
+    // once the helper is playing for Rowan, a third person with no free bot is told why, not given someone else's music
+    assert_eq!(slot_of(&play(&bot, &rowan, "https://example.com/b.mp3", NOW + 3000)), Some(1));
+    let busy = said(&press(&bot, &third, "mu:start", NOW + 4000)[0]);
+    assert!(busy.contains("busy"), "{busy}");
+    // someone who is already in a call with a bot is pointed at it
+    assert!(said(&press(&bot, &kai, "mu:start", NOW + 5000)[0]).contains("already in"));
+    // someone who is not in any voice channel is asked to join one
+    assert!(said(&press(&bot, &nobody, "mu:start", NOW + 6000)[0]).contains("Join a voice channel"));
+    // the player card now offers it
+    assert!(said(&sub(&bot, &kai, "now", &[], NOW + 7000)[0]).contains("mu:start"));
+}
+
+#[test]
+fn with_no_helper_bot_start_mine_explains_that_a_second_bot_is_needed() {
+    let (_tmp, bot) = bot();
+    let (kai, rowan) = (member("1"), member("2"));
+    bot.on_voice(G, &kai, Some(VC), true);
+    bot.on_voice(G, &rowan, Some("800000000000000098"), true);
+    play(&bot, &kai, "https://example.com/a.mp3", NOW);
+    let said_ = said(&press(&bot, &rowan, "mu:start", NOW + 1000)[0]);
+    assert!(said_.contains("one channel at a time") && said_.contains("Music bots"), "{said_}");
+}

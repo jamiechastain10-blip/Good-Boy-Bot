@@ -63,8 +63,10 @@ pub struct Rank<'a> {
 pub mod arcade;
 pub mod fishui;
 pub mod games;
+pub mod greeting;
 pub mod pixel;
 pub mod quote;
+pub use greeting::{greeting_card, greeting_svg, Greeting};
 pub use quote::{quote_animated, quote_motion, quote_png, Quote};
 
 const FIGTREE_600: &[u8] = include_bytes!("../fonts/Figtree-SemiBold.ttf");
@@ -257,6 +259,12 @@ pub fn png(svg: &str) -> Option<Vec<u8>> {
     let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())?;
     resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
     pixmap.encode_png().ok()
+}
+
+/// A small PNG of any picture (320×180, the middle cropped), for galleries and lists. A moving picture shows its first frame.
+pub fn thumbnail(bytes: &[u8]) -> Option<Vec<u8>> {
+    let uri = data_uri(bytes)?;
+    png(&format!(r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" fill="#151a26"/><image x="0" y="0" width="320" height="180" preserveAspectRatio="xMidYMid slice" xlink:href="{uri}"/></svg>"##))
 }
 
 /// Draws SVG into plain pixels: (width, height, RGBA).

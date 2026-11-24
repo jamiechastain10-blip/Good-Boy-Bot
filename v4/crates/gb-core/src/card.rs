@@ -62,6 +62,20 @@ pub enum Art {
     Rank(RankArt),
     /// A family tree (`/family tree`): drawn with the members' avatars, the text tree taken off the card.
     Family(Box<crate::family::FamilyArt>),
+    /// A welcome or goodbye picture: the server's background, the member's picture and two lines of words.
+    Greeting(GreetingArt),
+}
+/// What goes on a welcome or goodbye picture. The background is the server's own picture, carried as it is kept.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GreetingArt {
+    pub name: String,
+    pub avatar_url: Option<String>,
+    pub background: Option<std::sync::Arc<[u8]>>,
+    pub title: String,
+    pub line: String,
+    pub accent: Option<String>,
+    pub theme: Option<String>,
+    pub pixel: bool,
 }
 /// What goes on a rank card (Good Boy 3's rankCard inputs).
 #[derive(Debug, Clone, Default, PartialEq)]

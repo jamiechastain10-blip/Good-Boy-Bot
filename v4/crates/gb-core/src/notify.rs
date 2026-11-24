@@ -18,7 +18,7 @@ pub const CATEGORIES: &[(&str, &str, bool)] = &[
 ];
 const CHOICES: &[(&str, &str)] = &[("game-pings", "game-pings"), ("party-invites", "party-invites"), ("achievements", "achievements"), ("recaps", "recaps"), ("event-reminders", "event-reminders"), ("minecraft", "minecraft"), ("dms", "dms")];
 const SET: &[Opt] = &[Opt { name: "category", about: "What kind", takes: Takes::Choice(CHOICES), required: true }, Opt { name: "enabled", about: "On or off", takes: Takes::YesNo, required: true }];
-pub const COMMANDS: &[CommandSpec] = &[CommandSpec { name: "help", about: "See what this bot can do in this server", module: MODULE, options: &[], subs: &[] }, CommandSpec { name: "notifications", about: "Choose which optional pings and messages you get", module: MODULE, options: &[], subs: &[
+pub const COMMANDS: &[CommandSpec] = &[CommandSpec { name: "help", about: "See what this bot can do in this server, or how one command works", module: MODULE, options: &[Opt { name: "command", about: "A command, group or module to explain, such as images, mod or music", takes: Takes::Text, required: false }], subs: &[] }, CommandSpec { name: "notifications", about: "Choose which optional pings and messages you get", module: MODULE, options: &[], subs: &[
     Sub { name: "view", about: "See your current choices", options: &[] },
     Sub { name: "set", about: "Turn a kind of notification on or off for yourself", options: SET },
     Sub { name: "server-default", about: "(Admins) Set this server's default for a kind of notification", options: SET },

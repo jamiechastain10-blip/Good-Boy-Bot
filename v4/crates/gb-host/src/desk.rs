@@ -771,6 +771,22 @@ impl Desk {
         };
         Ok(json!({ "welcome": one("welcome"), "goodbye": one("goodbye") }))
     }
+    /// How a welcome or goodbye message will look, with a sample member called Alex: the message as people read it, and the
+    /// picture (drawn exactly as Discord will get it) when the card look is chosen. `tried` holds what is being tried out on
+    /// screen before it is saved: look, message, title, line, accent, theme.
+    pub fn greeting_preview(&self, guild: &str, kind: &str, tried: &Value) -> Result<Value, String> {
+        let bot = self.bot()?;
+        let (art, text) = bot.greeting_preview(guild, kind, tried).ok_or("Pick welcome or goodbye.")?;
+        let image = match art {
+            Some(a) => {
+                let g = gb_art::Greeting { name: &a.name, avatar: None, background: a.background.as_deref(), title: &a.title, line: &a.line, accent: a.accent.as_deref(), theme: a.theme.as_deref(), pixel: false };
+                match gb_art::greeting_card(&g) { Some(png) => json!(Self::data_url("preview.png", &png)), None => Value::Null }
+            }
+            None => Value::Null,
+        };
+        let has_picture = bot.greeting_image(guild, kind).is_some();
+        Ok(json!({ "text": text, "image": image, "has_picture": has_picture }))
+    }
     pub fn greeting_image_set(&self, guild: &str, kind: &str, name: &str, data: &str) -> Result<(), String> {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
         self.bot()?.greeting_image_set(guild, kind, name, &Self::unpack(data)?, now)
@@ -778,6 +794,46 @@ impl Desk {
     pub fn greeting_image_clear(&self, guild: &str, kind: &str) -> Result<(), String> {
         self.bot()?.greeting_image_clear(guild, kind)
     }
+    /// The Server setup page: the layouts, the last check, and what the last build or fix did.
+    pub fn setup_view(&self, guild: &str) -> Result<Value, String> { Ok(self.bot()?.setup_view(guild)) }
+    /// Starts a step of server setup in Discord (it takes a few seconds to a minute; the page reads the result with `setup_view`).
+    pub fn setup_run(&self, guild: &str, step: &str, what: &str) -> Result<(), String> {
+        use gb_core::{SetupJob, SetupStep};
+        let step = match step {
+            "scan" => SetupStep::Scan,
+            "build" if gb_core::setup::template(what).is_some() => SetupStep::Build(what.to_string()),
+            "fix" if gb_core::setup::FIXES.iter().any(|f| f.0 == what) => SetupStep::Fix(what.to_string()),
+            _ => return Err("I don't know that step.".into()),
+        };
+        self.runner.act(guild, vec![gb_core::Action::Setup(Box::new(SetupJob { by: "dashboard".into(), step }))])
+    }
+    /// Numbers for the Eclipse ID page: cards, people seen here, people with games picked up, and whether Discord shows statuses.
+    pub fn eclipse_view(&self, guild: &str) -> Result<Value, String> { Ok(self.bot()?.eclipse_view(guild)) }
+    /// Every command with its parts and boxes, by module (the app's Commands guide).
+    pub fn commands_guide(&self) -> Value { gb_core::guide::reference() }
+    /// The server's picture gallery: every picture saved for the bot, each with a small preview and where it is in use.
+    pub fn gallery_view(&self, guild: &str) -> Result<Value, String> {
+        let bot = self.bot()?;
+        let thumbs = bot.gallery_dir(guild).map(|d| d.join("thumbs"));
+        let list: Vec<Value> = bot.gallery_pictures(guild).into_iter().map(|(p, uses)| {
+            // a small copy is drawn once and kept, so opening the gallery stays quick
+            let cached = thumbs.as_ref().map(|d| d.join(format!("{}.png", p.id)));
+            let thumb = cached.as_ref().and_then(|f| std::fs::read(f).ok()).or_else(|| {
+                let png = gb_art::thumbnail(&bot.gallery_bytes(guild, &p.id)?)?;
+                if let Some(f) = &cached { if let Some(d) = f.parent() { let _ = std::fs::create_dir_all(d); } let _ = std::fs::write(f, &png); }
+                Some(png)
+            });
+            json!({ "id": p.id, "name": p.name, "size": p.size, "at": p.at, "uses": uses, "preview": thumb.map(|t| Self::data_url("t.png", &t)) })
+        }).collect();
+        Ok(json!({ "pictures": list, "max": gb_core::gallery::MAX_PICTURES, "slots": gb_core::gallery::SLOTS.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>() }))
+    }
+    pub fn gallery_add(&self, guild: &str, name: &str, data: &str) -> Result<String, String> {
+        self.bot()?.gallery_add(guild, name, &Self::unpack(data)?, Self::now_ms())
+    }
+    pub fn gallery_rename(&self, guild: &str, id: &str, name: &str) -> Result<(), String> { self.bot()?.gallery_rename(guild, id, name) }
+    pub fn gallery_remove(&self, guild: &str, id: &str) -> Result<(), String> { self.bot()?.gallery_remove(guild, id) }
+    pub fn gallery_use(&self, guild: &str, id: &str, slot: &str) -> Result<(), String> { self.bot()?.gallery_use(guild, id, slot, Self::now_ms()) }
+    pub fn gallery_stop(&self, guild: &str, slot: &str) -> Result<(), String> { self.bot()?.gallery_stop(guild, slot) }
     /// The server's critter characters, with pictures, and what a character can be.
     pub fn critters_view(&self, guild: &str) -> Result<Value, String> {
         let bot = self.bot()?;
@@ -999,6 +1055,10 @@ impl Desk {
     pub fn economy(&self, guild: &str) -> Result<Value, String> {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
         Ok(self.bot()?.economy_view(guild, now))
+    }
+    /// Adds new coins to the treasury. Works without the bot running: it only changes the database.
+    pub fn treasury_add(&self, guild: &str, amount: i64, note: &str) -> Result<i64, String> {
+        self.bot()?.economy_add(guild, amount, note, Self::now_ms())
     }
     /// Pays coins out of the treasury to a member. Works without the bot running: it only changes the database.
     pub fn treasury_give(&self, guild: &str, user: &str, amount: i64, reason: &str) -> Result<i64, String> {
