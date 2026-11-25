@@ -74,6 +74,49 @@ impl Default for Prefs {
     }
 }
 
+/// The moderation log in numbers, over every case: how many of each kind in the last day, week, month and ever; cases
+/// per day for the last 30 days; the moderators who acted most (AutoMod as "auto"); and the members with the most cases.
+pub fn case_stats(all: &[Value], now: i64) -> Value {
+    use std::collections::{BTreeMap, HashMap};
+    const DAY: i64 = 86_400_000;
+    let mut kinds: BTreeMap<String, [u64; 4]> = BTreeMap::new();
+    let mut days: Vec<BTreeMap<String, u64>> = vec![BTreeMap::new(); 30];
+    let mut mods: HashMap<String, (u64, i64, BTreeMap<String, u64>)> = HashMap::new();
+    let mut members: HashMap<String, (u64, String, i64, u64, u64)> = HashMap::new();
+    for c in all {
+        let kind = c["type"].as_str().unwrap_or("other").to_string();
+        let at = c["at"].as_i64().unwrap_or(0);
+        let ago = (now - at).max(0);
+        let k = kinds.entry(kind.clone()).or_default();
+        k[3] += 1;
+        if ago < DAY { k[0] += 1; }
+        if ago < 7 * DAY { k[1] += 1; }
+        if ago < 30 * DAY { k[2] += 1; *days[(ago / DAY) as usize].entry(kind.clone()).or_default() += 1; }
+        let by = c["modId"].as_str().filter(|m| !m.is_empty()).unwrap_or("auto").to_string();
+        let m = mods.entry(by).or_insert((0, 0, BTreeMap::new()));
+        m.0 += 1; m.1 = m.1.max(at); *m.2.entry(kind.clone()).or_default() += 1;
+        if let Some(id) = c["targetId"].as_str() {
+            let e = members.entry(id.to_string()).or_insert((0, String::new(), 0, 0, 0));
+            e.0 += 1;
+            if at >= e.2 { e.2 = at; if let Some(n) = c["targetTag"].as_str().filter(|n| !n.is_empty()) { e.1 = n.to_string(); } }
+            if kind == "warn" { e.3 += 1; }
+            if kind == "unwarn" { e.4 += 1; }
+        }
+    }
+    let mut mods: Vec<_> = mods.into_iter().collect();
+    mods.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(b.1 .1.cmp(&a.1 .1)));
+    let mut members: Vec<_> = members.into_iter().collect();
+    members.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(b.1 .2.cmp(&a.1 .2)));
+    let people = members.len();
+    json!({
+        "kinds": kinds.into_iter().map(|(k, v)| (k, json!({ "day": v[0], "week": v[1], "month": v[2], "all": v[3] }))).collect::<serde_json::Map<_, _>>(),
+        "days": days.into_iter().enumerate().map(|(ago, c)| json!({ "ago": ago, "counts": c })).collect::<Vec<_>>(),
+        "mods": mods.into_iter().take(10).map(|(id, (n, last, by))| json!({ "id": id, "count": n, "last": last, "kinds": by })).collect::<Vec<_>>(),
+        "members": members.into_iter().take(10).map(|(id, (n, name, last, w, u))| json!({ "id": id, "name": name, "count": n, "last": last, "warnings": w.saturating_sub(u) })).collect::<Vec<_>>(),
+        "people": people,
+    })
+}
+
 pub struct Desk {
     pub folders: Folders,
     pub runner: Runner,
@@ -935,8 +978,9 @@ impl Desk {
         let mut all: Vec<Value> = lists.into_iter().flat_map(|(_, v)| v.as_array().cloned().unwrap_or_default()).collect();
         all.sort_by_key(|c| std::cmp::Reverse(c["at"].as_i64().unwrap_or(0)));
         let total = all.len();
+        let stats = case_stats(&all, Self::now_ms());
         all.truncate(limit.min(500));
-        Ok(json!({ "total": total, "cases": all }))
+        Ok(json!({ "total": total, "cases": all, "stats": stats }))
     }
     /// Tickets, newest first: {open, total, tickets: [{number, opener, category, opened_at, closed_at, claimed_by, first_response_ms, kind}]}.
     /// `find`: only tickets whose conversation has all these words (the archive's search), or whose number, opener,
@@ -1498,6 +1542,15 @@ mod tests {
         }
         let c = d.cases("100000000000000001", 2).unwrap();
         assert_eq!((c["total"].as_i64(), c["cases"][0]["id"].as_i64(), c["cases"][1]["id"].as_i64(), c["cases"].as_array().unwrap().len()), (Some(3), Some(3), Some(2), 2));
+        // the numbers are over every case, not only the ones sent
+        assert_eq!((c["stats"]["kinds"]["warn"]["all"].as_u64(), c["stats"]["kinds"]["ban"]["all"].as_u64(), c["stats"]["people"].as_u64()), (Some(1), Some(1), Some(2)));
+        assert_eq!((c["stats"]["members"][0]["id"].as_str(), c["stats"]["members"][0]["count"].as_u64(), c["stats"]["members"][0]["warnings"].as_u64()), (Some("7"), Some(2), Some(1)));
+        assert_eq!((c["stats"]["mods"][0]["id"].as_str(), c["stats"]["mods"][0]["count"].as_u64()), (Some("auto"), Some(3)));
+        assert_eq!(c["stats"]["days"].as_array().unwrap().len(), 30);
+        let now = 40 * 86_400_000;
+        let s = case_stats(&[json!({ "type": "warn", "at": now - 1000, "modId": "5", "targetId": "7" }), json!({ "type": "warn", "at": now - 3 * 86_400_000, "modId": "5", "targetId": "7" }), json!({ "type": "kick", "at": now - 35 * 86_400_000, "targetId": "9" })], now);
+        assert_eq!((s["kinds"]["warn"]["day"].as_u64(), s["kinds"]["warn"]["week"].as_u64(), s["kinds"]["kick"]["month"].as_u64(), s["kinds"]["kick"]["all"].as_u64()), (Some(1), Some(2), Some(0), Some(1)));
+        assert_eq!((s["days"][0]["counts"]["warn"].as_u64(), s["days"][3]["counts"]["warn"].as_u64(), s["mods"][0]["id"].as_str()), (Some(1), Some(1), Some("5")));
         let o = d.dashboard("100000000000000001").unwrap();
         assert_eq!((o["cases"].as_u64(), o["tickets"]["open"].as_u64()), (Some(3), Some(0)));
         assert!(d.boards("100000000000000001", 5).unwrap()["xp"].as_array().unwrap().is_empty());

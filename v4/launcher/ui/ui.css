@@ -475,3 +475,47 @@ mark{background:color-mix(in srgb,var(--warn) 35%,transparent);color:inherit;bor
 .own-swatch{display:inline-block;width:22px;height:22px;flex:none;border-radius:50%;border:1px solid var(--line);background:linear-gradient(135deg,var(--a) 0 45%,var(--p) 45% 72%,var(--b) 72%)}
 .own-preset{display:inline-flex;align-items:center;gap:8px}
 .own-colours.locked .own-swatches{opacity:.75}
+
+/* the moderation log */
+.pill.kind{background:color-mix(in srgb,var(--k) 18%,transparent);color:var(--k)}
+.tools.wrap{flex-wrap:wrap}
+.tools.wrap input{flex:1 1 240px}
+.modchart{display:grid;grid-template-columns:repeat(30,1fr);gap:3px;align-items:end;height:120px;padding-top:6px}
+.modbar{height:100%;display:flex;align-items:flex-end;border-radius:3px;background:color-mix(in srgb,var(--ink) 4%,transparent)}
+.modbar:hover{background:color-mix(in srgb,var(--ink) 10%,transparent)}
+.modstack{width:100%;display:flex;flex-direction:column-reverse;border-radius:3px;overflow:hidden;min-height:0}
+.modstack i{display:block;min-height:2px}
+.modaxis{display:flex;justify-content:space-between}
+.modlegend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--ink-2)}
+.modlegend span{display:inline-flex;align-items:center;gap:6px}
+.modlegend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.ranks{gap:2px;align-content:start}
+.two > .card{align-content:start}
+.rankrow{display:grid;grid-template-columns:26px minmax(0,1fr) auto 78px;align-items:center;gap:10px;width:100%;padding:8px 6px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;border-radius:var(--r-sm)}
+.rankrow:hover{background:var(--raised)}
+.rankrow .grow{display:grid;min-width:0}
+.rankrow .grow small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rankrow > small{text-align:right}
+.modlog{display:grid}
+.logrow{display:grid;grid-template-columns:96px 52px 130px minmax(110px,1fr) minmax(160px,2fr) minmax(90px,1fr);gap:12px;align-items:center;padding:10px 8px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:var(--r-sm)}
+.logrow:hover,.logrow.open{background:var(--raised)}
+.logrow.loghead{cursor:default;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);background:none;padding-top:4px}
+.logrow > span,.logrow > b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logrow .lwhen{font-size:13px;color:var(--ink-2)}
+.logrow .lby{font-size:13.5px}
+.casedetail{display:grid;gap:12px;padding:12px 14px 16px;margin:0 0 6px;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--raised) 60%,transparent);border-radius:0 0 var(--r-sm) var(--r-sm)}
+.casereason{white-space:pre-wrap;overflow-wrap:anywhere}
+details.fold > summary{display:flex;align-items:baseline;gap:12px;cursor:pointer;list-style:none}
+details.fold > summary::-webkit-details-marker{display:none}
+details.fold > summary::before{content:"▸";color:var(--ink-3)}
+details.fold[open] > summary::before{content:"▾"}
+details.fold > .card{border:0;padding:0;background:none}
+details.fold > .card > h3{display:none}
+@media (max-width:760px){
+  .logrow{grid-template-columns:auto auto 1fr;grid-template-areas:"what num when" "who who who" "why why why" "by by by";gap:4px 10px}
+  .logrow.loghead{display:none}
+  .logrow > :nth-child(1){grid-area:when;text-align:right}.logrow > :nth-child(2){grid-area:num}.logrow > :nth-child(3){grid-area:what}
+  .logrow > :nth-child(4){grid-area:who}.logrow > :nth-child(5){grid-area:why;white-space:normal}.logrow > :nth-child(6){grid-area:by}
+  .rankrow{grid-template-columns:22px minmax(0,1fr) auto}
+  .rankrow > small{display:none}
+}

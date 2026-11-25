@@ -404,7 +404,7 @@
     input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 180); });
     input.addEventListener('focus', search);
     input.addEventListener('blur', () => setTimeout(() => { menu.hidden = true; }, 150));
-    return { el: h('div', { class: 'picker' }, input, menu, chip), id: () => (chosen ? chosen.id : null), name: () => (chosen ? chosen.name : null), clear };
+    return { el: h('div', { class: 'picker' }, input, menu, chip), id: () => (chosen ? chosen.id : null), name: () => (chosen ? chosen.name : null), clear, choose };
   }
   const when = (ms) => new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   /** The server picker both data pages share. Calls `then(guildId)` once a server is chosen. */
@@ -423,11 +423,6 @@
       try { inner.replaceChildren(...(await then(g.id)).filter(Boolean)); } catch (e) { inner.replaceChildren(h('p', { class: 'msg bad' }, e.message)); }
     })();
     return [body];
-  }
-  function caseRow(c) {
-    return h('div', { class: 'case' }, h('span', { class: `dot ${CASE_DOT[c.type] || 'info'}` }),
-      h('div', { class: 'text' }, h('b', {}, `#${c.id} · ${CASE_WORDS[c.type] || c.type}`, ' · ', who(c.targetId, c.targetTag)), h('p', { class: 'muted small' }, c.reason || 'No reason given.')),
-      h('span', { class: 'muted small' }, c.at ? when(c.at) : ''));
   }
   function board(title, rows, line) {
     return h('div', { class: 'card' }, h('h3', {}, title), rows.length ? h('div', { class: 'list' }, rows.map((r, i) => h('div', {}, h('span', {}, `${i + 1}. `, r.name || who(r.user)), h('b', {}, line(r))))) : h('p', { class: 'muted' }, 'Nobody yet.'));
@@ -472,26 +467,148 @@
         toast(said); reason.value = ''; pick.clear(); after();
       });
     });
-    return h('div', { class: 'card' }, h('h3', {}, 'Take an action'), h('p', { class: 'muted small' }, 'The bot must be running. This is recorded as a case and logged like the command.'),
+    const card = h('div', { class: 'card' }, h('h3', {}, 'Take an action'), h('p', { class: 'muted small' }, 'The bot must be running. This is recorded as a case and logged like the command.'),
       h('div', { class: 'grid2' }, f('What to do', kind), f('Member', pick.el)), f('Reason', reason), lengthRow, h('div', { class: 'btns' }, go));
+    /** Fills the form from the moderation log: what to do and to whom. */
+    card.fill = (what, id, name) => { if (what) kind.value = what; sync(); if (id) pick.choose({ id, name: name || who(id) }); reason.focus(); };
+    return card;
+  }
+  // ---- the moderation log: numbers, a month at a glance, who acts and who gets acted on, and every case in full
+  const KIND_COLOUR = { warn: 'var(--warn)', timeout: '#f08a4b', kick: 'var(--bad)', ban: '#c43a5a', automod: 'var(--accent)', unwarn: 'var(--good)', untimeout: 'var(--good)', unban: 'var(--good)', purge: 'var(--ink-3)' };
+  const PERIODS = [['day', 'Last 24 hours', 864e5], ['week', 'Last 7 days', 7 * 864e5], ['month', 'Last 30 days', 30 * 864e5], ['all', 'All time', Infinity]];
+  const agoText = (ms) => { const m = Math.round((Date.now() - ms) / 6e4); if (m < 1) return 'just now'; if (m < 60) return `${m} min ago`; const hr = Math.round(m / 60); if (hr < 48) return `${hr} h ago`; const d = Math.round(hr / 24); return d < 60 ? `${d} days ago` : new Date(ms).toLocaleDateString(); };
+  const lengthWords = (ms) => { if (!ms) return null; const m = Math.round(ms / 6e4); if (m < 60) return `${m} min`; const hr = m / 60; if (hr < 48) return `${Math.round(hr * 10) / 10} h`; return `${Math.round(hr / 24)} days`; };
+  const kindCount = (n, k) => { if (k === 'automod') return `${n} AutoMod action${n === 1 ? '' : 's'}`; const w = (CASE_WORDS[k] || k).toLowerCase(); return `${n} ${n === 1 ? w : `${w}s`}`; };
+  const byWho = (c) => (c.modId ? who(c.modId) : 'AutoMod');
+  function kindPill(type) { return h('span', { class: 'pill kind', style: `--k:${KIND_COLOUR[type] || 'var(--ink-3)'}` }, CASE_WORDS[type] || type); }
+  function caseRow(c) {
+    return h('div', { class: 'case', 'data-case': c.id, 'data-member': c.targetId || '' }, h('span', { class: `dot ${CASE_DOT[c.type] || 'info'}` }),
+      h('div', { class: 'text' }, h('b', {}, `#${c.id} · ${CASE_WORDS[c.type] || c.type}`, ' · ', who(c.targetId, c.targetTag)),
+        h('p', { class: 'muted small' }, c.reason || 'No reason given.', ' · by ', byWho(c), c.durationMs ? ` · ${lengthWords(c.durationMs)}` : '')),
+      h('span', { class: 'muted small', title: c.at ? when(c.at) : '' }, c.at ? agoText(c.at) : ''));
+  }
+  /** Thirty days of cases as bars, one per day, coloured by kind. */
+  function caseChart(days) {
+    const rows = days.slice().reverse();
+    const top = Math.max(1, ...rows.map((d) => Object.values(d.counts).reduce((a, b) => a + b, 0)));
+    const kinds = [...new Set(rows.flatMap((d) => Object.keys(d.counts)))];
+    return h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'The last 30 days'), h('span', { class: 'muted small' }, `Busiest day: ${top} case${top === 1 ? '' : 's'}`)),
+      h('div', { class: 'modchart', role: 'img', 'aria-label': 'Cases per day for the last 30 days' }, rows.map((d) => {
+        const total = Object.values(d.counts).reduce((a, b) => a + b, 0);
+        const day = new Date(Date.now() - d.ago * 864e5);
+        const tip = `${d.ago === 0 ? 'Today' : d.ago === 1 ? 'Yesterday' : day.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${total ? Object.entries(d.counts).map(([k, n]) => kindCount(n, k)).join(', ') : 'nothing'}`;
+        return h('div', { class: 'modbar', title: tip }, h('div', { class: 'modstack', style: `height:${Math.round((total / top) * 100)}%` },
+          Object.entries(d.counts).map(([k, n]) => h('i', { style: `flex:${n};background:${KIND_COLOUR[k] || 'var(--ink-3)'}` }))));
+      })),
+      h('div', { class: 'modaxis muted small' }, h('span', {}, '30 days ago'), h('span', {}, 'Today')),
+      kinds.length ? h('div', { class: 'modlegend' }, kinds.map((k) => h('span', {}, h('i', { style: `background:${KIND_COLOUR[k] || 'var(--ink-3)'}` }), CASE_WORDS[k] || k))) : h('p', { class: 'muted small' }, 'Nothing in the last 30 days.'));
   }
   function pageCases() {
-    S.caseType = S.caseType || 'all'; S.caseFind = S.caseFind || ''; S.caseMax = S.caseMax || 50;
-    return withServer('Moderation', 'Cases, and warn, time out, kick or ban', async (guild) => {
+    S.caseType = S.caseType || 'all'; S.caseFind = S.caseFind || ''; S.caseMax = S.caseMax || 200; S.casePeriod = S.casePeriod || 'all'; S.caseMod = S.caseMod || 'all';
+    return withServer('Moderation', 'Every warning, timeout, kick and ban, who did it and why', async (guild) => {
       const r = await call('cases', { guild, limit: S.caseMax });
-      await learn(guild, r.cases.flatMap((c) => [c.targetId, c.modId]));
-      const list = h('div', { class: 'list' });
-      const types = ['all', ...new Set(r.cases.map((c) => c.type))];
-      const paint = () => {
-        const q = S.caseFind.toLowerCase();
-        const shown = r.cases.filter((c) => (S.caseType === 'all' || c.type === S.caseType) && (!q || `${c.targetTag || ''} ${c.targetId} ${c.reason || ''} ${c.id}`.toLowerCase().includes(q)));
-        list.replaceChildren(...(shown.length ? shown.map(caseRow) : [h('p', { class: 'muted' }, r.cases.length ? 'No case matches that.' : 'No cases yet.')]));
+      const st = r.stats || { kinds: {}, days: [], mods: [], members: [], people: 0 };
+      await learn(guild, [...r.cases.flatMap((c) => [c.targetId, c.modId]), ...st.mods.map((m) => m.id).filter((x) => x !== 'auto'), ...st.members.map((m) => m.id)]);
+      const n = (v) => Number(v || 0).toLocaleString();
+      const sum = (per, kinds) => Object.entries(st.kinds).filter(([k]) => !kinds || kinds.includes(k)).reduce((a, [, v]) => a + (v[per] || 0), 0);
+      const form = actionForm(guild, () => draw());
+      const formBox = h('details', { class: 'card fold' }, h('summary', {}, h('h3', {}, 'Take an action'), h('span', { class: 'muted small' }, 'Warn, time out, kick or ban someone')), form);
+      const act = (what, id, name) => { formBox.open = true; form.fill(what, id, name); formBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+      const onlyMember = (id) => { S.caseFind = who(id); S.casePeriod = 'all'; S.caseType = 'all'; S.caseMod = 'all'; findBox.value = S.caseFind; periodSel.value = 'all'; kindSel.value = 'all'; modSel.value = 'all'; paint(); logCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
+      // the numbers
+      const tiles = h('div', { class: 'stats' },
+        h('div', { class: 'stat' }, h('b', {}, n(sum('day'))), h('span', {}, 'Cases today'), h('small', { class: 'hint' }, `${n(sum('week'))} this week`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month'))), h('span', {}, 'Last 30 days'), h('small', { class: 'hint' }, `${n(r.total)} in all`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month', ['warn']))), h('span', {}, 'Warnings (30 days)'), h('small', { class: 'hint' }, `${n(sum('all', ['warn']))} ever`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month', ['timeout']))), h('span', {}, 'Timeouts (30 days)'), h('small', { class: 'hint' }, `${n(sum('all', ['timeout']))} ever`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month', ['kick', 'ban']))), h('span', {}, 'Kicks and bans (30 days)'), h('small', { class: 'hint' }, `${n(sum('all', ['kick']))} kicks, ${n(sum('all', ['ban']))} bans ever`)),
+        h('div', { class: 'stat' }, h('b', {}, n((st.mods.find((m) => m.id === 'auto') || {}).count)), h('span', {}, 'By AutoMod (ever)'), h('small', { class: 'hint' }, `${n(st.people)} member${st.people === 1 ? ' has' : 's have'} a case`)));
+
+      // who acts, and who gets acted on
+      const modsCard = h('div', { class: 'card' }, h('h3', {}, 'Who moderates'),
+        st.mods.length ? h('div', { class: 'list ranks' }, st.mods.map((m, i) => h('button', { type: 'button', class: 'rankrow', title: 'Show only their cases', onclick: () => { S.caseMod = m.id; modSel.value = m.id; paint(); logCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
+          h('span', { class: 'muted' }, `${i + 1}.`), h('span', { class: 'grow' }, m.id === 'auto' ? 'AutoMod' : who(m.id), h('small', { class: 'muted' }, Object.entries(m.kinds).sort((a, b) => b[1] - a[1]).map(([k, c]) => kindCount(c, k)).join(' · '))),
+          h('b', {}, n(m.count)), h('small', { class: 'muted' }, agoText(m.last))))) : h('p', { class: 'muted' }, 'Nobody has moderated yet.'));
+      const membersCard = h('div', { class: 'card' }, h('h3', {}, 'Members with the most cases'),
+        st.members.length ? h('div', { class: 'list ranks' }, st.members.map((m, i) => h('button', { type: 'button', class: 'rankrow', 'data-member': m.id, title: 'Show their whole history', onclick: () => onlyMember(m.id) },
+          h('span', { class: 'muted' }, `${i + 1}.`), h('span', { class: 'grow' }, m.name || who(m.id), h('small', { class: 'muted' }, m.warnings ? `${m.warnings} warning${m.warnings === 1 ? '' : 's'} standing` : 'no warnings standing')),
+          h('b', {}, n(m.count)), h('small', { class: 'muted' }, agoText(m.last))))) : h('p', { class: 'muted' }, 'Nobody yet.'));
+
+      // the log itself
+      const body = h('div', { class: 'modlog' });
+      const count = h('span', { class: 'muted small' });
+      const findBox = h('input', { type: 'search', placeholder: 'Search member, reason, moderator or #number', 'aria-label': 'Search the log', value: S.caseFind, oninput: (e) => { S.caseFind = e.target.value; paint(); } });
+      const types = ['all', ...new Set([...Object.keys(st.kinds), ...r.cases.map((c) => c.type)])];
+      const kindSel = h('select', { 'aria-label': 'Kind of case', onchange: (e) => { S.caseType = e.target.value; paint(); } }, types.map((t) => h('option', { value: t, selected: t === S.caseType }, t === 'all' ? 'Every kind' : CASE_WORDS[t] || t)));
+      const mods = [...new Set(r.cases.map((c) => c.modId || 'auto'))];
+      const modSel = h('select', { 'aria-label': 'Moderator', onchange: (e) => { S.caseMod = e.target.value; paint(); } }, [h('option', { value: 'all' }, 'Every moderator'), ...mods.map((m) => h('option', { value: m, selected: m === S.caseMod }, m === 'auto' ? 'AutoMod' : who(m)))]);
+      const periodSel = h('select', { 'aria-label': 'When', onchange: (e) => { S.casePeriod = e.target.value; paint(); } }, PERIODS.map(([v, l]) => h('option', { value: v, selected: v === S.casePeriod }, l)));
+      let shown = [];
+      const exportCsv = () => {
+        const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+        const lines = [['Case', 'When', 'Kind', 'Member', 'Member ID', 'Reason', 'Moderator', 'Moderator ID', 'Length', 'Notes'].map(q).join(',')].concat(shown.map((c) => [c.id, c.at ? new Date(c.at).toISOString() : '', CASE_WORDS[c.type] || c.type, who(c.targetId, c.targetTag), c.targetId, c.reason, byWho(c), c.modId || '', lengthWords(c.durationMs) || '', c.notes || ''].map(q).join(',')));
+        const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+        const a = h('a', { href: url, download: `moderation-log-${new Date().toISOString().slice(0, 10)}.csv` }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast(`Saved ${shown.length} case${shown.length === 1 ? '' : 's'}.`);
       };
-      const find = h('input', { type: 'search', placeholder: 'Search by member, reason or number', 'aria-label': 'Search cases', value: S.caseFind, oninput: (e) => { S.caseFind = e.target.value; paint(); } });
-      const kind = h('select', { 'aria-label': 'Kind of case', onchange: (e) => { S.caseType = e.target.value; paint(); } }, types.map((t) => h('option', { value: t, selected: t === S.caseType }, t === 'all' ? 'All kinds' : CASE_WORDS[t] || t)));
+      const historyOf = (id) => r.cases.filter((c) => c.targetId === id);
+      const detail = (c) => {
+        const past = historyOf(c.targetId);
+        const fact = (label, value) => (value == null || value === '' ? null : h('div', {}, h('span', { class: 'muted small' }, label), h('b', {}, value)));
+        return h('div', { class: 'casedetail' },
+          h('p', { class: 'casereason' }, c.reason || 'No reason given.'),
+          h('div', { class: 'facts' }, fact('When', c.at ? when(c.at) : null), fact('Member', who(c.targetId, c.targetTag)), fact('By', byWho(c)), fact('Length', lengthWords(c.durationMs)), fact('Notes', c.notes),
+            fact('Their record', `${past.length} case${past.length === 1 ? '' : 's'}: ${Object.entries(past.reduce((a, x) => { a[x.type] = (a[x.type] || 0) + 1; return a; }, {})).map(([k, v]) => kindCount(v, k)).join(', ')}`),
+            fact('First case', past.length ? when(past[past.length - 1].at) : null)),
+          h('div', { class: 'btns' },
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => onlyMember(c.targetId) }, 'All their cases'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => act('warn', c.targetId, who(c.targetId, c.targetTag)) }, 'Warn'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => act('timeout', c.targetId, who(c.targetId, c.targetTag)) }, 'Time out'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => act('kick', c.targetId, who(c.targetId, c.targetTag)) }, 'Kick'),
+            h('button', { class: 'btn quiet small danger', type: 'button', onclick: () => act('ban', c.targetId, who(c.targetId, c.targetTag)) }, 'Ban'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => window.BGLMenu.copy(c.targetId, 'Member ID copied.') }, 'Copy member ID')));
+      };
+      const open = new Set();
+      function paint() {
+        const q = S.caseFind.trim().toLowerCase().replace(/^#/, '');
+        const since = Date.now() - PERIODS.find((p) => p[0] === S.casePeriod)[2];
+        shown = r.cases.filter((c) => (S.caseType === 'all' || c.type === S.caseType) && (S.caseMod === 'all' || (c.modId || 'auto') === S.caseMod) && (!c.at || c.at >= since)
+          && (!q || String(c.id) === q || `${who(c.targetId, c.targetTag)} ${c.targetId} ${c.reason || ''} ${byWho(c)} ${CASE_WORDS[c.type] || c.type} ${c.notes || ''}`.toLowerCase().includes(q)));
+        count.textContent = `${shown.length} of ${r.cases.length} shown${r.total > r.cases.length ? ` (${r.total} in all)` : ''}`;
+        if (!shown.length) { body.replaceChildren(h('p', { class: 'muted' }, r.cases.length ? 'No case matches that.' : 'No cases yet. Nothing to worry about.')); return; }
+        body.replaceChildren(h('div', { class: 'logrow loghead', 'aria-hidden': 'true' }, ['When', '#', 'What', 'Member', 'Reason', 'By'].map((x) => h('span', {}, x))),
+          ...shown.map((c) => {
+            const row = h('div', { class: 'logrow' + (open.has(c.id) ? ' open' : ''), role: 'button', tabindex: '0', 'aria-expanded': String(open.has(c.id)), 'data-case': c.id, 'data-member': c.targetId || '',
+              onclick: () => { if (open.has(c.id)) open.delete(c.id); else open.add(c.id); paint(); },
+              onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } },
+              h('span', { class: 'lwhen', title: c.at ? when(c.at) : '' }, c.at ? agoText(c.at) : '-'), h('span', { class: 'muted' }, `#${c.id}`), h('span', {}, kindPill(c.type)),
+              h('b', { class: 'lwho' }, who(c.targetId, c.targetTag)), h('span', { class: 'lwhy' }, c.reason || h('i', { class: 'muted' }, 'No reason given'), c.durationMs ? h('span', { class: 'muted' }, ` · ${lengthWords(c.durationMs)}`) : null),
+              h('span', { class: 'muted lby' }, byWho(c)));
+            return open.has(c.id) ? [row, detail(c)] : row;
+          }));
+      }
       paint();
-      return [actionForm(guild, () => draw()), h('div', { class: 'card' }, h('div', { class: 'tools' }, find, kind), list,
-        r.total > r.cases.length ? h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => { S.caseMax += 100; draw(); } }, `Show more (${r.cases.length} of ${r.total})`)) : h('p', { class: 'muted small' }, `${r.total} in all.`))];
+      // the right-click menu (menu.js) asks here what can be done with a case or a member
+      S.caseMenu = (el) => {
+        const c = el.dataset.case ? r.cases.find((x) => String(x.id) === el.dataset.case) : null;
+        const id = el.dataset.member || (c && c.targetId);
+        if (!id) return [];
+        const name = who(id, c && c.targetTag);
+        return [{ heading: c ? `Case #${c.id} · ${name}` : name },
+          { label: 'All their cases', icon: 'list', run: () => onlyMember(id) },
+          { label: 'Warn…', icon: 'help', run: () => act('warn', id, name) }, { label: 'Time out…', icon: 'stop', run: () => act('timeout', id, name) },
+          { label: 'Kick…', icon: 'back', run: () => act('kick', id, name) }, { label: 'Ban…', icon: 'lock', danger: true, run: () => act('ban', id, name) },
+          { label: 'Copy member ID', icon: 'copy', run: () => window.BGLMenu.copy(id, 'Member ID copied.') },
+          ...(c ? [{ label: 'Copy case', icon: 'copy', run: () => window.BGLMenu.copy(`Case #${c.id} · ${CASE_WORDS[c.type] || c.type} · ${name} · ${c.reason || 'No reason given'} · by ${byWho(c)}${c.at ? ` · ${when(c.at)}` : ''}`, 'Case copied.') }] : [])];
+      };
+      const logCard = h('div', { class: 'card' },
+        h('div', { class: 'row' }, h('h3', {}, 'Moderation log'), count),
+        h('div', { class: 'tools wrap' }, findBox, kindSel, modSel, periodSel, h('button', { class: 'btn quiet', type: 'button', onclick: exportCsv }, 'Save as spreadsheet')),
+        h('p', { class: 'muted small' }, 'Click a case for everything about it, or right-click it to act on the member.'),
+        body,
+        r.total > r.cases.length ? h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => { S.caseMax = Math.min(500, S.caseMax + 200); draw(); } }, `Load more (${r.cases.length} of ${r.total})`)) : null);
+      return [tiles, caseChart(st.days.length ? st.days : Array.from({ length: 30 }, (_, ago) => ({ ago, counts: {} }))), h('div', { class: 'two' }, modsCard, membersCard), logCard, formBox];
     });
   }
 
@@ -2067,6 +2184,7 @@
     setColours: (on) => setColours({ on }, on ? 'Your colours are on.' : 'Back to the regular colours.'),
     colours: () => { go('bot'); setTimeout(() => document.getElementById('own-colours')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); },
     openLink: (url) => window.open(url, '_blank', 'noopener'),
+    caseItems: (el) => (S.page === 'cases' && S.caseMenu ? S.caseMenu(el) : []),
     toast,
   };
   // On the web some things stay on the computer (tokens, the move from Good Boy 3, this computer's settings), and only the

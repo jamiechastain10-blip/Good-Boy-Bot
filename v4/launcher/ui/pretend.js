@@ -164,7 +164,7 @@
   const CHANNELS = [{ id: '200000000000000001', name: 'general', kind: 'text' }, { id: '200000000000000002', name: 'bot-commands', kind: 'text' }, { id: '200000000000000003', name: 'level-ups', kind: 'text' }, { id: '200000000000000004', name: 'Staff', kind: 'category' }];
   const tokenLike = (t) => t.trim().split('.').length === 3 && t.trim().length > 30;
   const NAMES = ['kai', 'mo', 'juniper', 'ash', 'rue', 'tobi', 'lin', 'ozzy', 'pia', 'dex'];
-  const CASES = Array.from({ length: 41 }, (_, i) => ({ id: 41 - i, type: ['warn', 'timeout', 'kick', 'ban', 'warn', 'automod'][i % 6], targetId: String(700000000000000000 + i), targetTag: NAMES[i % 10], modId: '900000000000000001', reason: ['Spam in #general', 'Link to a scam site', 'Harassing another member', 'Raid account', 'Being rude after a warning'][i % 5], at: Date.now() - i * 5 * 3600e3 }));
+  const CASES = Array.from({ length: 64 }, (_, i) => { const type = ['warn', 'timeout', 'warn', 'kick', 'warn', 'automod', 'timeout', 'ban', 'warn', 'unwarn'][i % 10]; return { id: 64 - i, type, targetId: '7000000000000000' + String((i * 7) % 13).padStart(2, '0'), targetTag: NAMES[((i * 7) % 13) % 10], modId: type === 'automod' || i % 9 === 4 ? null : ['900000000000000001', '900000000000000002', '900000000000000003'][i % 3], reason: ['Spam in #general', 'Link to a scam site', 'Harassing another member', 'Raid account', 'Being rude after a warning', 'Posted the same message 6 times in 10 seconds'][i % 6], at: Date.now() - Math.round(i * i * 0.55 * 3600e3 + i * 2.5 * 3600e3), ...(type === 'timeout' ? { durationMs: [10, 60, 1440][i % 3] * 6e4 } : {}), ...(i % 8 === 0 ? { notes: 'Second time this week. Talked to them in DMs first.' } : {}) }; });
   const BOARDS = (n) => ({ xp: NAMES.slice(0, n).map((u, i) => ({ user: '70000000000000000' + i, xp: 52000 - i * 6100, level: 42 - i * 3, name: u })), coins: NAMES.slice(0, n).map((u, i) => ({ user: '70000000000000000' + i, name: u, coins: 48210 - i * 5100 })) });
   const SONGS = [['Morning Song', 'Juniper', 184], ['Night Drive', 'The Quiet Hours', 241], ['Paper Boats', 'Lin', 203], ['Static', 'Ash & Rue', 167], ['Slow Rain', 'Tobi', 276], ['Glass Houses', 'Rue', 219], ['Low Tide', 'Pia', 198]];
   const song = (i, by) => ({ uid: 'u' + Math.random().toString(36).slice(2, 8), title: SONGS[i % 7][0], artist: SONGS[i % 7][1], seconds: SONGS[i % 7][2], source: 'media', site: 'YouTube', art: null, by: by || '700000000000000001', byName: ['kai', 'mo', 'juniper'][i % 3], canSave: true });
@@ -347,7 +347,19 @@
     },
     post_panel: async ({ channel }) => { await wait(400); if (S.live.phase !== 'online') throw new Error('Start the bot first: it posts this in Discord.'); return null; },
     dashboard: async ({ guild }) => { await wait(150); return { members: 1284, wallets: 311, ranked: 902, richest: 48210, tickets: { open: 3, total: 57 }, cases: 41, recent_cases: CASES.slice(0, 6), boards: BOARDS(5) }; },
-    cases: async ({ limit }) => { await wait(150); return { total: CASES.length, cases: CASES.slice(0, limit || 50) }; },
+    cases: async ({ limit }) => {
+      await wait(150);
+      // the same numbers the program works out (desk.rs case_stats)
+      const now = Date.now(), DAY = 864e5, kinds = {}, days = Array.from({ length: 30 }, (_, ago) => ({ ago, counts: {} })), mods = {}, members = {};
+      for (const c of CASES) {
+        const ago = now - c.at, k = (kinds[c.type] = kinds[c.type] || { day: 0, week: 0, month: 0, all: 0 });
+        k.all++; if (ago < DAY) k.day++; if (ago < 7 * DAY) k.week++; if (ago < 30 * DAY) { k.month++; const d = days[Math.floor(ago / DAY)].counts; d[c.type] = (d[c.type] || 0) + 1; }
+        const m = (mods[c.modId || 'auto'] = mods[c.modId || 'auto'] || { id: c.modId || 'auto', count: 0, last: 0, kinds: {} }); m.count++; m.last = Math.max(m.last, c.at); m.kinds[c.type] = (m.kinds[c.type] || 0) + 1;
+        const p = (members[c.targetId] = members[c.targetId] || { id: c.targetId, name: c.targetTag, count: 0, last: 0, warnings: 0 }); p.count++; p.last = Math.max(p.last, c.at); if (c.type === 'warn') p.warnings++;
+      }
+      const top = (o) => Object.values(o).sort((a, b) => b.count - a.count || b.last - a.last).slice(0, 10);
+      return { total: CASES.length, cases: CASES.slice(0, limit || 50), stats: { kinds, days, mods: top(mods), members: top(members), people: Object.keys(members).length } };
+    },
     staff_action: async ({ kind, user, reason }) => { await wait(300); if (!/^\d{15,}$/.test(user)) throw new Error('Use the member\'s Discord ID.'); CASES.unshift({ id: CASES.length + 1, type: kind, targetId: user, targetTag: 'new', modId: '1', reason, at: Date.now() }); return `Case #${CASES.length} recorded.`; },
     tickets: async ({ limit, find }) => { await wait(150); const q = (find || '').toLowerCase(); const T = TK().filter((t) => !q || JSON.stringify(t).toLowerCase().includes(q)); return { open: T.filter((t) => t.open).length, total: T.length, tickets: T.slice(0, limit || 100).map((t) => Object.assign({}, t)) }; },
     ticket_transcript: async ({ number, html }) => { await wait(150); return { file: `ticket-${String(number).padStart(3, '0')}.${html ? 'html' : 'txt'}`, content: html ? `<!doctype html><title>Ticket #${number}</title><p>Sample transcript</p>` : `Ticket #${number}\n\nSample transcript` }; },
@@ -376,7 +388,7 @@
     economy: async () => { await wait(120); return EC; },
     treasury_add: async ({ amount, note }) => { await wait(200); if (!(amount > 0)) throw new Error('Type an amount from 1 to 1,000,000,000,000.'); EC.treasury.balance += amount; EC.treasury.collected += amount; EC.log.unshift({ at: Date.now(), delta: amount, kind: 'staff', note }); return EC.treasury.balance; },
     treasury_give: async ({ amount, reason }) => { await wait(200); if (!reason) throw new Error('Give a reason: it is kept in the treasury\'s record.'); if (amount > EC.treasury.balance) throw new Error('The treasury only has ' + EC.treasury.balance.toLocaleString() + ' 🪙.'); EC.treasury.balance -= amount; EC.treasury.paid_out += amount; EC.log.unshift({ at: Date.now(), delta: -amount, kind: 'grant', user: '700000000000000001', note: reason }); return EC.treasury.balance; },
-    members_lookup: async ({ ids }) => { await wait(60); const out = {}; for (const id of ids) { const m = PEOPLE.find((x) => x.id === id); if (m) out[id] = m.name; } return out; },
+    members_lookup: async ({ ids }) => { await wait(60); const out = {}; const MODS = { '900000000000000001': 'Kai', '900000000000000002': 'Juniper', '900000000000000003': 'Mo' }; for (const id of ids) { const m = PEOPLE.find((x) => x.id === id); if (m) out[id] = m.name; else if (MODS[id]) out[id] = MODS[id]; } return out; },
     members_search: async ({ q }) => { await wait(80); const s = String(q || '').toLowerCase(); return PEOPLE.filter((m) => !m.bot && m.name.toLowerCase().includes(s)).slice(0, 12); },
     leavers: async ({ days, q }) => { await wait(120); const s = String(q || '').toLowerCase(); return { keeps: true, days: 60, members: PEOPLE.length, roles: { r1: 'Member', r2: 'Gamer', r3: 'Mod' }, leavers: LEAVERS.filter((l) => Date.now() - l.left_at < days * 864e5 && (!s || l.name.toLowerCase().includes(s))) }; },
     leaver_forget: async ({ user }) => { await wait(100); const i = LEAVERS.findIndex((l) => l.user === user); if (i >= 0) LEAVERS.splice(i, 1); return 1; },

@@ -11,6 +11,10 @@
       const app = A();
       if (!app || !app.ready() || ctx.editable) return [];
       const out = [];
+      // a case or a member in the moderation log: act on them from here
+      const row = ctx.target && ctx.target.closest('[data-case],[data-member]');
+      const forCase = row && app.caseItems ? app.caseItems(row) : [];
+      if (forCase.length) return [...forCase, '-', { label: 'Refresh', icon: 'refresh', kbd: 'F5', run: () => app.reload() }];
       // a page button in the sidebar
       const nav = ctx.target && ctx.target.closest('[data-page]');
       if (nav) out.push({ label: `Open ${app.title(nav.dataset.page)}`, icon: 'open', run: () => app.go(nav.dataset.page) }, '-');
