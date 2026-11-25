@@ -7,7 +7,8 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const S = {
     roleMenus: [{ message: '555000000000000001', channel_name: 'roles', title: 'Pick your colour', type: 'buttons', mode: 'unique', max: 0, hours: 0, roles: [{ id: '1', name: 'Red', emoji: '🔴' }, { id: '2', name: 'Blue', emoji: '🔵' }] }, { message: '555000000000000002', channel_name: 'games', title: 'What do you play?', type: 'dropdown', mode: 'toggle', max: 3, hours: 0, roles: [{ id: '3', name: 'Gamers' }, { id: '4', name: 'Raiders' }] }],
-    prefs: { setup_done: !q.has('first'), parts: 'bot', place: 'pc', start_with_app: true, theme: q.get('theme') || 'system', toured: !q.has('tour'), private_dismiss_seconds: 300, web_on: false, web_port: 47890, web_address: '', web_all: false },
+    prefs: { setup_done: !q.has('first'), parts: 'bot', place: 'pc', start_with_app: true, theme: q.get('theme') || 'system', toured: !q.has('tour'), private_dismiss_seconds: 300, web_on: false, web_port: 47890, web_address: '', web_all: false, colours: { on: q.has('own'), accent: '#5ce1e6', bg: '#0c1824', panel: '#13243a', ink: '#e6f4ff' } },
+    licence: q.has('supporter') ? 'GB1.preview.key' : '',
     data: q.has('first') ? null : { servers: 2, modules_on: 31, settings: 148, records: 12840 },
     old: q.has('old') ? { folder: 'C:\\Users\\you\\AppData\\Roaming\\Good Boy\\bot-data', servers: 2, records: 12840 } : null,
     token: !q.has('first'), secret: false,
@@ -238,9 +239,9 @@
     { key: 'giveaways.manage', label: 'Start, end and reroll giveaways', default: 'admin', group: 'giveaways', roles: [] }] };
   const A = {
     overview: () => ({ version: '4.0.0', prefs: S.prefs, data_folder: 'C:\\Users\\you\\AppData\\Roaming\\Good Boy 4\\data', data: S.data, old_data: S.data ? null : S.old,
-      licence: LICENCE(),
+      licence: LICENCE(), perks: { own_colours: !!S.licence },
       web_status: { on: S.prefs.web_on, running: S.prefs.web_on && !!S.prefs.web_address, error: S.prefs.web_on && !S.prefs.web_address ? 'Write the public address first (the link people will open).' : null, port: S.prefs.web_port, address: S.prefs.web_address, all: S.prefs.web_all }, token_saved: S.token, secret_saved: S.secret, keeps_secrets: true, secret_store: 'Windows Credential Manager', live: S.live, modules: S.modules }),
-    prefs_set: ({ patch }) => { Object.assign(S.prefs, patch); return S.prefs; },
+    prefs_set: ({ patch }) => { const { colours, ...rest } = patch; Object.assign(S.prefs, rest); if (colours) { if (!S.licence && !(colours.on === false && Object.keys(colours).length === 1)) throw new Error('Your own colours are a supporter perk. Add a Supporter licence in Settings to use them.'); Object.assign(S.prefs.colours, colours); delete S.prefs.colours.reset; } return S.prefs; },
     licence_set: ({ key }) => { const k = String(key || '').trim(); if (k && !/^GB1\.[\w-]+\.[\w-]+$/.test(k)) throw new Error('That is not a Good Boy licence key.'); S.licence = k; return LICENCE(); },
     licence_refresh: () => LICENCE(),
     setup_data: async ({ copy }) => { await wait(500); const c = copy && S.old; S.data = c ? { servers: 2, modules_on: 31, settings: 148, records: 12840 } : { servers: 0, modules_on: 0, settings: 0, records: 0 }; if (!c) S.servers = []; return Object.assign({ how: c ? 'copied' : 'fresh', files: c ? 12 : 0 }, S.data); },

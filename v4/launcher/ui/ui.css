@@ -464,3 +464,14 @@ mark{background:color-mix(in srgb,var(--warn) 35%,transparent);color:inherit;bor
 .ok{color:var(--good,#3fd08f)}
 
 .layout span{font-size:13px;line-height:1.35}
+
+/* your own colours (Settings, for supporters) */
+.own-picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.own-pick{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--field);cursor:pointer}
+.own-pick input[type=color]{width:34px;height:34px;padding:0;border:0;background:none;cursor:pointer;flex:none}
+.own-pick input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.own-pick input[type=color]::-webkit-color-swatch{border:1px solid var(--line);border-radius:50%}
+.own-swatches{display:flex;gap:8px;flex-wrap:wrap}
+.own-swatch{display:inline-block;width:22px;height:22px;flex:none;border-radius:50%;border:1px solid var(--line);background:linear-gradient(135deg,var(--a) 0 45%,var(--p) 45% 72%,var(--b) 72%)}
+.own-preset{display:inline-flex;align-items:center;gap:8px}
+.own-colours.locked .own-swatches{opacity:.75}

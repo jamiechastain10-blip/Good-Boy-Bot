@@ -126,6 +126,49 @@
     const dark = t === 'dark' || (t === 'system' && !matchMedia('(prefers-color-scheme: light)').matches);
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   }
+  // ---- your own colours: a perk for paid supporters. Four colours are picked; the rest of the look is worked out from them.
+  const OWN_VARS = ['--bg', '--panel', '--raised', '--field', '--line', '--ink', '--ink-2', '--ink-3', '--accent', '--accent-ink', '--accent-soft', 'color-scheme'];
+  const OWN_PRESETS = [['Bubblegum', { accent: '#fd78f7', bg: '#222222', panel: '#2a2a2d', ink: '#f6f2f7' }], ['Ocean', { accent: '#5ce1e6', bg: '#0c1824', panel: '#13243a', ink: '#e6f4ff' }],
+    ['Forest', { accent: '#62f0b4', bg: '#0f1a14', panel: '#17271e', ink: '#e8f5ec' }], ['Sunset', { accent: '#ffb057', bg: '#1f1320', panel: '#2c1a2c', ink: '#fff0e6' }],
+    ['Grape', { accent: '#b68cff', bg: '#15112a', panel: '#211a40', ink: '#efeaff' }], ['Paper', { accent: '#e4407a', bg: '#f6f1ea', panel: '#ffffff', ink: '#2a2230' }]];
+  const rgb = (hex) => { const n = parseInt(String(hex).slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const hex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+  const mix = (a, b, t) => { const x = rgb(a), y = rgb(b); return hex(x.map((v, i) => v + (y[i] - v) * t)); };
+  const alpha = (a, t) => `rgba(${rgb(a).join(',')},${t})`;
+  const light = (a) => { const [r, g, b] = rgb(a).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const paid = () => !!(S.o && S.o.perks && S.o.perks.own_colours);
+  function ownColours(preview) {
+    const c = preview || (S.o && S.o.prefs.colours), st = document.documentElement.style;
+    const on = !!c && (preview ? true : c.on && paid());
+    for (const k of OWN_VARS) st.removeProperty(k);
+    document.documentElement.toggleAttribute('data-own-colours', on);
+    if (!on) return;
+    const dim = light(c.bg) < 0.35;
+    const set = { '--bg': c.bg, '--panel': c.panel, '--raised': mix(c.panel, c.ink, 0.07), '--field': mix(c.bg, dim ? '#000000' : '#ffffff', 0.25), '--line': alpha(c.ink, 0.12),
+      '--ink': c.ink, '--ink-2': mix(c.ink, c.panel, 0.3), '--ink-3': mix(c.ink, c.panel, 0.5),
+      '--accent': c.accent, '--accent-soft': alpha(c.accent, 0.16), '--accent-ink': light(c.accent) > 0.4 ? '#0b0b12' : '#ffffff', 'color-scheme': dim ? 'dark' : 'light' };
+    for (const [k, v] of Object.entries(set)) st.setProperty(k, v);
+  }
+  async function setColours(patch, msg) {
+    try { await call('prefs_set', { patch: { colours: patch } }); await refresh(); draw(); if (msg) toast(msg); } catch (e) { toast(e.message, true); }
+  }
+  function coloursCard() {
+    const o = S.o, c = Object.assign({}, o.prefs.colours || {});
+    if (!paid()) {
+      return h('div', { class: 'card own-colours locked', id: 'own-colours' }, h('div', { class: 'row' }, h('div', { class: 'text' }, h('h2', {}, 'Your own colours ', h('span', { class: 'tag' }, 'Supporter')),
+        h('p', { class: 'muted' }, 'Supporters can give this dashboard their own colours: pick an accent, a background, cards and text, or start from a ready-made set. They show in the app and on the phone and web dashboard, and the right-click menu follows them.')),
+        h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.currentTarget, () => call('open', { what: 'supporter' })) }, 'Become a supporter')),
+        h('div', { class: 'own-swatches', 'aria-hidden': 'true' }, OWN_PRESETS.map(([n, p]) => h('span', { class: 'own-swatch', title: n, style: `--a:${p.accent};--b:${p.bg};--p:${p.panel}` }))));
+    }
+    const pick = (key, label) => h('label', { class: 'own-pick' }, h('input', { type: 'color', value: c[key], oninput: (e) => { c[key] = e.target.value; ownColours(c); }, onchange: (e) => setColours({ [key]: e.target.value, on: true }) }), h('span', {}, label));
+    return h('div', { class: 'card own-colours', id: 'own-colours' },
+      h('div', { class: 'row' }, h('div', { class: 'text' }, h('h2', {}, 'Your own colours ', h('span', { class: 'tag' }, 'Supporter')), h('p', { class: 'muted' }, 'Thanks for supporting Good Boy. These colours go over the look you picked above, here and on the phone and web dashboard.')),
+        h('input', { type: 'checkbox', class: 'toggle', role: 'switch', 'aria-label': 'Use my own colours', checked: o.prefs.colours && o.prefs.colours.on ? true : null, onchange: (e) => setColours({ on: e.target.checked }, e.target.checked ? 'Your colours are on.' : 'Back to the regular colours.') })),
+      h('div', { class: 'own-picks' }, pick('accent', 'Accent'), pick('bg', 'Background'), pick('panel', 'Cards'), pick('ink', 'Text')),
+      h('div', { class: 'stack' }, h('span', { class: 'muted small' }, 'Start from a set'),
+        h('div', { class: 'btns' }, OWN_PRESETS.map(([n, p]) => h('button', { class: 'btn quiet small own-preset', type: 'button', onclick: () => setColours(Object.assign({ on: true }, p), `${n} colours on.`) }, h('span', { class: 'own-swatch', style: `--a:${p.accent};--b:${p.bg};--p:${p.panel}` }), n)),
+          h('button', { class: 'btn quiet small', type: 'button', onclick: () => setColours({ reset: true }, 'Colours put back to the first set.') }, 'Reset'))));
+  }
   function ago(ms) {
     const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
     if (m < 1) return 'less than a minute';
@@ -142,7 +185,7 @@
     if (live.phase === 'problem') return ['bad', 'Stopped: needs attention'];
     return ['', 'Stopped'];
   }
-  async function refresh() { S.o = await call('overview'); try { S.upd = await call('update_status'); } catch { /* an older host */ } theme(); return S.o; }
+  async function refresh() { S.o = await call('overview'); try { S.upd = await call('update_status'); } catch { /* an older host */ } theme(); ownColours(); return S.o; }
   /** A confirmation that sits where the button was, so nothing pops over the page. */
   function confirmInline(btn, question, yes, work) {
     const row = h('div', { class: 'btns' }, h('span', { class: 'small muted confirm-q' }, question),
@@ -1867,6 +1910,7 @@
             h('p', { class: 'muted small' }, 'Replies only the member can see (balance, forms, lists, game windows) are taken down after this long without anyone pressing anything on them. Pressing a button starts the wait again, and game windows have a Close button. Exports and transcripts stay.')),
           h('div', {}, h('span', {}, 'Look'), h('div', { class: 'segs', role: 'group', 'aria-label': 'Look' }, ...[['pixel', 'Pixel'], ['classic', 'Classic']].map(([v, l]) => h('button', { class: 'seg', type: 'button', 'aria-pressed': String((document.documentElement.dataset.look || 'pixel') === v), onclick: () => { try { localStorage.setItem('gb-look', v); } catch { /* not kept */ } document.documentElement.dataset.look = v; draw(); } }, l)))),
           h('div', {}, h('span', {}, 'Colours (classic look)'), h('div', { class: 'segs', role: 'group', 'aria-label': 'Colours' }, seg('system', 'Match Windows'), seg('dark', 'Dark'), seg('light', 'Light'))))),
+      coloursCard(),
       h('div', { class: 'card' }, h('h2', {}, 'Your data'), h('p', { class: 'muted small path' }, o.data_folder),
         h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, () => call('open', { what: 'data' })) }, 'Open folder'),
           h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, async () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); const file = await call('backup_now', { stamp: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` }); toast(`Backed up to ${file}`); }) }, 'Back up now'),
@@ -1985,7 +2029,7 @@
   function navMenu(pages) {
     let kept = {}; try { kept = JSON.parse(localStorage.getItem('gb-nav') || '{}'); } catch { /* the choice is only a convenience */ }
     const known = SECTIONS.flatMap(([, ids]) => ids);
-    const button = (id) => h('button', { class: 'nav', type: 'button', 'aria-current': id === S.page ? 'page' : null, onclick: () => go(id) }, icon(id), PAGES[id][0]);
+    const button = (id) => h('button', { class: 'nav', type: 'button', 'data-page': id, 'aria-current': id === S.page ? 'page' : null, onclick: () => go(id) }, icon(id), PAGES[id][0]);
     const out = [];
     for (const [name, ids] of SECTIONS) {
       const shown = ids.filter((id) => pages.includes(id) && PAGES[id]);
@@ -2007,6 +2051,24 @@
     return out;
   }
   function go(page) { S.page = page; draw(); document.querySelector('.main')?.scrollTo(0, 0); }
+  // What the right-click menu (menu.js) may do: move between pages, start and stop the bot, and change the look.
+  window.GBApp = {
+    go: (page) => { if (S.o && S.o.prefs.setup_done && visiblePages().includes(page)) go(page); },
+    page: () => S.page, ready: () => !!(S.o && S.o.prefs.setup_done), title: (page) => (PAGES[page] || [page])[0], can: (page) => !!S.o && visiblePages().includes(page),
+    owner: () => !window.GB.web || !!(S.o && S.o.web && S.o.web.owner), local: () => !window.GB.web,
+    phase: () => (S.o ? S.o.live.phase : ''), tokenSaved: () => !!(S.o && S.o.token_saved),
+    bot: async (what) => { try { await call(`bot_${what}`); toast(what === 'stop' ? 'Stopping the bot.' : what === 'start' ? 'Starting the bot.' : 'Restarting the bot.'); await refresh(); draw(); } catch (e) { toast(e.message, true); } },
+    reload: async () => { try { await refresh(); draw(); toast('Up to date.'); } catch (e) { toast(e.message, true); } },
+    dark: () => document.documentElement.dataset.theme !== 'light',
+    look: () => document.documentElement.dataset.look || 'pixel',
+    setTheme: async (t) => { try { await call('prefs_set', { patch: { theme: t } }); await refresh(); draw(); } catch (e) { toast(e.message, true); } },
+    setLook: (v) => { try { localStorage.setItem('gb-look', v); } catch { /* not kept */ } document.documentElement.dataset.look = v; draw(); },
+    paid, coloursOn: () => !!(S.o && S.o.prefs.colours && S.o.prefs.colours.on && paid()),
+    setColours: (on) => setColours({ on }, on ? 'Your colours are on.' : 'Back to the regular colours.'),
+    colours: () => { go('bot'); setTimeout(() => document.getElementById('own-colours')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); },
+    openLink: (url) => window.open(url, '_blank', 'noopener'),
+    toast,
+  };
   // On the web some things stay on the computer (tokens, the move from Good Boy 3, this computer's settings), and only the
   // person who runs the bot sees the bot's own controls.
   function visiblePages() {

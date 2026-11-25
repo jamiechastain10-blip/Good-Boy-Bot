@@ -45,10 +45,32 @@ pub struct Prefs {
     pub v3_backup_at: i64,
     /// The picture IDs Discord gave back when the Good Boy look was last put on the bot.
     pub brand_applied: crate::brand::Applied,
+    /// The dashboard in the owner's own colours: a perk for paid supporters (a licence with `supporter` or `whitelabel`).
+    pub colours: Colours,
+}
+
+/// The dashboard's own colours, each a #rrggbb colour. They show only while `on` and the licence is a paid one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Colours {
+    pub on: bool,
+    pub accent: String,
+    pub bg: String,
+    pub panel: String,
+    pub ink: String,
+}
+impl Default for Colours {
+    fn default() -> Self { Colours { on: false, accent: "#fd78f7".into(), bg: "#222222".into(), panel: "#2a2a2d".into(), ink: "#f6f2f7".into() } }
+}
+/// The licence features that make someone a paid supporter.
+pub const PAID: &[&str] = &["supporter", "whitelabel"];
+fn hex_colour(v: &Value) -> Option<String> {
+    let s = v.as_str()?.trim();
+    (s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())).then(|| s.to_ascii_lowercase())
 }
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { setup_done: false, parts: "bot".into(), place: "pc".into(), start_with_app: true, theme: "system".into(), toured: false, private_dismiss_seconds: gb_core::bot::DEFAULT_DISMISS, web_on: false, web_port: 47890, web_address: String::new(), web_all: false, licence: String::new(), licence_looked: false, v3_backup: String::new(), v3_backup_at: 0, brand_applied: crate::brand::Applied::default() }
+        Prefs { setup_done: false, parts: "bot".into(), place: "pc".into(), start_with_app: true, theme: "system".into(), toured: false, private_dismiss_seconds: gb_core::bot::DEFAULT_DISMISS, web_on: false, web_port: 47890, web_address: String::new(), web_all: false, licence: String::new(), licence_looked: false, v3_backup: String::new(), v3_backup_at: 0, brand_applied: crate::brand::Applied::default(), colours: Colours::default() }
     }
 }
 
@@ -110,6 +132,26 @@ impl Desk {
                 ("parts", Value::String(s)) if ["bot", "clipper", "both"].contains(&s.as_str()) => next.parts = s.clone(),
                 ("place", Value::String(s)) if ["pc", "host"].contains(&s.as_str()) => next.place = s.clone(),
                 ("theme", Value::String(s)) if ["dark", "light", "system"].contains(&s.as_str()) => next.theme = s.clone(),
+                ("colours", Value::Object(c)) => {
+                    let mut own = next.colours.clone();
+                    for (k, v) in c {
+                        match k.as_str() {
+                            "on" => own.on = v.as_bool().ok_or("\"on\" must be true or false.")?,
+                            "accent" | "bg" | "panel" | "ink" => {
+                                let colour = hex_colour(v).ok_or("Colours must look like #ff78f7.")?;
+                                match k.as_str() { "accent" => own.accent = colour, "bg" => own.bg = colour, "panel" => own.panel = colour, _ => own.ink = colour }
+                            }
+                            "reset" if v == &Value::Bool(true) => own = Colours { on: own.on, ..Colours::default() },
+                            _ => return Err(format!("\"{k}\" is not one of the colours.")),
+                        }
+                    }
+                    // switching them off is always allowed; anything else is a supporter perk
+                    let only_off = !own.on && own == Colours { on: false, ..next.colours.clone() };
+                    if !only_off && !self.paid() {
+                        return Err("Your own colours are a supporter perk. Add a Supporter licence in Settings to use them.".into());
+                    }
+                    next.colours = own;
+                }
                 _ => return Err(format!("\"{key}\" cannot be set to that.")),
             }
         }
@@ -141,6 +183,13 @@ impl Desk {
     fn licence_check(&self, key: &str) -> crate::licence::Check {
         let app = self.token().and_then(|t| crate::licence::app_id_of(&t));
         crate::licence::verify(key, crate::licence::PUBLIC_KEY_PEM, app.as_deref(), Self::now_ms(), &self.cancelled())
+    }
+    /// A paid supporter: the saved licence is good for this bot and carries one of the paid features.
+    pub fn paid(&self) -> bool {
+        let key = self.prefs().licence;
+        if key.is_empty() { return false; }
+        let c = self.licence_check(&key);
+        PAID.iter().any(|f| c.has(f))
     }
     /// The licence as the launcher shows it. Whether a key is saved, whether it is good for this bot, who it is for
     /// and what it unlocks.
@@ -486,6 +535,7 @@ impl Desk {
             "live": self.runner.live(),
             "web_status": self.web_status(),
             "licence": self.licence_view(),
+            "perks": json!({ "own_colours": self.paid() }),
             "modules": MODULES.iter().map(|m| json!({ "id": m.id, "name": m.name, "about": m.about })).collect::<Vec<_>>(),
         })
     }
@@ -1251,6 +1301,14 @@ mod tests {
         assert!(d.prefs_set(&json!({ "theme": "pink" })).is_err());
         assert!(d.prefs_set(&json!({ "nonsense": true })).is_err());
         // a new window on the same folder sees the same choices
+        // own colours are a paid supporter perk: without a licence they cannot be switched on or changed, only off
+        let no = d.prefs_set(&json!({ "colours": { "on": true } })).unwrap_err();
+        assert!(no.contains("supporter perk"), "{no}");
+        assert!(d.prefs_set(&json!({ "colours": { "accent": "#00ff00" } })).is_err());
+        assert!(d.prefs_set(&json!({ "colours": { "accent": "red" } })).is_err());
+        assert!(d.prefs_set(&json!({ "colours": { "glow": "#00ff00" } })).is_err());
+        d.prefs_set(&json!({ "colours": { "on": false } })).unwrap();
+        assert_eq!(d.overview()["perks"]["own_colours"], false);
         let again = desk(tmp.path());
         assert_eq!(again.prefs(), Prefs { setup_done: true, theme: "light".into(), ..Prefs::default() });
         assert_eq!(again.overview()["data"]["servers"], 0);
