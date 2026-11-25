@@ -60,6 +60,7 @@ pub struct Directory {
     presences: std::sync::atomic::AtomicBool,
     reads_messages: std::sync::atomic::AtomicBool,
     licensed: std::sync::atomic::AtomicBool,
+    supporter: std::sync::atomic::AtomicBool,
     me: std::sync::RwLock<Option<String>>,
     /// Each server's AFK voice channel (time there earns nothing).
     afk: std::sync::RwLock<std::collections::HashMap<String, String>>,
@@ -258,6 +259,13 @@ impl Directory {
     }
     pub fn licensed(&self) -> bool {
         self.licensed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    /// Whether this bot's licence has the supporter perks (GIF styles; set by the app that runs it).
+    pub fn set_supporter(&self, on: bool) {
+        self.supporter.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+    pub fn supporter(&self) -> bool {
+        self.supporter.load(std::sync::atomic::Ordering::Relaxed)
     }
     pub fn reads_messages(&self) -> bool {
         self.reads_messages.load(std::sync::atomic::Ordering::Relaxed)
