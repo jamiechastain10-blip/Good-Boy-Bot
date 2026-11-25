@@ -195,3 +195,4 @@
 :root[data-look="pixel"] .logrow.loghead{font:8px/1.6 var(--display);letter-spacing:0}
 :root[data-look="pixel"] .logrow .lwhen,:root[data-look="pixel"] .logrow .lby{font-size:19px}
 :root[data-look="pixel"] .pill.kind{background:var(--k);color:var(--dark)}
+:root[data-look="pixel"] .spreadbar,:root[data-look="pixel"] .spreadbar i{border-radius:0}

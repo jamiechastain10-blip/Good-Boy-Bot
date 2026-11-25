@@ -76,6 +76,18 @@ impl Default for Prefs {
 
 /// The moderation log in numbers, over every case: how many of each kind in the last day, week, month and ever; cases
 /// per day for the last 30 days; the moderators who acted most (AutoMod as "auto"); and the members with the most cases.
+/// How levels are spread in a server, from every member's XP (highest first): totals, the middle member, and
+/// how many sit in each band of levels.
+pub fn level_stats(xp: &[i64]) -> Value {
+    let levels: Vec<u32> = xp.iter().map(|&x| gb_data::level_of(x).level).collect();
+    let total: i64 = xp.iter().sum();
+    let n = levels.len();
+    const BANDS: [(u32, u32, &str); 6] = [(0, 4, "0 to 4"), (5, 9, "5 to 9"), (10, 19, "10 to 19"), (20, 29, "20 to 29"), (30, 49, "30 to 49"), (50, u32::MAX, "50 and up")];
+    let bands: Vec<Value> = BANDS.iter().map(|&(lo, hi, label)| json!({ "label": label, "count": levels.iter().filter(|&&l| l >= lo && l <= hi).count() })).collect();
+    let avg = if n == 0 { 0.0 } else { levels.iter().map(|&l| l as f64).sum::<f64>() / n as f64 };
+    json!({ "members": n, "total_xp": total, "avg_level": (avg * 10.0).round() / 10.0, "median_level": if n == 0 { 0 } else { levels[n / 2] }, "top_level": levels.first().copied().unwrap_or(0), "bands": bands })
+}
+
 pub fn case_stats(all: &[Value], now: i64) -> Value {
     use std::collections::{BTreeMap, HashMap};
     const DAY: i64 = 86_400_000;
@@ -966,10 +978,13 @@ impl Desk {
         let rows = db.history_rows(guild).map_err(text)?;
         let open = rows.iter().filter(|r| r.closed_at.is_none()).count();
         let wallets = db.wallet_count(guild).map_err(text)?;
-        let (xp_members, coins) = (db.data_list(guild, "community", "user:", 100_000).map_err(text)?.len(), db.top_coins(guild, 1).map_err(text)?.first().map(|c| c.2).unwrap_or(0));
+        let xp = db.all_xp(guild).map_err(text)?;
+        let supply = db.money_supply(guild).map_err(text)?;
+        let coins = db.top_coins(guild, 1).map_err(text)?.first().map(|c| c.2).unwrap_or(0);
         drop(db);
-        let boards = self.boards(guild, 5)?;
-        Ok(json!({ "members": members, "wallets": wallets, "ranked": xp_members, "richest": coins, "tickets": { "open": open, "total": rows.len() }, "cases": cases["total"], "recent_cases": cases["cases"], "boards": boards }))
+        let boards = self.boards(guild, 10)?;
+        Ok(json!({ "members": members, "wallets": wallets, "ranked": xp.len(), "richest": coins, "levels": level_stats(&xp), "supply": supply,
+            "tickets": { "open": open, "total": rows.len() }, "cases": cases["total"], "recent_cases": cases["cases"], "boards": boards }))
     }
     /// Moderation cases, newest first: {total, cases: [..]}.
     pub fn cases(&self, guild: &str, limit: usize) -> Result<Value, String> {
@@ -1148,7 +1163,14 @@ impl Desk {
     /// The economy at a glance: the treasury and its record, the rates in force, the second currency's richest.
     pub fn economy(&self, guild: &str) -> Result<Value, String> {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
-        Ok(self.bot()?.economy_view(guild, now))
+        let bot = self.bot()?;
+        let mut v = bot.economy_view(guild, now);
+        let db = bot.db.get();
+        let supply = db.money_supply(guild).map_err(text)?;
+        let richest: Vec<Value> = db.top_coins(guild, 10).map_err(text)?.into_iter().map(|(user, name, coins)| json!({ "user": user, "name": name, "coins": coins })).collect();
+        drop(db);
+        if let Some(o) = v.as_object_mut() { o.insert("supply".into(), json!(supply)); o.insert("richest".into(), json!(richest)); }
+        Ok(v)
     }
     /// Adds new coins to the treasury. Works without the bot running: it only changes the database.
     pub fn treasury_add(&self, guild: &str, amount: i64, note: &str) -> Result<i64, String> {
@@ -1553,6 +1575,12 @@ mod tests {
         assert_eq!((s["days"][0]["counts"]["warn"].as_u64(), s["days"][3]["counts"]["warn"].as_u64(), s["mods"][0]["id"].as_str()), (Some(1), Some(1), Some("5")));
         let o = d.dashboard("100000000000000001").unwrap();
         assert_eq!((o["cases"].as_u64(), o["tickets"]["open"].as_u64()), (Some(3), Some(0)));
+        assert_eq!((o["levels"]["members"].as_u64(), o["supply"]["coins"].as_i64(), o["levels"]["bands"].as_array().unwrap().len()), (Some(0), Some(0), 6));
+        let l = level_stats(&[1_000_000, 50_000, 0, 0]);
+        assert_eq!((l["members"].as_u64(), l["total_xp"].as_i64(), l["median_level"].as_u64(), l["bands"][0]["count"].as_u64()), (Some(4), Some(1_050_000), Some(0), Some(2)));
+        assert!(l["top_level"].as_u64().unwrap() > 10);
+        let e = d.economy("100000000000000001").unwrap();
+        assert_eq!((e["supply"]["wallets"].as_i64(), e["richest"].as_array().map(Vec::len)), (Some(0), Some(0)));
         assert!(d.boards("100000000000000001", 5).unwrap()["xp"].as_array().unwrap().is_empty());
         let t = d.tickets("100000000000000001", 10).unwrap();
         assert_eq!((t["open"].as_u64(), t["total"].as_u64()), (Some(0), Some(0)));

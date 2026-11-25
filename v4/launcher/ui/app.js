@@ -284,6 +284,48 @@
     });
     return [...out.values()];
   }
+  // ---- small charts the data pages share
+  /** Bars, one per value. `bits`: [{ value, tip }]; `ends`: words under the left and right ends (and the middle). */
+  function barChart(bits, label, ends, colour) {
+    const top = Math.max(1, ...bits.map((b) => b.value || 0));
+    return [h('div', { class: 'modchart', style: `--n:${bits.length}`, role: 'img', 'aria-label': label }, bits.map((b) => h('div', { class: 'modbar', title: b.tip },
+      h('div', { class: 'modstack', style: `height:${Math.round(((b.value || 0) / top) * 100)}%` }, b.value ? h('i', { style: `flex:1;background:${b.colour || colour || 'var(--accent)'}` }) : null)))),
+    ends ? h('div', { class: 'modaxis muted small' }, ends.map((e) => h('span', {}, e))) : null];
+  }
+  /** How a whole splits into parts: a line per part with a bar, the count and its share. `rows`: [[label, count, colour?]]. */
+  function spread(rows, unit) {
+    const all = rows.reduce((a, r) => a + (r[1] || 0), 0);
+    if (!all) return h('p', { class: 'muted' }, 'Nothing yet.');
+    const top = Math.max(...rows.map((r) => r[1] || 0));
+    return h('div', { class: 'spread' }, rows.map(([label, count, colour]) => h('div', { class: 'spreadrow', title: `${label}: ${Number(count).toLocaleString()} ${unit || ''} (${Math.round((count / all) * 100)}%)`.replace(/\s+\(/, ' (') },
+      h('span', {}, label), h('span', { class: 'spreadbar' }, count ? h('i', { style: `width:${Math.round((count / top) * 100)}%;${colour ? `background:${colour}` : ''}` }) : null),
+      h('b', {}, Number(count).toLocaleString()), h('span', { class: 'muted small' }, `${Math.round((count / all) * 100)}%`))));
+  }
+  /** One fact in a grid of facts: a small label, the number, and a line under it. */
+  const fact = (label, value, under, tone) => h('div', { class: 'fact' }, h('span', { class: 'muted small' }, label), h('b', { class: tone || '' }, value), under ? h('small', { class: 'muted small' }, under) : null);
+  const HOUR_WORD = (hr) => new Date(2000, 0, 1, hr).toLocaleTimeString([], { hour: 'numeric' });
+  const DAY_WORD = (d) => new Date(2000, 0, 2 + d).toLocaleDateString([], { weekday: 'long' }); // 2 Jan 2000 was a Sunday
+  /** Up or down against before, as words: "12% more than last week". */
+  function versus(now, before, what = 'last week') {
+    if (!before) return now ? `nothing to compare with ${what}` : null;
+    const pc = Math.round(((now - before) / before) * 100);
+    return pc === 0 ? `the same as ${what}` : `${Math.abs(pc)}% ${pc > 0 ? 'more' : 'less'} than ${what}`;
+  }
+  const median = (xs) => { const s = xs.filter((x) => x != null).sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
+  const signed = (n) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toLocaleString()}`;
+  /** The pulse's hours, read for patterns: when people talk (by hour of the day and day of the week) and the peaks. */
+  function rhythm(p) {
+    const byHour = Array.from({ length: 24 }, () => [0, 0]), byDay = Array.from({ length: 7 }, () => [0, 0]);
+    let peakVoice = { n: 0, at: null }, busiestHour = { n: 0, at: null };
+    p.messages.forEach((v, i) => { if (v == null) return; const d = new Date(p.from + i * p.hourMs); byHour[d.getHours()][0] += v; byHour[d.getHours()][1]++; if (v > busiestHour.n) busiestHour = { n: v, at: d.getTime() }; });
+    // whole days only, so a half-counted today does not drag its weekday down
+    const days = new Map();
+    p.messages.forEach((v, i) => { if (v == null) return; const d = new Date(p.from + i * p.hourMs); const k = d.toDateString(); const was = days.get(k) || { day: d.getDay(), n: 0, hours: 0 }; was.n += v; was.hours++; days.set(k, was); });
+    for (const d of days.values()) if (d.hours >= 20) { byDay[d.day][0] += d.n; byDay[d.day][1]++; }
+    p.voice.forEach((v, i) => { if (v != null && v > peakVoice.n) peakVoice = { n: v, at: p.from + i * p.hourMs }; });
+    const avg = ([sum, n]) => (n ? sum / n : null);
+    return { hours: byHour.map(avg), days: byDay.map(avg), peakVoice, busiestHour };
+  }
   function homeServer() {
     const greet = () => { const hr = new Date().getHours(); return hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'; };
     return withServer(greet(), 'Your server at a glance', async (guild) => {
@@ -339,7 +381,36 @@
       numbers.children[3].querySelector('b').textContent = `${on.length} / ${(g.modules || []).length}`;
       // the numbers follow the server: new ones every half minute
       whileShown(numbers, 30000, async () => { const q = await call('pulse', { guild }); const live = [q.now.members, q.now.voice]; const b = numbers.querySelectorAll('b'); if (live[0] != null) b[0].textContent = live[0].toLocaleString(); b[1].textContent = String(live[1]); });
-      return [numbers,
+      // the week in numbers, and when the server is busy
+      const N = p.messages.length, WEEK = Math.min(N, 7 * 24);
+      const add = (arr, a, b) => arr.slice(Math.max(0, a), b).reduce((t, v) => t + (v || 0), 0);
+      const known = (arr, a, b) => arr.slice(Math.max(0, a), b).some((v) => v != null);
+      const thisWeek = add(p.messages, N - WEEK, N), lastWeek = known(p.messages, N - 2 * WEEK, N - WEEK) ? add(p.messages, N - 2 * WEEK, N - WEEK) : 0;
+      const firstMembers = p.members.slice(N - WEEK).find((v) => v != null);
+      const grew = members != null && firstMembers != null ? members - firstMembers : null;
+      const rh = rhythm(p);
+      const bestHour = rh.hours.reduce((b, v, i) => (v != null && (b < 0 || v > rh.hours[b]) ? i : b), -1);
+      const bestDay = rh.days.reduce((b, v, i) => (v != null && (b < 0 || v > rh.days[b]) ? i : b), -1);
+      const perDay = series('messages', 'sum').filter((v) => v != null);
+      const cst = cs && cs.stats ? Object.values(cs.stats.kinds).reduce((a, k) => [a[0] + (k.day || 0), a[1] + (k.week || 0)], [0, 0]) : null;
+      const oldest = open.reduce((o, t) => (!o || t.opened_at < o.opened_at ? t : o), null);
+      const facts = h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'This week'), h('span', { class: 'muted small' }, 'The last 7 days, next to the 7 before')),
+        h('div', { class: 'facts' },
+          fact('Messages', thisWeek.toLocaleString(), versus(thisWeek, lastWeek)),
+          fact('A day, on average', perDay.length ? Math.round(perDay.reduce((a, b) => a + b, 0) / perDay.length).toLocaleString() : '—', perDay.length ? `best day ${Math.max(...perDay).toLocaleString()}` : 'collecting'),
+          fact('Members', grew == null ? '—' : signed(grew), grew == null ? 'collecting' : grew === 0 ? 'no change this week' : `${grew > 0 ? 'more' : 'fewer'} than 7 days ago`, grew > 0 ? 'good' : grew < 0 ? 'bad' : ''),
+          fact('Most in voice', rh.peakVoice.n.toLocaleString(), rh.peakVoice.at ? `${new Date(rh.peakVoice.at).toLocaleDateString([], { weekday: 'short' })} around ${HOUR_WORD(new Date(rh.peakVoice.at).getHours())}` : 'nobody yet'),
+          fact('Busiest hour', bestHour < 0 ? '—' : HOUR_WORD(bestHour), bestHour < 0 ? 'collecting' : `about ${Math.round(rh.hours[bestHour]).toLocaleString()} messages`),
+          fact('Busiest day', bestDay < 0 ? '—' : DAY_WORD(bestDay), bestDay < 0 ? 'needs a whole day first' : `about ${Math.round(rh.days[bestDay]).toLocaleString()} messages`),
+          fact('Moderation', cst ? `${cst[0]} today` : '—', cst ? `${cst[1]} this week, ${cs.total.toLocaleString()} in all` : null),
+          fact('Tickets open', open.length.toLocaleString(), oldest ? `oldest waiting ${ago(oldest.opened_at)}` : 'none waiting', waiting.length ? 'bad' : ''),
+          fact('Bot online for', p.uptime_seconds != null ? ago(Date.now() - p.uptime_seconds * 1000) : '—', S.o.live.servers != null ? `in ${plural(S.o.live.servers, 'server', 'servers')}` : null)));
+      const dayBits = series('messages', 'sum').map((v, i, all) => { const d = new Date(Date.now() - (all.length - 1 - i) * 864e5); return { value: v || 0, tip: `${i === all.length - 1 ? 'Today' : d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${v == null ? 'not counted' : `${v.toLocaleString()} messages`}` }; });
+      const charts = h('div', { class: 'two' },
+        h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Messages each day'), h('span', { class: 'muted small' }, `${(thisWeek + lastWeek).toLocaleString()} in 14 days`)), barChart(dayBits, 'Messages each day, last 14 days', [`${dayBits.length - 1} days ago`, 'Today'])),
+        h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'When people talk'), h('span', { class: 'muted small' }, 'Messages an hour, on average')),
+          barChart(rh.hours.map((v, i) => ({ value: v || 0, tip: `${HOUR_WORD(i)}: ${v == null ? 'not counted yet' : `about ${Math.round(v).toLocaleString()} messages`}`, colour: i === bestHour ? 'var(--good)' : null })), 'Messages by hour of the day', [HOUR_WORD(0), HOUR_WORD(12), HOUR_WORD(23)])));
+      return [numbers, facts, charts,
         h('div', { class: 'home-grid' },
           h('div', { class: 'home-col' }, h('div', { class: 'card' }, h('h3', {}, 'Needs attention'), list), h('div', { class: 'card' }, h('h3', {}, 'Your tools'), tools)),
           h('div', { class: 'home-col' }, h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Recent activity'), h('span', { class: 'live muted small' }, h('span', { class: 'dot on' }), 'Updates by itself')), empty, feed)))];
@@ -429,17 +500,37 @@
   }
   function pageServer() {
     return withServer('Members', 'How the server is doing', async (guild) => {
-      const d = await call('dashboard', { guild });
+      const [d, p, lv] = await Promise.all([call('dashboard', { guild }), call('pulse', { guild }).catch(() => null), call('leavers', { guild, days: 30, q: '' }).catch(() => null)]);
       await learn(guild, [...d.boards.xp.map((r) => r.user), ...d.boards.coins.map((r) => r.user), ...d.recent_cases.flatMap((c) => [c.targetId, c.modId])]);
       const n = (v) => (v == null ? '-' : Number(v).toLocaleString());
+      const L = d.levels || { members: d.ranked, bands: [] }, M = d.supply || {};
+      const pc = (a, b) => (b ? `${Math.round((a / b) * 100)}% of members` : null);
+      // growth: the members count at the end of each day, and how it moved
+      const growth = p ? daily(p.members, p.from, p.hourMs, 'last') : [];
+      const known = growth.filter((v) => v != null);
+      const moved = known.length >= 2 ? known.at(-1) - known[0] : null;
+      const left = lv ? lv.leavers : [];
+      const leftBy = (how) => left.filter((x) => x.how === how).length;
+      const weekLeft = left.filter((x) => Date.now() - x.left_at < 7 * 864e5).length;
+      const flagged = left.filter((x) => (x.flags || []).length).length;
+      const growBits = growth.map((v, i, all) => ({ value: v == null ? 0 : v - Math.min(...known) + 1, tip: `${i === all.length - 1 ? 'Today' : new Date(Date.now() - (all.length - 1 - i) * 864e5).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${v == null ? 'not counted' : `${v.toLocaleString()} members`}` }));
+      const top = d.boards.xp[0];
       return [
         h('div', { class: 'stats' },
-          h('div', { class: 'stat' }, h('b', {}, n(d.members)), h('span', {}, 'Members')),
-          h('div', { class: 'stat' }, h('b', {}, n(d.ranked)), h('span', {}, 'On the level board')),
-          h('div', { class: 'stat' }, h('b', {}, n(d.wallets)), h('span', {}, 'With coins')),
-          h('div', { class: 'stat' }, h('b', {}, n(d.tickets.open)), h('span', {}, `Open tickets (of ${n(d.tickets.total)})`)),
-          h('div', { class: 'stat' }, h('b', {}, n(d.cases)), h('span', {}, 'Moderation cases'))),
+          h('div', { class: 'stat' }, h('b', {}, n(d.members)), h('span', {}, 'Members'), h('small', { class: 'hint' }, moved == null ? 'counting growth' : `${signed(moved)} in ${known.length} days`)),
+          h('div', { class: 'stat' }, h('b', {}, n(d.ranked)), h('span', {}, 'Have XP'), h('small', { class: 'hint' }, pc(d.ranked, d.members) || ' ')),
+          h('div', { class: 'stat' }, h('b', {}, n(L.avg_level)), h('span', {}, 'Average level'), h('small', { class: 'hint' }, `half are level ${n(L.median_level)} or under`)),
+          h('div', { class: 'stat' }, h('b', {}, n(L.total_xp)), h('span', {}, 'XP earned in all'), h('small', { class: 'hint' }, top ? `top: ${who(top.user, top.name)}, level ${top.level}` : 'nobody yet')),
+          h('div', { class: 'stat' }, h('b', {}, n(d.wallets)), h('span', {}, 'With a wallet'), h('small', { class: 'hint' }, M.holders != null ? `${n(M.holders)} have coins` : ' ')),
+          h('div', { class: 'stat' }, h('b', {}, n(left.length)), h('span', {}, 'Left in 30 days'), h('small', { class: 'hint' }, `${weekLeft} this week`))),
+        h('div', { class: 'two' },
+          h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Members each day'), h('span', { class: 'muted small' }, moved == null ? '' : `${signed(moved)} in ${known.length} days`)),
+            known.length >= 2 ? barChart(growBits, 'Members each day', [`${growth.length - 1} days ago`, 'Today'], 'var(--good)') : h('p', { class: 'muted' }, 'Counting. This fills in over the next day or two.')),
+          h('div', { class: 'card' }, h('h3', {}, 'Where members are on levels'), spread((L.bands || []).map((b) => [`Level ${b.label}`, b.count]), 'members'),
+            h('p', { class: 'muted small' }, `${n(d.members && d.ranked != null ? Math.max(0, d.members - d.ranked) : null)} members have not earned any XP yet.`))),
         h('div', { class: 'two' }, board('Top levels', d.boards.xp, (r) => `Level ${r.level} · ${n(r.xp)} XP`), board('Richest', d.boards.coins, (r) => `${n(r.coins)} coins`)),
+        lv ? h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Who left, last 30 days'), h('button', { class: 'btn quiet', type: 'button', onclick: () => go('leavers') }, 'See everyone')),
+          h('div', { class: 'facts' }, fact('Left by themselves', n(leftBy('left'))), fact('Kicked', n(leftBy('kicked'))), fact('Banned', n(leftBy('banned'))), fact('Stood out', n(flagged), 'left soon after joining, had warnings or similar', flagged ? 'bad' : ''), fact('Came back', n(left.filter((x) => x.returned_at).length)))) : null,
         h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Latest cases'), h('button', { class: 'btn quiet', type: 'button', onclick: () => go('cases') }, 'See all')),
           d.recent_cases.length ? h('div', { class: 'list' }, d.recent_cases.map(caseRow)) : h('p', { class: 'muted' }, 'No cases yet. Nothing to worry about.')),
       ];
@@ -623,6 +714,61 @@
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
+  const SEV_COLOUR = { urgent: 'var(--bad)', high: '#f08a4b', normal: 'var(--accent)', low: 'var(--good)' };
+  /** Everything worth knowing about a server's tickets, worked out from the newest 500: the numbers, how quickly
+   * staff answer and close, what they are about, how they end, who handles them and who opens them. */
+  function ticketNumbers(r) {
+    const T = r.tickets, now = Date.now(), DAY = 864e5;
+    const n = (v) => Number(v || 0).toLocaleString();
+    const inside = (t, from, to) => t >= now - from && t < now - to;
+    const open = T.filter((t) => t.open), closed = T.filter((t) => !t.open && t.closed_at);
+    const opened7 = T.filter((t) => inside(t.opened_at, 7 * DAY, 0)).length, opened14 = T.filter((t) => inside(t.opened_at, 14 * DAY, 7 * DAY)).length;
+    const closed7 = closed.filter((t) => inside(t.closed_at, 7 * DAY, 0)).length;
+    const reply = median(T.map((t) => t.first_response_ms)), toClose = median(closed.map((t) => t.closed_at - t.opened_at));
+    const unanswered = open.filter((t) => t.first_response_ms == null).length;
+    const answered = T.filter((t) => t.first_response_ms != null);
+    const fast = answered.filter((t) => t.first_response_ms <= 15 * 6e4).length;
+    const long = (ms) => (ms == null ? '—' : ms < 36e5 ? span(ms) : ms < 2 * DAY ? `${Math.round(ms / 36e5)} h` : `${Math.round(ms / DAY)} days`);
+    const tiles = h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('b', {}, n(r.open)), h('span', {}, 'Open now'), h('small', { class: 'hint' }, `${n(open.filter((t) => !t.claimed_by).length)} not claimed`)),
+      h('div', { class: 'stat' }, h('b', {}, n(opened7)), h('span', {}, 'Opened this week'), h('small', { class: 'hint' }, versus(opened7, opened14) || ' ')),
+      h('div', { class: 'stat' }, h('b', {}, n(closed7)), h('span', {}, 'Closed this week'), h('small', { class: 'hint' }, `${n(r.total)} tickets in all`)),
+      h('div', { class: 'stat' }, h('b', {}, long(reply)), h('span', {}, 'Typical first reply'), h('small', { class: 'hint' }, answered.length ? `${Math.round((fast / answered.length) * 100)}% answered within 15 min` : 'no replies yet')),
+      h('div', { class: 'stat' }, h('b', {}, long(toClose)), h('span', {}, 'Typical time to close'), h('small', { class: 'hint' }, `from ${n(closed.length)} closed`)),
+      h('div', { class: 'stat' }, h('b', { class: unanswered ? 'bad' : '' }, n(unanswered)), h('span', {}, 'Open with no reply'), h('small', { class: 'hint' }, unanswered ? 'someone is waiting' : 'everyone has an answer')));
+    // 30 days: opened each day
+    const bits = Array.from({ length: 30 }, (_, i) => { const ago = 29 - i; const start = new Date(now - ago * DAY); start.setHours(0, 0, 0, 0); const end = start.getTime() + DAY;
+      const o = T.filter((t) => t.opened_at >= start.getTime() && t.opened_at < end).length; const c = closed.filter((t) => t.closed_at >= start.getTime() && t.closed_at < end).length;
+      return { value: o, tip: `${ago === 0 ? 'Today' : ago === 1 ? 'Yesterday' : start.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${o} opened, ${c} closed` }; });
+    const count = (key) => { const m = new Map(); for (const t of T) { const k = key(t); if (k) m.set(k, (m.get(k) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+    const cats = count((t) => t.category_label || t.category);
+    const sevs = ['urgent', 'high', 'normal', 'low'].map((id) => { const one = T.find((t) => t.severity.id === id); return [one ? one.severity.label.replace(/^\S+\s/, '') : id, T.filter((t) => t.severity.id === id).length, SEV_COLOUR[id]]; }).filter((x) => x[1]);
+    const ends = count((t) => (t.open ? null : CLOSED[t.kind] || 'Closed'));
+    // staff: who claims, who closes, and how fast the tickets they had were first answered
+    const staff = new Map();
+    const one = (p) => { const k = p.name || p.id; if (!staff.has(k)) staff.set(k, { name: k, claimed: 0, closed: 0, open: 0, replies: [] }); return staff.get(k); };
+    for (const t of T) {
+      if (t.claimed_by) { const s = one(t.claimed_by); s.claimed++; if (t.open) s.open++; if (t.first_response_ms != null) s.replies.push(t.first_response_ms); }
+      if (t.closed_by) one(t.closed_by).closed++;
+    }
+    const staffRows = [...staff.values()].sort((a, b) => b.claimed + b.closed - (a.claimed + a.closed)).slice(0, 10);
+    const openers = count((t) => (t.opener && t.opener.name) || null).slice(0, 8);
+    const busy = Array.from({ length: 24 }, (_, hr) => T.filter((t) => new Date(t.opened_at).getHours() === hr).length);
+    const peak = busy.indexOf(Math.max(...busy));
+    const table = staffRows.length ? h('div', { class: 'stafftable' }, h('div', { class: 'staffrow head muted small' }, h('span', {}, 'Staff'), h('span', {}, 'Claimed'), h('span', {}, 'Closed'), h('span', {}, 'Has open'), h('span', {}, 'Typical first reply')),
+      staffRows.map((s) => h('div', { class: 'staffrow' }, h('b', {}, s.name), h('span', {}, n(s.claimed)), h('span', {}, n(s.closed)), h('span', {}, n(s.open)), h('span', {}, long(median(s.replies)))))) : h('p', { class: 'muted' }, 'Nobody has claimed or closed a ticket yet.');
+    return [tiles,
+      h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Opened each day'), h('span', { class: 'muted small' }, `${n(bits.reduce((a, b) => a + b.value, 0))} in 30 days`)), barChart(bits, 'Tickets opened each day, last 30 days', ['30 days ago', 'Today'])),
+      h('div', { class: 'two' },
+        h('div', { class: 'card' }, h('h3', {}, 'What they are about'), spread(cats, 'tickets')),
+        h('div', { class: 'card' }, h('h3', {}, 'How urgent'), spread(sevs, 'tickets'))),
+      h('div', { class: 'two' },
+        h('div', { class: 'card' }, h('h3', {}, 'Staff'), table, h('h3', {}, 'How they ended'), spread(ends, 'tickets')),
+        h('div', { class: 'card' }, h('h3', {}, 'Who opens the most'), openers.length ? h('div', { class: 'list' }, openers.map(([name, c], i) => h('div', {}, h('span', {}, `${i + 1}. ${name}`), h('b', {}, plural(c, 'ticket', 'tickets'))))) : h('p', { class: 'muted' }, 'Nobody yet.'),
+          h('h3', {}, 'When tickets come in'), barChart(busy.map((v, hr) => ({ value: v, tip: `${HOUR_WORD(hr)}: ${plural(v, 'ticket', 'tickets')}`, colour: hr === peak && v ? 'var(--good)' : null })), 'Tickets by hour of the day', [HOUR_WORD(0), HOUR_WORD(12), HOUR_WORD(23)]),
+          T.length ? h('p', { class: 'muted small' }, `Most come in around ${HOUR_WORD(peak)}.`) : null)),
+      T.length < r.total ? h('p', { class: 'muted small' }, `Worked out from the newest ${n(T.length)} of ${n(r.total)} tickets.`) : null];
+  }
   function pageTickets() {
     S.tkShow = S.tkShow || 'all';
     return withServer('Tickets', 'Who opened each ticket, who it is about, how urgent it is, and which moderator has it', async (guild) => {
@@ -695,7 +841,7 @@
       const find = h('input', { type: 'search', placeholder: 'Search every ticket: words anyone said, a number, a name', 'aria-label': 'Search tickets', value: S.tkFind || '', oninput: (e) => { S.tkFind = e.target.value.trim(); clearTimeout(S.tkT); S.tkT = setTimeout(() => reload().catch((er) => toast(er.message || String(er), true)), 300); } });
       const seg = h('div', { class: 'segs', role: 'group', 'aria-label': 'Show' }, [['all', 'All'], ['open', 'Open'], ['closed', 'Closed']].map(([k, l]) => h('button', { class: 'seg', type: 'button', 'aria-pressed': String(S.tkShow === k), onclick: (e) => { S.tkShow = k; for (const b of e.currentTarget.parentNode.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); paint(); } }, l)));
       paint();
-      return [h('div', { class: 'stats' }, h('div', { class: 'stat' }, h('b', {}, r.open.toLocaleString()), h('span', {}, 'Open now')), h('div', { class: 'stat' }, h('b', {}, r.total.toLocaleString()), h('span', {}, 'In all'))),
+      return [...ticketNumbers(S.tkFind ? (await call('tickets', { guild, limit: 500 })) : r.total > r.tickets.length ? await call('tickets', { guild, limit: 500 }) : r),
         slot, h('div', { class: 'card' }, h('div', { class: 'tools' }, find, seg), list, r.total > r.tickets.length ? h('p', { class: 'muted small' }, `Showing the newest ${r.tickets.length} of ${r.total}.`) : null)];
     });
   }
@@ -916,10 +1062,10 @@
   // ---- Economy: the treasury, taxes and the second currency
   const KIND_WORDS = { 'tax:pay': 'Tax on payments', 'tax:income': 'Tax on daily and work', 'tax:withdraw': 'Bank withdrawal fees', 'tax:winnings': 'Tax on game winnings', shop: 'Shop sales', 'fee:exchange': 'Exchange fees', grant: 'Paid out', donation: 'Gifts from members', staff: 'Added by staff' };
   function pageEconomy() {
-    return withServer('Economy', 'The treasury, taxes and the second currency', async (guild) => {
+    return withServer('Economy', 'The money members hold, the treasury, taxes and the second currency', async (guild) => {
       const box = h('div', { class: 'stack big' });
       let v = await call('economy', { guild });
-      const know = () => learn(guild, [...v.log.map((e) => e.user), ...v.top_gems.map((g) => g.user)]);
+      const know = () => learn(guild, [...v.log.map((e) => e.user), ...v.top_gems.map((g) => g.user), ...(v.richest || []).map((r) => r.user)]);
       await know();
       const reload = async () => { v = await call('economy', { guild }); await know(); paint(); };
       const n = (x) => Number(x || 0).toLocaleString();
@@ -953,15 +1099,39 @@
         return h('div', { class: 'card' }, h('h3', {}, 'Add coins to the treasury'), h('p', { class: 'muted small' }, 'Puts new coins in the treasury, for prizes and rewards you pay out later. It shows in the record as added by staff.'),
           h('div', { class: 'grid2' }, f('Amount', amount), f('Note', note)), h('div', { class: 'btns' }, go));
       }
+      const net = (rows) => (rows || []).reduce((a, [, x]) => a + x, 0);
+      /** All the money members hold: wallets and banks, the typical member, how it is spread and the richest ten. */
+      function moneyNumbers() {
+        const m = v.supply;
+        if (!m) return null;
+        const all = m.coins + m.bank;
+        const share = all ? Math.round((m.top10 / all) * 100) : 0;
+        const avg = m.holders ? Math.round(all / m.holders) : 0;
+        const BANDS = ['Under 100', '100 to 999', '1,000 to 9,999', '10,000 to 99,999', '100,000 and up'];
+        return h('div', { class: 'stack big' },
+          h('div', { class: 'stats' },
+            h('div', { class: 'stat' }, h('b', {}, n(all)), h('span', {}, 'Money members hold'), h('small', { class: 'hint' }, `${n(m.coins)} in wallets, ${n(m.bank)} in banks`)),
+            h('div', { class: 'stat' }, h('b', {}, n(m.median)), h('span', {}, 'Typical member has'), h('small', { class: 'hint' }, `the average is ${n(avg)}`)),
+            h('div', { class: 'stat' }, h('b', {}, `${share}%`), h('span', {}, 'Held by the richest 10'), h('small', { class: 'hint' }, share > 60 ? 'a few hold most of it' : share > 30 ? 'fairly spread' : 'well spread')),
+            h('div', { class: 'stat' }, h('b', {}, n(m.earned)), h('span', {}, 'Earned in all'), h('small', { class: 'hint' }, 'daily, work and games, ever')),
+            h('div', { class: 'stat' }, h('b', {}, n(m.holders)), h('span', {}, 'Members with money'), h('small', { class: 'hint' }, `of ${n(m.wallets)} wallets`))),
+          h('div', { class: 'two' },
+            board('Richest', v.richest || [], (r) => coin(r.coins)),
+            h('div', { class: 'card' }, h('h3', {}, 'How much members have'), spread(BANDS.map((b, i) => [b, m.bands[i] || 0]), 'members'),
+              h('p', { class: 'muted small' }, 'Wallet and bank together.'),
+              h('h3', {}, 'Where it is kept'), spread([['In wallets', m.coins, 'var(--accent)'], ['In banks', m.bank, 'var(--good)']], 'coins'),
+              h('h3', {}, 'Treasury next to members'), spread([['Members hold', all, 'var(--accent)'], ['Treasury', v.treasury.balance, 'var(--warn)']], 'coins'))));
+      }
       function paint() {
         const t = v.treasury;
         const kinds = (rows) => rows.length ? h('div', { class: 'list' }, rows.map(([k, x]) => h('div', {}, h('span', {}, KIND_WORDS[k] || k), h('b', {}, `${x < 0 ? '−' : '+'}${n(Math.abs(x))}`)))) : h('p', { class: 'muted' }, 'Nothing yet.');
         box.replaceChildren(
           !v.on ? h('div', { class: 'card note' }, 'Money is off in this server. Turn it on in Modules to use any of this.') : null,
+          moneyNumbers(),
           h('div', { class: 'stats' },
-            h('div', { class: 'stat' }, h('b', {}, n(t.balance)), h('span', {}, 'In the treasury')), h('div', { class: 'stat' }, h('b', {}, n(t.collected)), h('span', {}, 'Collected in all')),
-            h('div', { class: 'stat' }, h('b', {}, n(t.paid_out)), h('span', {}, 'Paid out')), h('div', { class: 'stat' }, h('b', {}, n(v.wallets)), h('span', {}, 'Wallets'))),
-          h('div', { class: 'two' }, h('div', { class: 'card' }, h('h3', {}, 'Last 7 days'), kinds(v.week)), h('div', { class: 'card' }, h('h3', {}, 'Last 30 days'), kinds(v.month))),
+            h('div', { class: 'stat' }, h('b', {}, n(t.balance)), h('span', {}, 'In the treasury'), h('small', { class: 'hint' }, `${signed(net(v.week))} this week`)), h('div', { class: 'stat' }, h('b', {}, n(t.collected)), h('span', {}, 'Collected in all'), h('small', { class: 'hint' }, 'taxes, fees, sales, gifts')),
+            h('div', { class: 'stat' }, h('b', {}, n(t.paid_out)), h('span', {}, 'Paid out'), h('small', { class: 'hint' }, 'prizes and rewards')), h('div', { class: 'stat' }, h('b', {}, signed(net(v.month))), h('span', {}, 'Treasury, 30 days'), h('small', { class: 'hint' }, 'in, less what went out'))),
+          h('div', { class: 'two' }, h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Treasury, last 7 days'), h('b', {}, signed(net(v.week)))), kinds(v.week)), h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Treasury, last 30 days'), h('b', {}, signed(net(v.month)))), kinds(v.month))),
           h('div', { class: 'card' }, h('h3', {}, 'Taxes'), h('p', { class: 'muted small' }, 'All start at 0, so nothing changes until you choose. Taxes come off what members earn or move and go to the treasury.'),
             h('div', { class: 'grid2' }, num('taxPay', 'Payments between members (%)', 'Comes off what the receiver gets'), num('taxIncome', 'Daily and work rewards (%)'), num('taxWithdraw', 'Bank withdrawals (%)'), num('taxWinnings', 'Game winnings (%)', 'Only on the profit, never the stake')),
             toggle('shopToTreasury', 'Shop sales go to the treasury (otherwise the coins disappear)')),

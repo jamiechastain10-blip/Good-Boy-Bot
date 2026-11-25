@@ -480,7 +480,7 @@ mark{background:color-mix(in srgb,var(--warn) 35%,transparent);color:inherit;bor
 .pill.kind{background:color-mix(in srgb,var(--k) 18%,transparent);color:var(--k)}
 .tools.wrap{flex-wrap:wrap}
 .tools.wrap input{flex:1 1 240px}
-.modchart{display:grid;grid-template-columns:repeat(30,1fr);gap:3px;align-items:end;height:120px;padding-top:6px}
+.modchart{display:grid;grid-template-columns:repeat(var(--n,30),1fr);gap:3px;align-items:end;height:120px;padding-top:6px}
 .modbar{height:100%;display:flex;align-items:flex-end;border-radius:3px;background:color-mix(in srgb,var(--ink) 4%,transparent)}
 .modbar:hover{background:color-mix(in srgb,var(--ink) 10%,transparent)}
 .modstack{width:100%;display:flex;flex-direction:column-reverse;border-radius:3px;overflow:hidden;min-height:0}
@@ -519,3 +519,21 @@ details.fold > .card > h3{display:none}
   .rankrow{grid-template-columns:22px minmax(0,1fr) auto}
   .rankrow > small{display:none}
 }
+
+/* the data pages: facts, spreads and the staff table */
+.fact{display:grid;gap:2px;align-content:start}
+.fact b{font:800 20px var(--display);font-variant-numeric:tabular-nums}
+.fact b.good{color:var(--good)}.fact b.bad,.stat b.bad{color:var(--bad)}
+.spread{display:grid;gap:8px}
+.spreadrow{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(60px,2fr) auto 40px;align-items:center;gap:10px;font-size:14px}
+.spreadrow > span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spreadrow > b{font-variant-numeric:tabular-nums;text-align:right}
+.spreadrow > .small{text-align:right}
+.spreadbar{height:10px;border-radius:999px;background:color-mix(in srgb,var(--ink) 7%,transparent);overflow:hidden}
+.spreadbar i{display:block;height:100%;border-radius:inherit;background:var(--accent);min-width:3px}
+.stafftable{display:grid}
+.staffrow{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,.7fr)) minmax(0,1.1fr);gap:8px;padding:8px 4px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;align-items:center}
+.staffrow.head{padding-top:0}
+.staffrow b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card > .modchart + .modaxis + h3{margin-top:6px}
+@media (max-width:760px){.staffrow{grid-template-columns:minmax(0,1fr) 54px 48px 38px 66px;gap:6px;font-size:12.5px}.modchart{gap:2px}}

@@ -25,7 +25,7 @@ mod handover;
 mod levels;
 
 pub use handover::{find_3x_data, import_3x, ImportReport};
-pub use economy::{Short, Wallet, Pet, ShopItem, WalletMore};
+pub use economy::{Short, Wallet, Pet, ShopItem, WalletMore, Supply};
 pub use giveaways::Giveaway;
 pub use levels::{level_of, Level};
 
@@ -411,6 +411,12 @@ impl Store {
         let mut st = self.conn.prepare_cached(TOP_XP)?;
         let rows = st.query_map(params![guild, limit as i64], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+    /// Every member's XP in a server, highest first, for the level spread on the dashboard.
+    pub fn all_xp(&self, guild: &str) -> Result<Vec<i64>> {
+        let mut st = self.conn.prepare_cached(TOP_XP)?;
+        let rows = st.query_map(params![guild, i64::MAX], |r| r.get::<_, Option<i64>>(1))?;
+        Ok(rows.map(|r| r.map(|x| x.unwrap_or(0))).collect::<std::result::Result<_, _>>()?)
     }
     /// A member's place on the XP board (1 = top) and how many members are on it. None when they have no record.
     pub fn xp_rank(&self, guild: &str, user: &str) -> Result<Option<(usize, usize)>> {
