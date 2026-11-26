@@ -117,7 +117,7 @@ impl Hub {
 
 fn hex_prefix(value: &str) -> Vec<u8> {
     value.as_bytes().chunks_exact(2).map(|pair| {
-        let digit = |b| if b.is_ascii_digit() { b - b'0' } else { b.to_ascii_lowercase() - b'a' + 10 };
+        let digit = |b: u8| if b.is_ascii_digit() { b - b'0' } else { b.to_ascii_lowercase() - b'a' + 10 };
         digit(pair[0]) * 16 + digit(pair[1])
     }).collect()
 }
