@@ -104,9 +104,12 @@ impl Hub {
         let nonce = challenge["nonce"].as_str().filter(|n| n.len() == 20 && n.bytes().all(|b| b.is_ascii_hexdigit())).ok_or_else(|| "The hub did not provide a bot ownership code.".to_string())?.to_string();
         if !ok { return Err("The hub could not verify bot ownership.".into()); }
         let clean = self.description.lines().filter(|line| !line.contains("gb-hub:")).collect::<Vec<_>>().join("\n");
-        let short = clean.chars().take(380).collect::<String>();
-        let proof = format!("{short}\ngb-hub:{nonce}");
+        // Discord allows 400 characters; "\ngb-hub:" plus the 20-character code takes 28 of them.
+        let short = clean.chars().take(372).collect::<String>();
+        let proof = if short.is_empty() { format!("gb-hub:{nonce}") } else { format!("{short}\ngb-hub:{nonce}") };
         self.edit_description(&proof).await?;
+        // give Discord a moment so the hub reads the new description
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let result = self.post("/v1/register", &json!({ "appId": self.app_id, "publicKey": key.public_key, "url": self.url, "guilds": guilds, "at": at, "sig": signature, "nonce": nonce })).await;
         let restored = self.edit_description(&clean).await;
         let (ok, data) = result?;

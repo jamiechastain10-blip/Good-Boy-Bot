@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(runner.live().phase, Phase::Stopped);
         runner.stop().await; // stopping a stopped bot is fine
         std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:1");
-        runner.start("not.a.token".into(), Vec::new(), bot.clone());
+        runner.start("not.a.token".into(), Vec::new(), bot.clone(), None);
         for _ in 0..200 {
             if runner.live().phase == Phase::Problem { break; }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
