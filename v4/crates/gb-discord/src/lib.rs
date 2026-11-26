@@ -2407,7 +2407,7 @@ pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), S
         helper_list.push((*slot, helper_token.clone(), id, v));
     }
     bot.directory.set_helpers(known);
-    let hub = ctl.dashboard_url.clone().filter(|url| url.starts_with("https://")).map(|url| Arc::new(hub::Hub::new(&data, app.to_string(), token.clone(), url, application.description.clone().unwrap_or_default())));
+    let hub = ctl.dashboard_url.clone().filter(|url| url.starts_with("https://")).map(|url| Arc::new(hub::Hub::new(&data, app.to_string(), token.clone(), url, application.description.clone())));
     let link = Arc::new(Link { bot, http, app, me, places: Mutex::default(), names: Mutex::default(), voice, helper_voices, data: data.clone(), purges: Mutex::default(), playing: Mutex::default(), next_forms: Mutex::default(), slow: Mutex::default(), member_roles: Mutex::default(), rp_picks: Mutex::default(), invites: Mutex::default(), mm_pending: Mutex::default(), dismiss: Mutex::default(), web: reqwest::Client::builder().user_agent("GoodBoy/4 (+Discord bot)").build().unwrap_or_default() });
     // private messages that nobody has touched for a while are taken down
     {
