@@ -28,6 +28,7 @@ use twilight_model::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker, 
 use twilight_model::id::Id;
 use twilight_model::user::User;
 
+mod hub;
 mod dsp;
 mod feeds;
 mod lookup;
@@ -2310,6 +2311,8 @@ pub struct Control {
     pub act: Option<tokio::sync::mpsc::UnboundedReceiver<(String, Action)>>,
     /// Extra bots that only play music: (their number from 1, their token).
     pub helpers: Vec<(usize, String)>,
+    /// Public dashboard link for the Good Boy hub. Empty dashboards are not listed.
+    pub dashboard_url: Option<String>,
 }
 /// Who a token belongs to.
 #[derive(Debug, Clone, PartialEq)]
@@ -2404,6 +2407,7 @@ pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), S
         helper_list.push((*slot, helper_token.clone(), id, v));
     }
     bot.directory.set_helpers(known);
+    let hub = ctl.dashboard_url.clone().filter(|url| url.starts_with("https://")).map(|url| Arc::new(hub::Hub::new(&data, app.to_string(), token.clone(), url, application.description.clone())));
     let link = Arc::new(Link { bot, http, app, me, places: Mutex::default(), names: Mutex::default(), voice, helper_voices, data: data.clone(), purges: Mutex::default(), playing: Mutex::default(), next_forms: Mutex::default(), slow: Mutex::default(), member_roles: Mutex::default(), rp_picks: Mutex::default(), invites: Mutex::default(), mm_pending: Mutex::default(), dismiss: Mutex::default(), web: reqwest::Client::builder().user_agent("GoodBoy/4 (+Discord bot)").build().unwrap_or_default() });
     // private messages that nobody has touched for a while are taken down
     {
@@ -2448,6 +2452,7 @@ pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), S
     (ctl.report)(Status::Connecting);
     let mut online = false;
     let mut last_backup_check = 0i64;
+    let mut last_hub_update = 0i64;
     loop {
         let event = tokio::select! {
             _ = ctl.stop.changed() => { link.close_windows_for_restart().await; shard.close(twilight_gateway::CloseFrame::NORMAL); break; }
@@ -2462,6 +2467,14 @@ pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), S
                             if let Ok(layout) = link.layout(gid).await { link.bot.backup_saved(&g, "auto", &layout, now_ms()); }
                         }
                     });
+                }
+                if online && now_ms() - last_hub_update >= 10 * 60_000 {
+                    last_hub_update = now_ms();
+                    if let Some(hub) = hub.clone() {
+                        let guilds: Vec<String> = link.bot.db.get().guilds().unwrap_or_default().into_iter().map(|g| g.id).collect();
+                        let report = ctl.report.clone();
+                        tokio::spawn(async move { if let Err(why) = hub.register(&guilds).await { report(Status::Notice(format!("Good Boy hub: {why}"))); } });
+                    }
                 }
                 // reminders and timed bans that have come due
                 for (guild, action) in link.bot.on_tick(now_ms(), &mut |lo, hi| fastrand::i64(lo..=hi.max(lo))) {
@@ -2505,6 +2518,12 @@ pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), S
         match event {
             Event::Ready(r) => {
                 link.bot.directory.set_me(&r.user.id.to_string());
+                if let Some(hub) = hub.clone() {
+                    last_hub_update = now_ms();
+                    let guilds: Vec<String> = r.guilds.iter().map(|g| g.id.to_string()).collect();
+                    let report = ctl.report.clone();
+                    tokio::spawn(async move { if let Err(why) = hub.register(&guilds).await { report(Status::Notice(format!("Good Boy hub: {why}"))); } });
+                }
                 // the bot owner's Twitch keys (live alerts), kept from before
                 if let Ok(Some(k)) = link.bot.db.get().data_get("0", "integrations", "twitchKeys") {
                     if let (Some(id), Some(secret)) = (k["id"].as_str(), k["secret"].as_str()) { *feeds::TWITCH.lock().unwrap_or_else(|p| p.into_inner()) = (id.into(), secret.into(), String::new(), 0); }

@@ -82,7 +82,7 @@ fn start(token: String, data: &std::path::Path) -> Result<(), String> {
         });
         // extra music bots: DISCORD_HELPER_TOKENS=token1,token2
         let helpers: Vec<(usize, String)> = std::env::var("DISCORD_HELPER_TOKENS").unwrap_or_default().split(',').map(str::trim).filter(|t| !t.is_empty()).enumerate().map(|(n, t)| (n + 1, t.to_string())).collect();
-        gb_discord::run(token, std::sync::Arc::new(bot), gb_discord::Control { stop: stop_rx, report, act: None, helpers }).await
+        gb_discord::run(token, std::sync::Arc::new(bot), gb_discord::Control { stop: stop_rx, report, act: None, helpers, dashboard_url: None }).await
     })
 }
 

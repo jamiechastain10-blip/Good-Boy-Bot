@@ -609,7 +609,9 @@ impl Desk {
     // ---- starting and stopping
     pub fn start(&self) -> Result<(), String> {
         let token = self.token().ok_or("Add your bot's token first (Bot settings).")?;
-        self.runner.start(token, self.helper_tokens(), self.bot()?);
+        let prefs = self.prefs();
+        let dashboard_url = (prefs.web_on && prefs.web_address.starts_with("https://")).then_some(prefs.web_address);
+        self.runner.start(token, self.helper_tokens(), self.bot()?, dashboard_url);
         Ok(())
     }
     pub async fn stop(&self) {

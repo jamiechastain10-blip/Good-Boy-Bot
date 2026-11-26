@@ -61,7 +61,7 @@ impl Runner {
         matches!(self.live().phase, Phase::Starting | Phase::Online)
     }
     /// Starts the bot. Must be called from inside a tokio runtime. Does nothing when it is already running.
-    pub fn start(&self, token: String, helpers: Vec<(usize, String)>, bot: Arc<Bot>) {
+    pub fn start(&self, token: String, helpers: Vec<(usize, String)>, bot: Arc<Bot>, dashboard_url: Option<String>) {
         let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
         if self.is_running() {
             return;
@@ -94,7 +94,7 @@ impl Runner {
         let (act_tx, act_rx) = tokio::sync::mpsc::unbounded_channel();
         *self.act.lock().unwrap_or_else(|p| p.into_inner()) = Some(act_tx);
         let task = tokio::spawn(async move {
-            let result = gb_discord::run(token, bot, Control { stop: stop_rx, report, act: Some(act_rx), helpers }).await;
+            let result = gb_discord::run(token, bot, Control { stop: stop_rx, report, act: Some(act_rx), helpers, dashboard_url }).await;
             let mut l = live.lock().unwrap_or_else(|p| p.into_inner());
             *l = match result {
                 Ok(()) => Live::stopped(),
@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(runner.live().phase, Phase::Stopped);
         runner.stop().await; // stopping a stopped bot is fine
         std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:1");
-        runner.start("not.a.token".into(), Vec::new(), bot.clone());
+        runner.start("not.a.token".into(), Vec::new(), bot.clone(), None);
         for _ in 0..200 {
             if runner.live().phase == Phase::Problem { break; }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
