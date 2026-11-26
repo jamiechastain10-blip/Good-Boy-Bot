@@ -9,6 +9,7 @@ publish.workspace = true
 gb-core = { path = "../gb-core" }
 gb-data = { path = "../gb-data" }
 gb-art = { path = "../gb-art" }
+serde.workspace = true
 serde_json.workspace = true
 base64 = "0.21"
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
