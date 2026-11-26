@@ -82,7 +82,7 @@ impl Hub {
 
     async fn edit_description(&self, description: &str) -> Result<(), String> {
         let response = self.http.patch("https://discord.com/api/v10/applications/@me")
-            .bearer_auth(format!("Bot {}", self.token))
+            .header(reqwest::header::AUTHORIZATION, format!("Bot {}", self.token))
             .json(&json!({ "description": description }))
             .send().await.map_err(|e| e.to_string())?;
         if response.status().is_success() { Ok(()) }
