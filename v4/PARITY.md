@@ -173,7 +173,8 @@ v4's `/money` group, with v3's tables, numbers and wording:
 - ✅ Good Boy 4 change (asked for by the owner): no drawn animations; furry GIFs from Tenor (strict safe search) shown
   privately to pick from, then posted; "do it back" takes one at random; without a key the action is posted
   without a GIF.
-- ⬜ Supporters picking a GIF style (furry, anime, animals, cartoon): waits for the supporter licence.
+- ✅ Supporters picking a GIF style (furry, anime, animals, cartoon): the roleplay setting "GIF style", used when the
+  bot's licence has the supporter perks (furry otherwise).
 
 ## Invites
 
