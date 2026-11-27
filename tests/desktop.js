@@ -245,7 +245,7 @@ export default async function ({ test }) {
     const f = JSON.parse(sign({ v: 1, at: 5, revoked: ['a1b2c3d4e5f6'] })); f.body = f.body.replace('a1b2', 'ffff');
     assert.equal(readCancelList(JSON.stringify(f), publicKey), null, 'a changed list is ignored');
     assert.equal(readCancelList('not json', publicKey), null); assert.equal(readCancelList(sign({ v: 1, at: 5, revoked: [] }), null), null);
-    assert.equal(CANCEL_LIST_URL, 'https://raw.githubusercontent.com/jamiechastain10-blip/Good-Boy-Bot/main/licences/revoked.json');
+    assert.equal(CANCEL_LIST_URL, 'https://goodboyhub.pages.dev/v1/cancel-list/goodboy', 'the cancel list comes from the site, never a GitHub address');
   });
 
   await test('licences: signed by the owner, tied to one bot, with an end date; forged, changed, moved, ended and cancelled keys are all refused', () => {
@@ -415,15 +415,15 @@ export default async function ({ test }) {
     assert.equal(updateMode({ packaged: true, platform: 'win32', smoke: true }), 'off', 'the build check never downloads anything');
     assert.equal(channelFor('developer'), 'developer'); assert.equal(channelFor('consumer'), 'latest'); assert.equal(channelFor('owner'), 'latest');
     assert.equal(compareVersions('2.1.10', '2.1.9'), 1); assert.equal(compareVersions('v2.1.2', '2.1.2'), 0); assert.equal(compareVersions('2.0.9', '2.1.0'), -1); assert.equal(compareVersions('3.0.0-beta', '2.9.9'), 1);
-    const rel = (o) => ({ tag_name: 'v2.1.3', html_url: 'https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/tag/v2.1.3', body: 'notes', draft: false, prerelease: false, ...o });
+    const rel = (o) => ({ tag_name: 'v2.1.3', html_url: 'https://goodboyhub.pages.dev/v1/releases/goodboy/page', body: 'notes', draft: false, prerelease: false, ...o });
     assert.deepEqual(readLatest(rel(), '2.1.2'), { newer: true, version: '2.1.3', url: rel().html_url, notes: 'notes', publishedAt: null });
     assert.equal(readLatest(rel(), '2.1.3').newer, false);
     assert.equal(readLatest(rel({ draft: true }), '2.1.2').newer, false); assert.equal(readLatest(rel({ prerelease: true }), '2.1.2').newer, false);
     assert.equal(readLatest(rel({ tag_name: 'nightly' }), '2.1.2').newer, false); assert.equal(readLatest(null, '2.1.2').newer, false);
-    assert.match(readLatest(rel({ html_url: 'https://evil.example/x' }), '2.1.2').url, /^https:\/\/github\.com\/jamiechastain10-blip\/Good-Boy-Bot\/releases$/, 'only ever opens the releases page on GitHub');
-    assert.deepEqual(RELEASES, { owner: 'jamiechastain10-blip', repo: 'Good-Boy-Bot' });
+    assert.match(readLatest(rel({ html_url: 'https://evil.example/x' }), '2.1.2').url, /^https:\/\/goodboyhub\.pages\.dev\/v1\/releases\/goodboy\/page$/, 'only ever opens the releases page on the site');
+    assert.equal(RELEASES, 'https://goodboyhub.pages.dev/v1/releases/goodboy');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'package.json'), 'utf8'));
-    assert.equal(pkg.build.publish[0].repo, RELEASES.repo, 'the build publishes where the app looks');
+    assert.equal(pkg.build.publish[0].url, `${RELEASES}/feed`, 'the app looks for updates on the site');
     assert.equal(editionConfig(pkg, 'developer').build.publish[0].channel, 'developer'); assert.equal(editionConfig(pkg, 'consumer').build.publish[0].channel, 'latest');
     const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
     assert.match(main, /autoUpdater\.allowDowngrade = false/, 'never installs an older version'); assert.match(main, /channelFor\(edition\.id\)/);
@@ -842,7 +842,7 @@ console.log('Ready. In Discord, run /module list to turn features on.'); link.re
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'desktop', 'package.json'), 'utf8'));
     assert.equal(pkg.main, 'boot.cjs'); assert.equal(pkg.build.mac.identity, null); assert.ok(pkg.devDependencies.electron && pkg.devDependencies['electron-builder']);
     assert.deepEqual(Object.keys(pkg.dependencies ?? {}).sort(), ['electron-updater', 'qrcode'], 'the only runtime packages are the updater and the phone pairing code');
-    assert.deepEqual(pkg.build.publish, [{ provider: 'github', owner: 'jamiechastain10-blip', repo: 'Good-Boy-Bot', releaseType: 'release' }]);
+    assert.deepEqual(pkg.build.publish, [{ provider: 'generic', url: 'https://goodboyhub.pages.dev/v1/releases/goodboy/feed' }], 'updates come through the site, so a GitHub rename never strands an install');
     assert.match(pkg.scripts['dist:win'], /--publish never/, 'electron-builder never publishes by itself: the release job does');
     const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     assert.equal(pkg.version, rootPkg.version, 'the app and the bot share one version number');

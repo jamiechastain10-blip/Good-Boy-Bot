@@ -1,22 +1,22 @@
 //! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
-//! Updating Good Boy 4 from inside the program. It asks GitHub which Good Boy 4 is out, and when one is newer it
-//! downloads the program, checks its size and its sha256 (the checksum GitHub recorded for the file) and only then
+//! Updating Good Boy 4 from inside the program. It asks the Basic Ghost Labs site which Good Boy 4 is out (the site
+//! looks it up where Good Boy is released, so a move on GitHub never strands an installed copy), and when one is newer it
+//! downloads the program, checks its size and its sha256 (the checksum recorded for the file) and only then
 //! swaps it in for the running program. Nothing is replaced unless the file matches. Settings, data and the saved
 //! token are not touched: they live outside the program.
 //!
-//! Only releases of this project, tagged `v4.x`, and only files from this project's own GitHub download address are
-//! accepted. Everything that touches the network or the disk takes its inputs as arguments so each step is tested.
+//! Only releases tagged `v4.x`, and only files from the site's own download address, are accepted. Everything that touches the network or the disk takes its inputs as arguments so each step is tested.
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-pub const OWNER: &str = "jamiechastain10-blip";
-pub const REPO: &str = "Good-Boy-Bot";
-pub const RELEASES: &str = "https://api.github.com/repos/jamiechastain10-blip/Good-Boy-Bot/releases?per_page=20";
-const DOWNLOADS: &str = "https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/download/";
+/// The Basic Ghost Labs site. Updates and the cancel list come from here, never from a GitHub address directly.
+pub const SITE: &str = "https://goodboyhub.pages.dev";
+pub const RELEASES: &str = "https://goodboyhub.pages.dev/v1/releases/goodboy";
+const DOWNLOADS: &str = "https://goodboyhub.pages.dev/v1/releases/goodboy/download/";
 
 /// A Good Boy 4 that can be installed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,12 +68,12 @@ pub fn pick(releases: &Value, current: &str, asset: &str, allow_test: bool) -> O
     best
 }
 
-/// Asks GitHub. `Ok(None)` means this is the newest. An error means GitHub could not be reached (not worth alarming anyone).
+/// Asks the site. `Ok(None)` means this is the newest. An error means it could not be reached (not worth alarming anyone).
 pub async fn check(current: &str, asset: &str, allow_test: bool) -> Result<Option<Release>, String> {
     let client = reqwest::Client::builder().user_agent("good-boy-4-updater").timeout(std::time::Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
-    let res = client.get(RELEASES).header("Accept", "application/vnd.github+json").send().await.map_err(|_| "Could not reach GitHub to look for updates.".to_string())?;
-    if !res.status().is_success() { return Err(format!("GitHub did not answer the update check ({}).", res.status().as_u16())); }
-    let list: Value = res.json().await.map_err(|_| "GitHub's answer could not be read.".to_string())?;
+    let res = client.get(RELEASES).header("Accept", "application/vnd.github+json").send().await.map_err(|_| "Could not reach Basic Ghost Labs to look for updates.".to_string())?;
+    if !res.status().is_success() { return Err(format!("The update check did not get an answer ({}).", res.status().as_u16())); }
+    let list: Value = res.json().await.map_err(|_| "The update check's answer could not be read.".to_string())?;
     Ok(pick(&list, current, asset, allow_test))
 }
 

@@ -12,7 +12,9 @@ use serde::Deserialize;
 /// The public key every Good Boy checks licences with (the same file Good Boy 3 ships).
 pub const PUBLIC_KEY_PEM: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAqqEyB1bxUMqXHZloy4OrSZFbRRcXPjAyNrYvmpqqVEo=\n-----END PUBLIC KEY-----\n";
 /// Where the owner publishes the list of cancelled licences (signed by Licence Studio).
-pub const CANCEL_LIST_URL: &str = "https://raw.githubusercontent.com/jamiechastain10-blip/Good-Boy-Bot/main/licences/revoked.json";
+pub const CANCEL_LIST_URL: &str = "https://goodboyhub.pages.dev/v1/cancel-list/goodboy";
+/// Where a bot's newest key waits once it was paid for on the website (the bot's application ID goes on the end).
+pub const KEY_URL: &str = "https://goodboyhub.pages.dev/v1/licence/";
 const PREFIX: &str = "GB1";
 
 /// What a key says.
@@ -74,6 +76,24 @@ pub fn verify(key: &str, public_pem: &str, app_id: Option<&str>, now_ms: i64, re
     Check { ok: true, error: None, expired: false, payload: Some(p) }
 }
 
+/// The key in the website's answer to `KEY_URL` (`{ key, exp, features }`, or `{ key: null }` when there is none).
+pub fn read_fresh_key(text: &str) -> Option<String> {
+    let key = serde_json::from_str::<serde_json::Value>(text).ok()?.get("key")?.as_str()?.trim().to_string();
+    (key.starts_with("GB1.") && key.len() <= 2048 && key.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))).then_some(key)
+}
+
+/// Whether a key from the website should take the place of the saved one. It must be good for this bot and not one the
+/// owner removed (`skip`, its ID). It is taken when the saved key no longer works, or when it is newer and unlocks at
+/// least everything the saved key does, so a renewal or an upgrade comes in by itself and nothing is ever taken away
+/// while the saved key still works.
+pub fn take_fresh(saved: &Check, fresh: &Check, skip: &str) -> bool {
+    let Some(f) = fresh.payload.as_ref().filter(|_| fresh.ok) else { return false };
+    if !skip.is_empty() && f.id == skip { return false; }
+    let Some(s) = saved.payload.as_ref().filter(|_| saved.ok) else { return true };
+    if f.id == s.id { return false; }
+    f.iat > s.iat && s.features.iter().all(|x| f.features.contains(x))
+}
+
 #[derive(Deserialize)]
 struct CancelFile { body: String, sig: String }
 #[derive(Deserialize)]
@@ -106,8 +126,8 @@ pub fn app_id_of(token: &str) -> Option<String> {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
-
-    /// A key pair made for the tests, and a licence signed with it.
+  
+  /// A key pair made for the tests, and a licence signed with it.
     fn pair() -> (SigningKey, String) {
         let sk = SigningKey::from_bytes(&[7u8; 32]);
         let mut der = vec![0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00];
@@ -115,7 +135,10 @@ mod tests {
         (sk, format!("-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n", STANDARD.encode(der)))
     }
     fn licence(sk: &SigningKey, app: &str, exp: Option<i64>) -> String {
-        let payload = serde_json::json!({ "v": 1, "id": "0123456789ab", "app": app, "to": "Kai", "features": ["whitelabel"], "iat": 1, "exp": exp });
+        made(sk, app, "0123456789ab", &["whitelabel"], 1, exp)
+    }
+    fn made(sk: &SigningKey, app: &str, id: &str, features: &[&str], iat: i64, exp: Option<i64>) -> String {
+        let payload = serde_json::json!({ "v": 1, "id": id, "app": app, "to": "Kai", "features": features, "iat": iat, "exp": exp });
         let body = URL_SAFE_NO_PAD.encode(payload.to_string());
         let sig = sk.sign(format!("{PREFIX}.{body}").as_bytes());
         format!("{PREFIX}.{body}.{}", URL_SAFE_NO_PAD.encode(sig.to_bytes()))
@@ -182,5 +205,32 @@ mod tests {
         let token = format!("{}.abc.def", URL_SAFE_NO_PAD.encode(APP));
         assert_eq!(app_id_of(&token).as_deref(), Some(APP));
         assert_eq!(app_id_of("nonsense"), None);
+    }
+    #[test]
+    fn the_websites_key_is_read_from_its_answer() {
+        assert_eq!(read_fresh_key(r#"{"key":"GB1.abc.def","exp":null,"features":["supporter"]}"#).as_deref(), Some("GB1.abc.def"));
+        for none in [r#"{"key":null}"#, r#"{"key":"<b>"}"#, "not json", r#"{"error":"Unknown product or target."}"#] { assert_eq!(read_fresh_key(none), None, "{none}"); }
+    }
+    #[test]
+    fn a_renewal_or_upgrade_comes_in_but_nothing_is_taken_away() {
+        let (sk, pem) = pair();
+        let check = |k: &str| verify(k, &pem, Some(APP), 1000, &[]);
+        let nothing = verify("", &pem, Some(APP), 1000, &[]);
+        let supporter = check(&made(&sk, APP, "aaaaaaaaaaaa", &["supporter"], 10, Some(5000)));
+        let renewed = check(&made(&sk, APP, "bbbbbbbbbbbb", &["supporter"], 20, Some(9000)));
+        let plus = check(&made(&sk, APP, "cccccccccccc", &["supporter", "whitelabel"], 30, Some(9000)));
+        let ended = verify(&made(&sk, APP, "dddddddddddd", &["supporter", "whitelabel"], 5, Some(500)), &pem, Some(APP), 1000, &[]);
+        let other_bot = check(&made(&sk, "999999999999999999", "eeeeeeeeeeee", &["supporter"], 40, None));
+        // a first key, a renewal, an upgrade, and a key that replaces one that ended
+        assert!(take_fresh(&nothing, &supporter, ""));
+        assert!(take_fresh(&supporter, &renewed, ""));
+        assert!(take_fresh(&renewed, &plus, ""));
+        assert!(take_fresh(&ended, &supporter, ""));
+        // the same key, an older one, a smaller one while the saved one still works, a bad one, and one the owner removed
+        assert!(!take_fresh(&supporter, &supporter, ""));
+        assert!(!take_fresh(&renewed, &supporter, ""));
+        assert!(!take_fresh(&plus, &renewed, ""));
+        assert!(!take_fresh(&nothing, &other_bot, ""));
+        assert!(!take_fresh(&nothing, &supporter, "aaaaaaaaaaaa"));
     }
 }

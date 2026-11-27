@@ -2,15 +2,22 @@
  * Basic Ghost Labs - Good Boy
  * Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
  *
- * App updates from GitHub, with no server of our own. Releases are published to the public repository below by the
- * GitHub build. The installed Windows app downloads and installs them by itself (electron-updater checks each file's
+ * App updates through the Basic Ghost Labs site. Releases are published on GitHub by the GitHub build; the app asks the
+ * site, which looks them up there, so a move on GitHub never strands an installed copy. The installed Windows app
+ * downloads and installs them by itself (electron-updater checks each file's
  * SHA-512 before installing). Builds that cannot replace themselves (the portable .exe, the unsigned Mac app and the
  * Owner build, which is never published) are told a new version is out and where to get it.
  * Your data is never touched: it lives outside the app folder.
  */
-export const RELEASES = { owner: 'jamiechastain10-blip', repo: 'Good-Boy-Bot' };
-export const releasesPage = () => `https://github.com/${RELEASES.owner}/${RELEASES.repo}/releases`;
-export const latestApi = () => `https://api.github.com/repos/${RELEASES.owner}/${RELEASES.repo}/releases/latest`;
+/** The Basic Ghost Labs site: every update question goes here, never to a GitHub address directly. */
+export const SITE = 'https://goodboyhub.pages.dev';
+export const RELEASES = `${SITE}/v1/releases/goodboy`;
+export const releasesPage = () => `${RELEASES}/page`;
+export const latestApi = () => `${RELEASES}/latest`;
+/** The update feed electron-updater reads (latest.yml / developer.yml), set in package.json as a generic provider. */
+export const FEED = `${RELEASES}/feed`;
+/** Only links on the site are opened, so a release note can't send anyone elsewhere. */
+export const safePage = (u) => (typeof u === 'string' && u.startsWith(`${SITE}/`) ? u : releasesPage());
 
 /** auto = download and install by itself; notify = tell the person; off = development or the build check. */
 export function updateMode({ packaged, platform, portable = false, edition = 'consumer', smoke = false }) {
@@ -30,12 +37,12 @@ export function compareVersions(a, b) {
   return 0;
 }
 
-/** From GitHub's "latest release" answer: is it newer than what is installed? */
+/** From the site's "latest release" answer: is it newer than what is installed? */
 export function readLatest(release, current) {
   if (!release || typeof release !== 'object' || release.draft || release.prerelease) return { newer: false };
   const version = String(release.tag_name ?? '').replace(/^v/i, '');
   if (!/^\d+\.\d+\.\d+/.test(version)) return { newer: false };
-  const url = typeof release.html_url === 'string' && release.html_url.startsWith('https://github.com/') ? release.html_url : releasesPage();
+  const url = safePage(release.html_url);
   return { newer: compareVersions(version, current) > 0, version, url, notes: String(release.body ?? '').slice(0, 2000), publishedAt: release.published_at ?? null };
 }
 

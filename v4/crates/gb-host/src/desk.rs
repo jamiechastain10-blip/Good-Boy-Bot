@@ -40,6 +40,8 @@ pub struct Prefs {
     pub licence: String,
     /// Good Boy 3's licence was looked for once (or the person chose), so a removed key is not taken over again.
     pub licence_looked: bool,
+    /// The ID of a key the owner removed, so the daily look on the website does not bring that same key back.
+    pub licence_skip: String,
     /// Good Boy 3's backup from the move (a folder named before-v4-…) and when it was made; removed after 14 days.
     pub v3_backup: String,
     pub v3_backup_at: i64,
@@ -70,7 +72,7 @@ fn hex_colour(v: &Value) -> Option<String> {
 }
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { setup_done: false, parts: "bot".into(), place: "pc".into(), start_with_app: true, theme: "system".into(), toured: false, private_dismiss_seconds: gb_core::bot::DEFAULT_DISMISS, web_on: false, web_port: 47890, web_address: String::new(), web_all: false, licence: String::new(), licence_looked: false, v3_backup: String::new(), v3_backup_at: 0, brand_applied: crate::brand::Applied::default(), colours: Colours::default() }
+        Prefs { setup_done: false, parts: "bot".into(), place: "pc".into(), start_with_app: true, theme: "system".into(), toured: false, private_dismiss_seconds: gb_core::bot::DEFAULT_DISMISS, web_on: false, web_port: 47890, web_address: String::new(), web_all: false, licence: String::new(), licence_looked: false, licence_skip: String::new(), v3_backup: String::new(), v3_backup_at: 0, brand_applied: crate::brand::Applied::default(), colours: Colours::default() }
     }
 }
 
@@ -219,7 +221,9 @@ impl Desk {
         // the running bot follows at once
         if let Some(bot) = self.bot.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
             bot.directory.set_dismiss_seconds(next.private_dismiss_seconds);
-            bot.directory.set_licensed(!next.licence.is_empty() && self.licence_check(&next.licence).ok);
+            let c = self.licence_check(&next.licence);
+            bot.directory.set_licensed(!next.licence.is_empty() && c.ok);
+            bot.directory.set_supporter(c.has("supporter"));
         }
         Ok(next)
     }
@@ -254,7 +258,7 @@ impl Desk {
         let c = self.licence_check(&key);
         json!({ "has_key": true, "ok": c.ok, "error": c.error, "expired": c.expired,
             "to": c.payload.as_ref().map(|p| p.to.clone()), "features": c.payload.as_ref().map(|p| p.features.clone()).unwrap_or_default(),
-            "ends": c.payload.as_ref().and_then(|p| p.exp), "whitelabel": c.has("whitelabel") })
+            "ends": c.payload.as_ref().and_then(|p| p.exp), "whitelabel": c.has("whitelabel"), "supporter": c.has("supporter") })
     }
     /// Saves a licence key (an empty one removes it). A key that is not genuine, or is for another bot, is refused.
     pub fn licence_set(&self, key: &str) -> Result<Value, String> {
@@ -264,6 +268,10 @@ impl Desk {
             if !c.ok { return Err(c.error.unwrap_or_else(|| "That licence key does not work.".into())); }
         }
         let mut next = self.prefs();
+        if key.is_empty() {
+            // a key the owner takes off stays off: the website's copy of that same key is not brought back
+            if let Some(p) = self.licence_check(&next.licence).payload { next.licence_skip = p.id; }
+        }
         next.licence = key.to_string();
         next.licence_looked = true;
         self.write_prefs(next)?;
@@ -325,8 +333,32 @@ impl Desk {
         let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().map_err(text)?;
         crate::brand::apply_custom(&http, crate::brand::API, &token, &custom).await
     }
-    /// Asks for the list of cancelled licences and keeps it if the owner signed it and it is newer than the one kept.
+    /// Asks for the list of cancelled licences, then for the bot's newest key on the website (a renewal or an upgrade
+    /// someone paid for there). The cancel list is checked first, so a cancelled key is never taken.
     pub async fn licence_refresh(&self) -> Result<(), String> {
+        let cancel = self.cancel_list_refresh().await;
+        let fresh = self.licence_fetch(crate::licence::KEY_URL).await;
+        cancel.and(fresh.map(|_| ()))
+    }
+    /// Looks for the bot's newest key at `base` + its application ID, and saves it when it should take the place of the
+    /// saved one (see `licence::take_fresh`). Returns whether it was taken.
+    pub async fn licence_fetch(&self, base: &str) -> Result<bool, String> {
+        let Some(app) = self.token().and_then(|t| crate::licence::app_id_of(&t)) else { return Ok(false) };
+        let r = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(text)?
+            .get(format!("{base}{app}")).send().await.map_err(|_| "Could not reach the website for a new key.".to_string())?;
+        if r.status() == reqwest::StatusCode::NOT_FOUND { return Ok(false); }
+        let body = r.error_for_status().map_err(|_| "The website could not give a key right now.".to_string())?.text().await.map_err(text)?;
+        let Some(key) = crate::licence::read_fresh_key(&body) else { return Ok(false) };
+        let p = self.prefs();
+        if !crate::licence::take_fresh(&self.licence_check(&p.licence), &self.licence_check(&key), &p.licence_skip) { return Ok(false); }
+        let mut next = p;
+        next.licence = key;
+        next.licence_looked = true;
+        self.write_prefs(next)?;
+        Ok(true)
+    }
+    /// Asks for the list of cancelled licences and keeps it if the owner signed it and it is newer than the one kept.
+    async fn cancel_list_refresh(&self) -> Result<(), String> {
         let body = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(text)?
             .get(crate::licence::CANCEL_LIST_URL).send().await.map_err(|_| "Could not reach the cancel list.".to_string())?
             .error_for_status().map_err(|_| "The cancel list is not published yet.".to_string())?.text().await.map_err(text)?;
@@ -402,7 +434,7 @@ impl Desk {
         store.integrity_ok().map_err(text)?;
         let bot = Arc::new(Bot::new(store));
         bot.directory.set_dismiss_seconds(self.prefs().private_dismiss_seconds);
-        { let key = self.prefs().licence; bot.directory.set_licensed(!key.is_empty() && self.licence_check(&key).ok); }
+        { let key = self.prefs().licence; let c = self.licence_check(&key); bot.directory.set_licensed(!key.is_empty() && c.ok); bot.directory.set_supporter(c.has("supporter")); }
         *held = Some(bot.clone());
         Ok(bot)
     }

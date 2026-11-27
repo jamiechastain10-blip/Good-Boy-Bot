@@ -24,7 +24,7 @@ import { runTool } from './lib/tools.js';
 import { verifyToken, verifySecret, addRedirectUri, linkFor, isSnowflake, appIdFromToken, redirectUriFor } from './lib/discord.js';
 import { takeControl } from './lib/takeover.js';
 import { Share, shareSettings, isTailscaleLink } from './lib/share.js';
-import { updateMode, channelFor, readLatest, latestApi, releasesPage, restartPlan } from './lib/updater.js';
+import { updateMode, channelFor, readLatest, latestApi, releasesPage, safePage, restartPlan } from './lib/updater.js';
 import { brandStatus, applyBrand, applyCustom } from './lib/brand.js';
 import { verifyLicense, hasFeature, readCancelList, CANCEL_LIST_URL } from './lib/license.js';
 import { verifyModule, moduleNameOf } from './lib/modsign.js';
@@ -881,7 +881,7 @@ async function checkUpdates() {
   return U;
 }
 ipcMain.handle('gb:update-check', () => checkUpdates());
-ipcMain.handle('gb:update-open', () => { const u = U.url && U.url.startsWith('https://github.com/') ? U.url : releasesPage(); shell.openExternal(u); return true; });
+ipcMain.handle('gb:update-open', () => { const url = safePage(U.url); shell.openExternal(url); return true; });
 // Once an update has downloaded, warn for a minute and then restart by itself to install it (the bot is stopped
 // cleanly first and starts again with the app). "Later" puts it off; it then installs when the app is closed.
 let restartTimer = null;

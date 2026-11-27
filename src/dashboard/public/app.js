@@ -382,7 +382,7 @@ function renderOverview(ws) {
 }
 
 // ---------------------------------------------------------------- updates (bot owner only)
-const RELEASES = 'https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/latest';
+const RELEASES = 'https://goodboyhub.pages.dev/v1/releases/goodboy/page';
 function renderUpdates(ws) {
   // Inside the Windows app the app itself updates Good Boy (bot and dashboard together), so send people there.
   if (state.me?.local) {

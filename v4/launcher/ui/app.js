@@ -2136,14 +2136,14 @@
     const save = async (key, msg) => { try { await call('licence_set', { key }); await refresh(); draw(); toast(msg); } catch (e) { toast(e.message, true); } };
     const ends = l.ends ? new Date(l.ends).toLocaleDateString() : 'never';
     const status = !l.has_key ? h('p', { class: 'muted' }, 'No licence. Everything works; a licence adds your own name, picture and banner for the bot.')
-      : l.ok ? h('p', {}, h('b', {}, 'Licence active'), l.to ? ` for ${l.to}` : '', ` · ends ${ends} · unlocks ${l.features.join(', ') || 'nothing'}`)
+      : l.ok ? h('p', {}, h('b', {}, 'Licence active'), l.to ? ` for ${l.to}` : '', ` · ends ${ends} · unlocks ${l.features.map((f) => ({ whitelabel: 'your own bot name and pictures', supporter: 'supporter perks' })[f] ?? f).join(', ') || 'nothing'}`)
       : h('p', { class: 'warn' }, l.error || 'This licence does not work.');
     return h('div', { class: 'card' }, h('h2', {}, 'Licence'), status,
       h('p', { class: 'muted small' }, 'A licence from Good Boy 3 carries over by itself because the bot and its token stay the same.'),
       h('div', { class: 'btns' }, box,
         h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.target, () => save(box.value, 'Licence saved.')) }, 'Save'),
         ...(l.has_key ? [h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, () => save('', 'Licence removed.')) }, 'Remove')] : []),
-        h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, async () => { try { await call('licence_refresh'); await refresh(); draw(); toast('Checked for cancelled licences.'); } catch (err) { toast(err.message, true); } }) }, 'Check cancelled list')));
+        h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, async () => { try { await call('licence_refresh'); await refresh(); draw(); toast('Checked for a new key and for cancelled licences.'); } catch (err) { toast(err.message, true); } }) }, 'Check now')));
   }
 
   function webCard() {
