@@ -1260,6 +1260,16 @@ fn roleplay_like_good_boy_3() {
     // a hug asks for furry GIFs to pick from
     let asked = run(&bot, cmd(&kai, "rp", None, Some(&rowan), &[("action", "hug")], NOW));
     assert!(matches!(&asked[0], Action::RpGifs { action, query: Some(q), pick: true, .. } if action == "hug" && q == "furry hug"), "{asked:?}");
+    // another GIF style is a supporter perk: without it the server's pick is not used
+    bot.settings.set(G, "roleplay", "gifStyle", &json!("anime")).unwrap();
+    assert!(bot.settings.set(G, "roleplay", "gifStyle", &json!("spooky")).is_err());
+    let hug = || run(&bot, cmd(&kai, "rp", None, Some(&rowan), &[("action", "highfive")], NOW));
+    assert!(matches!(&hug()[0], Action::RpGifs { query: Some(q), .. } if q == "furry high five"));
+    bot.directory.set_supporter(true);
+    assert!(matches!(&hug()[0], Action::RpGifs { query: Some(q), .. } if q == "anime high five"));
+    bot.settings.set(G, "roleplay", "gifStyle", &json!("animals")).unwrap();
+    assert!(matches!(&hug()[0], Action::RpGifs { query: Some(q), .. } if q == "cute animal high five"));
+    bot.directory.set_supporter(false);
     // posting it: the line, the count, the back button
     let (card, _) = bot.rp_post(G, "hug", &kai.id, Some(&rowan.id), Some("https://media.tenor.com/x.gif"), None).unwrap();
     let shown = card.to_discord().unwrap().to_string();

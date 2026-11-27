@@ -4,7 +4,7 @@
 //! The GIFs (a Good Boy 4 change, asked for by the owner): Good Boy 3's own drawn animations are gone. With the bot
 //! owner's Tenor key, `/rp` shows a few furry GIFs found for the action (Tenor's strict safe search) and the member
 //! picks one; "do it back" takes one at random. Without a key, or when nothing is found, the action is posted
-//! without a GIF.
+//! without a GIF. A bot with a supporter licence can pick another GIF style for each server (anime, animals, cartoon).
 
 use crate::bot::{CommandSpec, Directory, Opt, Takes};
 use crate::perms::{self, Level, Perm};
@@ -16,10 +16,13 @@ pub const USE: Perm = Perm { key: "roleplay.use", level: Level::Everyone };
 pub static SETTINGS: &[Def] = &[
     Def { key: "pictures", label: "Show GIFs with roleplay actions", kind: Kind::Toggle, default: Fallback::Bool(true) },
     Def { key: "useTenor", label: "Use Tenor GIFs when the bot owner has set them up", kind: Kind::Toggle, default: Fallback::Bool(true) },
+    Def { key: "gifStyle", label: "GIF style (anime, animals and cartoon need a supporter licence)", kind: Kind::Select(STYLES), default: Fallback::Str("furry") },
     Def { key: "pingTarget", label: "Ping the member who receives the action", kind: Kind::Toggle, default: Fallback::Bool(false) },
 ];
 pub const MIGRATIONS: &[(i64, &str)] = &[(1, "CREATE TABLE IF NOT EXISTS roleplay_counts (guild_id TEXT NOT NULL, from_id TEXT NOT NULL, to_id TEXT NOT NULL, action TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guild_id, from_id, to_id, action));")];
 pub const SETUP: &str = "tenor-setup";
+/// The GIF styles. Furry is everyone's; the others are a supporter perk.
+pub const STYLES: &[&str] = &["furry", "anime", "animals", "cartoon"];
 
 /// (id, past tense, done alone, emoji): Good Boy 3's twenty actions.
 pub const ACTIONS: &[(&str, &str, bool, &str)] = &[
@@ -46,22 +49,28 @@ fn private(text: impl Into<String>) -> Vec<Action> {
 fn action(id: &str) -> Option<(&'static str, &'static str, bool, &'static str)> {
     ACTIONS.iter().find(|a| a.0 == id).copied()
 }
-/// What Tenor is asked for: furry GIFs of the action.
-pub fn search_words(id: &str) -> String {
+/// What Tenor is asked for: GIFs of the action in a style (furry unless the bot has the supporter perks).
+pub fn search_words(id: &str, style: &str) -> String {
     let what = match id { "handhold" => "hold hands", "highfive" => "high five", other => other };
-    format!("furry {what}")
+    let style = match style { "anime" => "anime", "animals" => "cute animal", "cartoon" => "cartoon", _ => "furry" };
+    format!("{style} {what}")
+}
+/// The server's GIF style: its own pick when the bot has the supporter perks, otherwise furry.
+fn style(settings: &Settings, dir: &Directory, guild: &str) -> String {
+    if !dir.supporter() { return "furry".into(); }
+    settings.text(guild, MODULE, "gifStyle").filter(|s| STYLES.contains(&s.as_str())).unwrap_or_else(|| "furry".into())
 }
 fn times(n: i64) -> String {
     if n == 1 { "for the first time".into() } else { format!("{n} times now") }
 }
 
 /// Checks an action and asks the Discord layer for GIFs (`pick`: the member chooses one).
-fn ask_gifs(settings: &Settings, guild: &str, id: &str, from: &str, to: Option<&str>, pick: bool) -> Vec<Action> {
+fn ask_gifs(settings: &Settings, dir: &Directory, guild: &str, id: &str, from: &str, to: Option<&str>, pick: bool) -> Vec<Action> {
     let Some((_, _, solo, _)) = action(id) else { return private("Pick an action from the list.") };
     if !solo && to.is_none() { return private(format!("Pick who to {}.", if id == "handhold" { "hold hands with" } else { id })); }
     if to == Some(from) && !solo { return private(format!("You can't {id} yourself. Try someone else!")); }
     let gifs = settings.bool(guild, MODULE, "pictures") && settings.bool(guild, MODULE, "useTenor");
-    vec![Action::RpGifs { action: id.into(), from: from.into(), to: to.map(str::to_string), query: if gifs { Some(search_words(id)) } else { None }, pick }]
+    vec![Action::RpGifs { action: id.into(), from: from.into(), to: to.map(str::to_string), query: if gifs { Some(search_words(id, &style(settings, dir, guild))) } else { None }, pick }]
 }
 
 fn tenor_form() -> Action {
@@ -82,7 +91,7 @@ pub fn command(db: &Db, settings: &Settings, dir: &Directory, ev: &CommandEvent)
         return vec![tenor_form()];
     }
     if ev.target.as_ref().is_some_and(|t| t.bot) { return private("Pick a member, not a bot."); }
-    ask_gifs(settings, &ev.guild, id, &ev.member.id, ev.target.as_ref().map(|t| t.id.as_str()), true)
+    ask_gifs(settings, dir, &ev.guild, id, &ev.member.id, ev.target.as_ref().map(|t| t.id.as_str()), true)
 }
 
 /// The "Hug back" button: only the member it was done to can press it.
@@ -95,7 +104,7 @@ pub fn button(settings: &Settings, dir: &Directory, ev: &ButtonEvent) -> Vec<Act
     if p.len() != 5 || p[1] != "back" { return private("Unknown button."); }
     let (id, from, to) = (p[2], p[3], p[4]);
     if ev.member.id != to { return private(format!("Only <@{to}> can do that back.")); }
-    ask_gifs(settings, &ev.guild, id, to, Some(from), false)
+    ask_gifs(settings, dir, &ev.guild, id, to, Some(from), false)
 }
 
 /// The bot owner's Tenor key from the popup (checked and saved by the Discord layer, never shown back).

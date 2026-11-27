@@ -41,7 +41,7 @@ fn licence_set(desk: Held, key: String) -> Result<Value, String> {
 }
 #[tauri::command]
 async fn licence_refresh(desk: Held<'_>) -> Result<Value, String> {
-    // a list that cannot be reached is not an error worth showing: the saved one keeps working
+    // a list or website that cannot be reached is not an error worth showing: the saved key keeps working
     let _ = desk.licence_refresh().await;
     Ok(desk.licence_view())
 }
@@ -434,6 +434,16 @@ fn main() {
                 tokio::time::sleep(std::time::Duration::from_secs(45)).await;
                 loop {
                     if for_look.prefs().setup_done { let _ = for_look.brand_keep(false).await; }
+                    tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
+                }
+            });
+            // the cancel list and the bot's newest key (a renewal or upgrade paid for on the website), a little after
+            // start and then every six hours; the Licence page shows what is saved
+            let for_licence = at_start.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                loop {
+                    let _ = for_licence.licence_refresh().await;
                     tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
                 }
             });
