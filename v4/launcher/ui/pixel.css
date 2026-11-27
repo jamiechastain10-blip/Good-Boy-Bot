@@ -190,3 +190,9 @@
 @media (min-width: 1800px) { :root[data-look="pixel"] .page { max-width: 1500px; } }
 :root[data-look="pixel"] button.chip{cursor:pointer;padding:4px 10px}
 :root[data-look="pixel"] button.chip[aria-pressed="true"]{background:var(--accent);color:var(--dark)}
+/* the moderation log in the pixel look: square bars and rows */
+:root[data-look="pixel"] .modbar,:root[data-look="pixel"] .modstack,:root[data-look="pixel"] .modlegend i,:root[data-look="pixel"] .logrow,:root[data-look="pixel"] .rankrow,:root[data-look="pixel"] .casedetail{border-radius:0}
+:root[data-look="pixel"] .logrow.loghead{font:8px/1.6 var(--display);letter-spacing:0}
+:root[data-look="pixel"] .logrow .lwhen,:root[data-look="pixel"] .logrow .lby{font-size:19px}
+:root[data-look="pixel"] .pill.kind{background:var(--k);color:var(--dark)}
+:root[data-look="pixel"] .spreadbar,:root[data-look="pixel"] .spreadbar i{border-radius:0}

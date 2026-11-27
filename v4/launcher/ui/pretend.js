@@ -7,7 +7,8 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const S = {
     roleMenus: [{ message: '555000000000000001', channel_name: 'roles', title: 'Pick your colour', type: 'buttons', mode: 'unique', max: 0, hours: 0, roles: [{ id: '1', name: 'Red', emoji: '🔴' }, { id: '2', name: 'Blue', emoji: '🔵' }] }, { message: '555000000000000002', channel_name: 'games', title: 'What do you play?', type: 'dropdown', mode: 'toggle', max: 3, hours: 0, roles: [{ id: '3', name: 'Gamers' }, { id: '4', name: 'Raiders' }] }],
-    prefs: { setup_done: !q.has('first'), parts: 'bot', place: 'pc', start_with_app: true, theme: q.get('theme') || 'system', toured: !q.has('tour'), private_dismiss_seconds: 300, web_on: false, web_port: 47890, web_address: '', web_all: false },
+    prefs: { setup_done: !q.has('first'), parts: 'bot', place: 'pc', start_with_app: true, theme: q.get('theme') || 'system', toured: !q.has('tour'), private_dismiss_seconds: 300, web_on: false, web_port: 47890, web_address: '', web_all: false, colours: { on: q.has('own'), accent: '#5ce1e6', bg: '#0c1824', panel: '#13243a', ink: '#e6f4ff' } },
+    licence: q.has('supporter') ? 'GB1.preview.key' : '',
     data: q.has('first') ? null : { servers: 2, modules_on: 31, settings: 148, records: 12840 },
     old: q.has('old') ? { folder: 'C:\\Users\\you\\AppData\\Roaming\\Good Boy\\bot-data', servers: 2, records: 12840 } : null,
     token: !q.has('first'), secret: false,
@@ -163,8 +164,8 @@
   const CHANNELS = [{ id: '200000000000000001', name: 'general', kind: 'text' }, { id: '200000000000000002', name: 'bot-commands', kind: 'text' }, { id: '200000000000000003', name: 'level-ups', kind: 'text' }, { id: '200000000000000004', name: 'Staff', kind: 'category' }];
   const tokenLike = (t) => t.trim().split('.').length === 3 && t.trim().length > 30;
   const NAMES = ['kai', 'mo', 'juniper', 'ash', 'rue', 'tobi', 'lin', 'ozzy', 'pia', 'dex'];
-  const CASES = Array.from({ length: 41 }, (_, i) => ({ id: 41 - i, type: ['warn', 'timeout', 'kick', 'ban', 'warn', 'automod'][i % 6], targetId: String(700000000000000000 + i), targetTag: NAMES[i % 10], modId: '900000000000000001', reason: ['Spam in #general', 'Link to a scam site', 'Harassing another member', 'Raid account', 'Being rude after a warning'][i % 5], at: Date.now() - i * 5 * 3600e3 }));
-  const BOARDS = (n) => ({ xp: NAMES.slice(0, n).map((u, i) => ({ user: '70000000000000000' + i, xp: 52000 - i * 6100, level: 42 - i * 3, name: u })), coins: NAMES.slice(0, n).map((u, i) => ({ user: '70000000000000000' + i, name: u, coins: 48210 - i * 5100 })) });
+  const CASES = Array.from({ length: 64 }, (_, i) => { const type = ['warn', 'timeout', 'warn', 'kick', 'warn', 'automod', 'timeout', 'ban', 'warn', 'unwarn'][i % 10]; return { id: 64 - i, type, targetId: '7000000000000000' + String((i * 7) % 13).padStart(2, '0'), targetTag: NAMES[((i * 7) % 13) % 10], modId: type === 'automod' || i % 9 === 4 ? null : ['900000000000000001', '900000000000000002', '900000000000000003'][i % 3], reason: ['Spam in #general', 'Link to a scam site', 'Harassing another member', 'Raid account', 'Being rude after a warning', 'Posted the same message 6 times in 10 seconds'][i % 6], at: Date.now() - Math.round(i * i * 0.55 * 3600e3 + i * 2.5 * 3600e3), ...(type === 'timeout' ? { durationMs: [10, 60, 1440][i % 3] * 6e4 } : {}), ...(i % 8 === 0 ? { notes: 'Second time this week. Talked to them in DMs first.' } : {}) }; });
+  const BOARDS = (n) => ({ xp: NAMES.slice(0, n).map((u, i) => ({ user: '70000000000000000' + i, xp: 52000 - i * 5100, level: 42 - i * 3, name: u })), coins: NAMES.slice(0, n).map((u, i) => ({ user: '70000000000000000' + i, name: u, coins: 48210 - i * 5100 })) });
   const SONGS = [['Morning Song', 'Juniper', 184], ['Night Drive', 'The Quiet Hours', 241], ['Paper Boats', 'Lin', 203], ['Static', 'Ash & Rue', 167], ['Slow Rain', 'Tobi', 276], ['Glass Houses', 'Rue', 219], ['Low Tide', 'Pia', 198]];
   const song = (i, by) => ({ uid: 'u' + Math.random().toString(36).slice(2, 8), title: SONGS[i % 7][0], artist: SONGS[i % 7][1], seconds: SONGS[i % 7][2], source: 'media', site: 'YouTube', art: null, by: by || '700000000000000001', byName: ['kai', 'mo', 'juniper'][i % 3], canSave: true });
   const MS = { filter: 'off', on: true, channelId: '800000000000000001', paused: false, volume: 70, repeat: 'off', startedAt: Date.now() - 41e3, current: song(0), queue: [1, 2, 3, 4, 5].map((i) => song(i)),
@@ -205,7 +206,8 @@
   }
   const mkSnap = (days) => { const rows = Array.from({ length: 34 }, (_, i) => ({ id: String(750000000000000000 + i), name: NAMES[i % 10] + (i > 9 ? i : ''), last: i % 4 === 0 ? null : `2026-0${1 + (i % 8)}-1${i % 9}`, total: i % 4 === 0 ? 0 : (i * 37) % 900, joined: Date.now() - (60 + i * 11) * 864e5, kickable: i % 13 !== 5, why: i % 4 === 0 ? 'never' : i % 11 === 3 ? 'unverified' : 'quiet' })); return { at: Date.now(), days, covered: 400, short: false, tiers: { all: rows.length, d60: 28, d90: 21, never: rows.filter((r) => r.why === 'never').length, unverified: rows.filter((r) => r.why === 'unverified').length }, rows }; };
   const IN = { on: true, snapshot: null, keeps: [], log: [], rules: { days: 30, ghostDays: 7, protectMessages: 50, unverifiedDays: 3, warn: true, auto: 'kick', autoMax: 25, grace: 6, reviewChannel: '1' } };
-  const EC = { on: true, wallets: 311, treasury: { balance: 18420, collected: 61200, paid_out: 42780 }, week: [['tax:pay', 3200], ['tax:income', 1840], ['fee:exchange', 600], ['grant', -2000]], month: [['tax:income', 9100], ['tax:pay', 7400], ['tax:winnings', 3900], ['shop', 2500], ['fee:exchange', 1800], ['grant', -6000]],
+  const LEVELS = { members: 902, total_xp: 3184200, avg_level: 7.4, median_level: 4, top_level: 42, bands: [['0 to 4', 471], ['5 to 9', 212], ['10 to 19', 141], ['20 to 29', 52], ['30 to 49', 26], ['50 and up', 0]].map(([label, count]) => ({ label, count })) };
+  const EC = { on: true, wallets: 311, supply: { wallets: 311, holders: 287, coins: 1240500, bank: 382100, earned: 2984000, median: 1850, top10: 296400, bands: [38, 71, 122, 49, 7] }, richest: BOARDS(10).coins, treasury: { balance: 18420, collected: 61200, paid_out: 42780 }, week: [['tax:pay', 3200], ['tax:income', 1840], ['fee:exchange', 600], ['grant', -2000]], month: [['tax:income', 9100], ['tax:pay', 7400], ['tax:winnings', 3900], ['shop', 2500], ['fee:exchange', 1800], ['grant', -6000]],
     log: [{ at: Date.now() - 36e5, delta: -2000, kind: 'grant', user: '700000000000000003', note: 'Event winner' }, { at: Date.now() - 5 * 36e5, delta: 120, kind: 'tax:pay', user: '700000000000000001', note: null }, { at: Date.now() - 9 * 36e5, delta: 48, kind: 'fee:exchange', user: '700000000000000002', note: null }, { at: Date.now() - 20 * 36e5, delta: 500, kind: 'donation', user: '700000000000000004', note: 'for the party' }],
     top_gems: [{ user: '700000000000000002', gems: 120 }, { user: '700000000000000005', gems: 64 }],
     rates: { taxPay: 5, taxIncome: 0, taxWithdraw: 2, taxWinnings: 10, shopToTreasury: true, gemsEnabled: true, gemName: 'gems', gemEmoji: '💎', exchangeRate: 100, exchangeFee: 5, currencyName: 'coins', currencyEmoji: '🪙' } };
@@ -238,9 +240,9 @@
     { key: 'giveaways.manage', label: 'Start, end and reroll giveaways', default: 'admin', group: 'giveaways', roles: [] }] };
   const A = {
     overview: () => ({ version: '4.0.0', prefs: S.prefs, data_folder: 'C:\\Users\\you\\AppData\\Roaming\\Good Boy 4\\data', data: S.data, old_data: S.data ? null : S.old,
-      licence: LICENCE(),
+      licence: LICENCE(), perks: { own_colours: !!S.licence },
       web_status: { on: S.prefs.web_on, running: S.prefs.web_on && !!S.prefs.web_address, error: S.prefs.web_on && !S.prefs.web_address ? 'Write the public address first (the link people will open).' : null, port: S.prefs.web_port, address: S.prefs.web_address, all: S.prefs.web_all }, token_saved: S.token, secret_saved: S.secret, keeps_secrets: true, secret_store: 'Windows Credential Manager', live: S.live, modules: S.modules }),
-    prefs_set: ({ patch }) => { Object.assign(S.prefs, patch); return S.prefs; },
+    prefs_set: ({ patch }) => { const { colours, ...rest } = patch; Object.assign(S.prefs, rest); if (colours) { if (!S.licence && !(colours.on === false && Object.keys(colours).length === 1)) throw new Error('Your own colours are a supporter perk. Add a Supporter licence in Settings to use them.'); Object.assign(S.prefs.colours, colours); delete S.prefs.colours.reset; } return S.prefs; },
     licence_set: ({ key }) => { const k = String(key || '').trim(); if (k && !/^GB1\.[\w-]+\.[\w-]+$/.test(k)) throw new Error('That is not a Good Boy licence key.'); S.licence = k; return LICENCE(); },
     licence_refresh: () => LICENCE(),
     setup_data: async ({ copy }) => { await wait(500); const c = copy && S.old; S.data = c ? { servers: 2, modules_on: 31, settings: 148, records: 12840 } : { servers: 0, modules_on: 0, settings: 0, records: 0 }; if (!c) S.servers = []; return Object.assign({ how: c ? 'copied' : 'fresh', files: c ? 12 : 0 }, S.data); },
@@ -345,8 +347,20 @@
         ...[cats.slice(0, 5), cats.slice(5)].map((row) => ({ type: 1, components: row.map((c) => ({ type: 2, style: c[2], label: c[1], emoji: { name: c[0] } })) }))] }] };
     },
     post_panel: async ({ channel }) => { await wait(400); if (S.live.phase !== 'online') throw new Error('Start the bot first: it posts this in Discord.'); return null; },
-    dashboard: async ({ guild }) => { await wait(150); return { members: 1284, wallets: 311, ranked: 902, richest: 48210, tickets: { open: 3, total: 57 }, cases: 41, recent_cases: CASES.slice(0, 6), boards: BOARDS(5) }; },
-    cases: async ({ limit }) => { await wait(150); return { total: CASES.length, cases: CASES.slice(0, limit || 50) }; },
+    dashboard: async ({ guild }) => { await wait(150); return { members: 1284, wallets: 311, ranked: 902, richest: 48210, levels: LEVELS, supply: EC.supply, tickets: { open: 3, total: 57 }, cases: 41, recent_cases: CASES.slice(0, 6), boards: BOARDS(10) }; },
+    cases: async ({ limit }) => {
+      await wait(150);
+      // the same numbers the program works out (desk.rs case_stats)
+      const now = Date.now(), DAY = 864e5, kinds = {}, days = Array.from({ length: 30 }, (_, ago) => ({ ago, counts: {} })), mods = {}, members = {};
+      for (const c of CASES) {
+        const ago = now - c.at, k = (kinds[c.type] = kinds[c.type] || { day: 0, week: 0, month: 0, all: 0 });
+        k.all++; if (ago < DAY) k.day++; if (ago < 7 * DAY) k.week++; if (ago < 30 * DAY) { k.month++; const d = days[Math.floor(ago / DAY)].counts; d[c.type] = (d[c.type] || 0) + 1; }
+        const m = (mods[c.modId || 'auto'] = mods[c.modId || 'auto'] || { id: c.modId || 'auto', count: 0, last: 0, kinds: {} }); m.count++; m.last = Math.max(m.last, c.at); m.kinds[c.type] = (m.kinds[c.type] || 0) + 1;
+        const p = (members[c.targetId] = members[c.targetId] || { id: c.targetId, name: c.targetTag, count: 0, last: 0, warnings: 0 }); p.count++; p.last = Math.max(p.last, c.at); if (c.type === 'warn') p.warnings++;
+      }
+      const top = (o) => Object.values(o).sort((a, b) => b.count - a.count || b.last - a.last).slice(0, 10);
+      return { total: CASES.length, cases: CASES.slice(0, limit || 50), stats: { kinds, days, mods: top(mods), members: top(members), people: Object.keys(members).length } };
+    },
     staff_action: async ({ kind, user, reason }) => { await wait(300); if (!/^\d{15,}$/.test(user)) throw new Error('Use the member\'s Discord ID.'); CASES.unshift({ id: CASES.length + 1, type: kind, targetId: user, targetTag: 'new', modId: '1', reason, at: Date.now() }); return `Case #${CASES.length} recorded.`; },
     tickets: async ({ limit, find }) => { await wait(150); const q = (find || '').toLowerCase(); const T = TK().filter((t) => !q || JSON.stringify(t).toLowerCase().includes(q)); return { open: T.filter((t) => t.open).length, total: T.length, tickets: T.slice(0, limit || 100).map((t) => Object.assign({}, t)) }; },
     ticket_transcript: async ({ number, html }) => { await wait(150); return { file: `ticket-${String(number).padStart(3, '0')}.${html ? 'html' : 'txt'}`, content: html ? `<!doctype html><title>Ticket #${number}</title><p>Sample transcript</p>` : `Ticket #${number}\n\nSample transcript` }; },
@@ -375,7 +389,7 @@
     economy: async () => { await wait(120); return EC; },
     treasury_add: async ({ amount, note }) => { await wait(200); if (!(amount > 0)) throw new Error('Type an amount from 1 to 1,000,000,000,000.'); EC.treasury.balance += amount; EC.treasury.collected += amount; EC.log.unshift({ at: Date.now(), delta: amount, kind: 'staff', note }); return EC.treasury.balance; },
     treasury_give: async ({ amount, reason }) => { await wait(200); if (!reason) throw new Error('Give a reason: it is kept in the treasury\'s record.'); if (amount > EC.treasury.balance) throw new Error('The treasury only has ' + EC.treasury.balance.toLocaleString() + ' 🪙.'); EC.treasury.balance -= amount; EC.treasury.paid_out += amount; EC.log.unshift({ at: Date.now(), delta: -amount, kind: 'grant', user: '700000000000000001', note: reason }); return EC.treasury.balance; },
-    members_lookup: async ({ ids }) => { await wait(60); const out = {}; for (const id of ids) { const m = PEOPLE.find((x) => x.id === id); if (m) out[id] = m.name; } return out; },
+    members_lookup: async ({ ids }) => { await wait(60); const out = {}; const MODS = { '900000000000000001': 'Kai', '900000000000000002': 'Juniper', '900000000000000003': 'Mo' }; for (const id of ids) { const m = PEOPLE.find((x) => x.id === id); if (m) out[id] = m.name; else if (MODS[id]) out[id] = MODS[id]; } return out; },
     members_search: async ({ q }) => { await wait(80); const s = String(q || '').toLowerCase(); return PEOPLE.filter((m) => !m.bot && m.name.toLowerCase().includes(s)).slice(0, 12); },
     leavers: async ({ days, q }) => { await wait(120); const s = String(q || '').toLowerCase(); return { keeps: true, days: 60, members: PEOPLE.length, roles: { r1: 'Member', r2: 'Gamer', r3: 'Mod' }, leavers: LEAVERS.filter((l) => Date.now() - l.left_at < days * 864e5 && (!s || l.name.toLowerCase().includes(s))) }; },
     leaver_forget: async ({ user }) => { await wait(100); const i = LEAVERS.findIndex((l) => l.user === user); if (i >= 0) LEAVERS.splice(i, 1); return 1; },

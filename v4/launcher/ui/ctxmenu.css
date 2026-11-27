@@ -1,0 +1,36 @@
+/* Basic Ghost Labs. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* The right-click menu (ctxmenu.js). Every colour, corner and font is a --cm-* variable that the app points at its own
+   look further down, so the menu always matches the theme in use. */
+.bgl-menu{position:fixed;z-index:2147483000;min-width:208px;max-width:320px;overflow-y:auto;padding:6px;
+  background:var(--cm-bg);color:var(--cm-ink);border:var(--cm-border-w,1px) solid var(--cm-line);border-radius:var(--cm-r);
+  box-shadow:var(--cm-shadow);font:var(--cm-font);user-select:none;-webkit-user-select:none;outline:none;
+  animation:bgl-menu-in .11s ease-out;scrollbar-width:thin}
+@keyframes bgl-menu-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.bgl-menu{animation:none}}
+.bgl-item{display:flex;align-items:center;gap:10px;padding:var(--cm-pad,7px 10px);border-radius:var(--cm-r-item);cursor:default;white-space:nowrap}
+.bgl-item svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;color:var(--cm-icon)}
+.bgl-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.bgl-kbd{margin-left:16px;color:var(--cm-muted);font-size:.86em}
+.bgl-item.on{background:var(--cm-hi);color:var(--cm-hi-ink)}
+.bgl-item.on svg{color:inherit}
+.bgl-item.on .bgl-kbd{color:inherit;opacity:.75}
+.bgl-item.danger{color:var(--cm-bad)}
+.bgl-item.danger.on{background:var(--cm-bad);color:var(--cm-bg)}
+.bgl-item.checked svg{color:var(--cm-accent)}
+.bgl-item[aria-disabled="true"]{opacity:.4}
+.bgl-item[aria-disabled="true"].on{background:none}
+.bgl-sep{height:var(--cm-border-w,1px);margin:5px 4px;background:var(--cm-line)}
+.bgl-head{padding:6px 10px 3px;font-size:.78em;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--cm-muted)}
+
+/* Good Boy: the menu wears whichever look and colours are in use (pixel, classic dark, classic light, or the owner's own) */
+:root{--cm-bg:var(--raised);--cm-ink:var(--ink);--cm-muted:var(--ink-3);--cm-icon:var(--ink-2);--cm-line:var(--line);--cm-hi:var(--accent);--cm-hi-ink:var(--accent-ink);
+  --cm-accent:var(--accent);--cm-bad:var(--bad);--cm-r:var(--r);--cm-r-item:var(--r-sm);--cm-font:600 13.5px/1.3 var(--text);
+  --cm-shadow:0 18px 44px rgba(0,0,0,.45),0 2px 8px rgba(0,0,0,.25)}
+:root[data-theme="light"]{--cm-bg:var(--panel);--cm-shadow:0 14px 36px rgba(20,30,60,.18),0 2px 6px rgba(20,30,60,.10)}
+:root[data-look="classic"]:not([data-theme="light"]){--cm-bg:#2f2f33;--cm-hi-ink:var(--navy);--cm-shadow:4px 4px 0 var(--navy),0 18px 44px rgba(0,0,0,.4)}
+:root[data-look="pixel"]{--cm-bg:var(--panel);--cm-line:var(--dark);--cm-border-w:4px;--cm-r:0;--cm-r-item:0;--cm-font:21px/1.1 var(--text);
+  --cm-pad:6px 10px;--cm-shadow:6px 6px 0 var(--dark);--cm-hi-ink:var(--dark)}
+:root[data-look="pixel"] .bgl-head{font:8px/1.6 var(--display);letter-spacing:0}
+:root[data-look="pixel"] .bgl-item svg{stroke-linecap:square;stroke-linejoin:miter;stroke-width:2.4}
+:root[data-own-colours]{--cm-bg:var(--raised)}
+:root[data-contrast="high"]{--cm-line:currentColor;--cm-muted:var(--ink)}

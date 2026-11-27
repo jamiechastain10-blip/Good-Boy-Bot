@@ -403,6 +403,7 @@ fn panel_preview(desk: Held<'_>, guild: String, module: String, title: Option<St
 async fn open(desk: Held<'_>, what: String) -> Result<(), String> {
     match what.as_str() {
         "developers" => open_with_system("https://discord.com/developers/applications"),
+        "supporter" => open_with_system("https://goodboyhub.pages.dev/pricing.html"),
         "data" => {
             std::fs::create_dir_all(&desk.folders.data).map_err(|e| e.to_string())?;
             open_with_system(&desk.folders.data.display().to_string())

@@ -295,7 +295,30 @@ impl Store {
         let rows = st.query_map(params![guild, limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
+    /// All the money in a server's wallets and banks, for the dashboard: totals, the typical member and how it is spread.
+    pub fn money_supply(&self, guild: &str) -> Result<Supply> {
+        let c = self.conn();
+        let (wallets, holders, coins, bank, earned): (i64, i64, i64, i64, i64) = c.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(coins + bank > 0), 0), COALESCE(SUM(coins), 0), COALESCE(SUM(bank), 0), COALESCE(SUM(earned), 0) FROM economy_wallets WHERE guild_id = ?",
+            [guild], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
+        let median: i64 = if holders == 0 { 0 } else {
+            c.query_row("SELECT coins + bank FROM economy_wallets WHERE guild_id = ? AND coins + bank > 0 ORDER BY coins + bank LIMIT 1 OFFSET ?", params![guild, holders / 2], |r| r.get(0)).optional()?.unwrap_or(0)
+        };
+        let top10: i64 = c.query_row("SELECT COALESCE(SUM(t), 0) FROM (SELECT coins + bank AS t FROM economy_wallets WHERE guild_id = ? ORDER BY t DESC LIMIT 10)", [guild], |r| r.get(0))?;
+        // how many members hold how much: 1-99, 100-999, 1k-9.9k, 10k-99k, 100k+
+        let mut bands = [0i64; 5];
+        let mut st = c.prepare_cached("SELECT CASE WHEN coins + bank < 100 THEN 0 WHEN coins + bank < 1000 THEN 1 WHEN coins + bank < 10000 THEN 2 WHEN coins + bank < 100000 THEN 3 ELSE 4 END AS b, COUNT(*) FROM economy_wallets WHERE guild_id = ? AND coins + bank > 0 GROUP BY b")?;
+        for row in st.query_map([guild], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+            let (b, n) = row?;
+            bands[b.clamp(0, 4) as usize] = n;
+        }
+        Ok(Supply { wallets, holders, coins, bank, earned, median, top10, bands })
+    }
 }
+
+/// The money in one server (see `Store::money_supply`). `top10`: what the ten richest hold, wallet and bank together.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize)]
+pub struct Supply { pub wallets: i64, pub holders: i64, pub coins: i64, pub bank: i64, pub earned: i64, pub median: i64, pub top10: i64, pub bands: [i64; 5] }
 
 /// A lottery entry: (member, tickets, coins spent).
 pub type Entry = (String, i64, i64);
@@ -567,6 +590,16 @@ mod tests {
         let s = Store::create(tmp.path().join("eclipse.db")).unwrap();
         s.module_migrate("economy", MIGRATIONS).unwrap();
         (tmp, s)
+    }
+    #[test]
+    fn the_money_supply_adds_up_wallets_and_banks() {
+        let (_t, s) = store();
+        assert_eq!(s.money_supply("g").unwrap(), Supply::default());
+        for (u, c) in [("a", 50), ("b", 500), ("c", 5000), ("d", 0)] { s.wallet("g", u, None, c).unwrap(); }
+        s.wallet("h", "z", None, 9).unwrap();
+        let m = s.money_supply("g").unwrap();
+        assert_eq!((m.wallets, m.holders, m.coins, m.bank, m.median, m.top10), (4, 3, 5550, 0, 500, 5550));
+        assert_eq!(m.bands, [1, 1, 1, 0, 0]);
     }
     #[test]
     fn taxes_and_fees_fill_the_treasury_and_every_coin_is_accounted_for() {

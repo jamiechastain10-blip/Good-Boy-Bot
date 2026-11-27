@@ -45,11 +45,88 @@ pub struct Prefs {
     pub v3_backup_at: i64,
     /// The picture IDs Discord gave back when the Good Boy look was last put on the bot.
     pub brand_applied: crate::brand::Applied,
+    /// The dashboard in the owner's own colours: a perk for paid supporters (a licence with `supporter` or `whitelabel`).
+    pub colours: Colours,
+}
+
+/// The dashboard's own colours, each a #rrggbb colour. They show only while `on` and the licence is a paid one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Colours {
+    pub on: bool,
+    pub accent: String,
+    pub bg: String,
+    pub panel: String,
+    pub ink: String,
+}
+impl Default for Colours {
+    fn default() -> Self { Colours { on: false, accent: "#fd78f7".into(), bg: "#222222".into(), panel: "#2a2a2d".into(), ink: "#f6f2f7".into() } }
+}
+/// The licence features that make someone a paid supporter.
+pub const PAID: &[&str] = &["supporter", "whitelabel"];
+fn hex_colour(v: &Value) -> Option<String> {
+    let s = v.as_str()?.trim();
+    (s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())).then(|| s.to_ascii_lowercase())
 }
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { setup_done: false, parts: "bot".into(), place: "pc".into(), start_with_app: true, theme: "system".into(), toured: false, private_dismiss_seconds: gb_core::bot::DEFAULT_DISMISS, web_on: false, web_port: 47890, web_address: String::new(), web_all: false, licence: String::new(), licence_looked: false, v3_backup: String::new(), v3_backup_at: 0, brand_applied: crate::brand::Applied::default() }
+        Prefs { setup_done: false, parts: "bot".into(), place: "pc".into(), start_with_app: true, theme: "system".into(), toured: false, private_dismiss_seconds: gb_core::bot::DEFAULT_DISMISS, web_on: false, web_port: 47890, web_address: String::new(), web_all: false, licence: String::new(), licence_looked: false, v3_backup: String::new(), v3_backup_at: 0, brand_applied: crate::brand::Applied::default(), colours: Colours::default() }
     }
+}
+
+/// The moderation log in numbers, over every case: how many of each kind in the last day, week, month and ever; cases
+/// per day for the last 30 days; the moderators who acted most (AutoMod as "auto"); and the members with the most cases.
+/// How levels are spread in a server, from every member's XP (highest first): totals, the middle member, and
+/// how many sit in each band of levels.
+pub fn level_stats(xp: &[i64]) -> Value {
+    let levels: Vec<u32> = xp.iter().map(|&x| gb_data::level_of(x).level).collect();
+    let total: i64 = xp.iter().sum();
+    let n = levels.len();
+    const BANDS: [(u32, u32, &str); 6] = [(0, 4, "0 to 4"), (5, 9, "5 to 9"), (10, 19, "10 to 19"), (20, 29, "20 to 29"), (30, 49, "30 to 49"), (50, u32::MAX, "50 and up")];
+    let bands: Vec<Value> = BANDS.iter().map(|&(lo, hi, label)| json!({ "label": label, "count": levels.iter().filter(|&&l| l >= lo && l <= hi).count() })).collect();
+    let avg = if n == 0 { 0.0 } else { levels.iter().map(|&l| l as f64).sum::<f64>() / n as f64 };
+    json!({ "members": n, "total_xp": total, "avg_level": (avg * 10.0).round() / 10.0, "median_level": if n == 0 { 0 } else { levels[n / 2] }, "top_level": levels.first().copied().unwrap_or(0), "bands": bands })
+}
+
+pub fn case_stats(all: &[Value], now: i64) -> Value {
+    use std::collections::{BTreeMap, HashMap};
+    const DAY: i64 = 86_400_000;
+    let mut kinds: BTreeMap<String, [u64; 4]> = BTreeMap::new();
+    let mut days: Vec<BTreeMap<String, u64>> = vec![BTreeMap::new(); 30];
+    let mut mods: HashMap<String, (u64, i64, BTreeMap<String, u64>)> = HashMap::new();
+    let mut members: HashMap<String, (u64, String, i64, u64, u64)> = HashMap::new();
+    for c in all {
+        let kind = c["type"].as_str().unwrap_or("other").to_string();
+        let at = c["at"].as_i64().unwrap_or(0);
+        let ago = (now - at).max(0);
+        let k = kinds.entry(kind.clone()).or_default();
+        k[3] += 1;
+        if ago < DAY { k[0] += 1; }
+        if ago < 7 * DAY { k[1] += 1; }
+        if ago < 30 * DAY { k[2] += 1; *days[(ago / DAY) as usize].entry(kind.clone()).or_default() += 1; }
+        let by = c["modId"].as_str().filter(|m| !m.is_empty()).unwrap_or("auto").to_string();
+        let m = mods.entry(by).or_insert((0, 0, BTreeMap::new()));
+        m.0 += 1; m.1 = m.1.max(at); *m.2.entry(kind.clone()).or_default() += 1;
+        if let Some(id) = c["targetId"].as_str() {
+            let e = members.entry(id.to_string()).or_insert((0, String::new(), 0, 0, 0));
+            e.0 += 1;
+            if at >= e.2 { e.2 = at; if let Some(n) = c["targetTag"].as_str().filter(|n| !n.is_empty()) { e.1 = n.to_string(); } }
+            if kind == "warn" { e.3 += 1; }
+            if kind == "unwarn" { e.4 += 1; }
+        }
+    }
+    let mut mods: Vec<_> = mods.into_iter().collect();
+    mods.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(b.1 .1.cmp(&a.1 .1)));
+    let mut members: Vec<_> = members.into_iter().collect();
+    members.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(b.1 .2.cmp(&a.1 .2)));
+    let people = members.len();
+    json!({
+        "kinds": kinds.into_iter().map(|(k, v)| (k, json!({ "day": v[0], "week": v[1], "month": v[2], "all": v[3] }))).collect::<serde_json::Map<_, _>>(),
+        "days": days.into_iter().enumerate().map(|(ago, c)| json!({ "ago": ago, "counts": c })).collect::<Vec<_>>(),
+        "mods": mods.into_iter().take(10).map(|(id, (n, last, by))| json!({ "id": id, "count": n, "last": last, "kinds": by })).collect::<Vec<_>>(),
+        "members": members.into_iter().take(10).map(|(id, (n, name, last, w, u))| json!({ "id": id, "name": name, "count": n, "last": last, "warnings": w.saturating_sub(u) })).collect::<Vec<_>>(),
+        "people": people,
+    })
 }
 
 pub struct Desk {
@@ -110,6 +187,26 @@ impl Desk {
                 ("parts", Value::String(s)) if ["bot", "clipper", "both"].contains(&s.as_str()) => next.parts = s.clone(),
                 ("place", Value::String(s)) if ["pc", "host"].contains(&s.as_str()) => next.place = s.clone(),
                 ("theme", Value::String(s)) if ["dark", "light", "system"].contains(&s.as_str()) => next.theme = s.clone(),
+                ("colours", Value::Object(c)) => {
+                    let mut own = next.colours.clone();
+                    for (k, v) in c {
+                        match k.as_str() {
+                            "on" => own.on = v.as_bool().ok_or("\"on\" must be true or false.")?,
+                            "accent" | "bg" | "panel" | "ink" => {
+                                let colour = hex_colour(v).ok_or("Colours must look like #ff78f7.")?;
+                                match k.as_str() { "accent" => own.accent = colour, "bg" => own.bg = colour, "panel" => own.panel = colour, _ => own.ink = colour }
+                            }
+                            "reset" if v == &Value::Bool(true) => own = Colours { on: own.on, ..Colours::default() },
+                            _ => return Err(format!("\"{k}\" is not one of the colours.")),
+                        }
+                    }
+                    // switching them off is always allowed; anything else is a supporter perk
+                    let only_off = !own.on && own == Colours { on: false, ..next.colours.clone() };
+                    if !only_off && !self.paid() {
+                        return Err("Your own colours are a supporter perk. Add a Supporter licence in Settings to use them.".into());
+                    }
+                    next.colours = own;
+                }
                 _ => return Err(format!("\"{key}\" cannot be set to that.")),
             }
         }
@@ -141,6 +238,13 @@ impl Desk {
     fn licence_check(&self, key: &str) -> crate::licence::Check {
         let app = self.token().and_then(|t| crate::licence::app_id_of(&t));
         crate::licence::verify(key, crate::licence::PUBLIC_KEY_PEM, app.as_deref(), Self::now_ms(), &self.cancelled())
+    }
+    /// A paid supporter: the saved licence is good for this bot and carries one of the paid features.
+    pub fn paid(&self) -> bool {
+        let key = self.prefs().licence;
+        if key.is_empty() { return false; }
+        let c = self.licence_check(&key);
+        PAID.iter().any(|f| c.has(f))
     }
     /// The licence as the launcher shows it. Whether a key is saved, whether it is good for this bot, who it is for
     /// and what it unlocks.
@@ -486,6 +590,7 @@ impl Desk {
             "live": self.runner.live(),
             "web_status": self.web_status(),
             "licence": self.licence_view(),
+            "perks": json!({ "own_colours": self.paid() }),
             "modules": MODULES.iter().map(|m| json!({ "id": m.id, "name": m.name, "about": m.about })).collect::<Vec<_>>(),
         })
     }
@@ -875,10 +980,13 @@ impl Desk {
         let rows = db.history_rows(guild).map_err(text)?;
         let open = rows.iter().filter(|r| r.closed_at.is_none()).count();
         let wallets = db.wallet_count(guild).map_err(text)?;
-        let (xp_members, coins) = (db.data_list(guild, "community", "user:", 100_000).map_err(text)?.len(), db.top_coins(guild, 1).map_err(text)?.first().map(|c| c.2).unwrap_or(0));
+        let xp = db.all_xp(guild).map_err(text)?;
+        let supply = db.money_supply(guild).map_err(text)?;
+        let coins = db.top_coins(guild, 1).map_err(text)?.first().map(|c| c.2).unwrap_or(0);
         drop(db);
-        let boards = self.boards(guild, 5)?;
-        Ok(json!({ "members": members, "wallets": wallets, "ranked": xp_members, "richest": coins, "tickets": { "open": open, "total": rows.len() }, "cases": cases["total"], "recent_cases": cases["cases"], "boards": boards }))
+        let boards = self.boards(guild, 10)?;
+        Ok(json!({ "members": members, "wallets": wallets, "ranked": xp.len(), "richest": coins, "levels": level_stats(&xp), "supply": supply,
+            "tickets": { "open": open, "total": rows.len() }, "cases": cases["total"], "recent_cases": cases["cases"], "boards": boards }))
     }
     /// Moderation cases, newest first: {total, cases: [..]}.
     pub fn cases(&self, guild: &str, limit: usize) -> Result<Value, String> {
@@ -887,8 +995,9 @@ impl Desk {
         let mut all: Vec<Value> = lists.into_iter().flat_map(|(_, v)| v.as_array().cloned().unwrap_or_default()).collect();
         all.sort_by_key(|c| std::cmp::Reverse(c["at"].as_i64().unwrap_or(0)));
         let total = all.len();
+        let stats = case_stats(&all, Self::now_ms());
         all.truncate(limit.min(500));
-        Ok(json!({ "total": total, "cases": all }))
+        Ok(json!({ "total": total, "cases": all, "stats": stats }))
     }
     /// Tickets, newest first: {open, total, tickets: [{number, opener, category, opened_at, closed_at, claimed_by, first_response_ms, kind}]}.
     /// `find`: only tickets whose conversation has all these words (the archive's search), or whose number, opener,
@@ -1056,7 +1165,14 @@ impl Desk {
     /// The economy at a glance: the treasury and its record, the rates in force, the second currency's richest.
     pub fn economy(&self, guild: &str) -> Result<Value, String> {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
-        Ok(self.bot()?.economy_view(guild, now))
+        let bot = self.bot()?;
+        let mut v = bot.economy_view(guild, now);
+        let db = bot.db.get();
+        let supply = db.money_supply(guild).map_err(text)?;
+        let richest: Vec<Value> = db.top_coins(guild, 10).map_err(text)?.into_iter().map(|(user, name, coins)| json!({ "user": user, "name": name, "coins": coins })).collect();
+        drop(db);
+        if let Some(o) = v.as_object_mut() { o.insert("supply".into(), json!(supply)); o.insert("richest".into(), json!(richest)); }
+        Ok(v)
     }
     /// Adds new coins to the treasury. Works without the bot running: it only changes the database.
     pub fn treasury_add(&self, guild: &str, amount: i64, note: &str) -> Result<i64, String> {
@@ -1253,6 +1369,14 @@ mod tests {
         assert!(d.prefs_set(&json!({ "theme": "pink" })).is_err());
         assert!(d.prefs_set(&json!({ "nonsense": true })).is_err());
         // a new window on the same folder sees the same choices
+        // own colours are a paid supporter perk: without a licence they cannot be switched on or changed, only off
+        let no = d.prefs_set(&json!({ "colours": { "on": true } })).unwrap_err();
+        assert!(no.contains("supporter perk"), "{no}");
+        assert!(d.prefs_set(&json!({ "colours": { "accent": "#00ff00" } })).is_err());
+        assert!(d.prefs_set(&json!({ "colours": { "accent": "red" } })).is_err());
+        assert!(d.prefs_set(&json!({ "colours": { "glow": "#00ff00" } })).is_err());
+        d.prefs_set(&json!({ "colours": { "on": false } })).unwrap();
+        assert_eq!(d.overview()["perks"]["own_colours"], false);
         let again = desk(tmp.path());
         assert_eq!(again.prefs(), Prefs { setup_done: true, theme: "light".into(), ..Prefs::default() });
         assert_eq!(again.overview()["data"]["servers"], 0);
@@ -1442,8 +1566,23 @@ mod tests {
         }
         let c = d.cases("100000000000000001", 2).unwrap();
         assert_eq!((c["total"].as_i64(), c["cases"][0]["id"].as_i64(), c["cases"][1]["id"].as_i64(), c["cases"].as_array().unwrap().len()), (Some(3), Some(3), Some(2), 2));
+        // the numbers are over every case, not only the ones sent
+        assert_eq!((c["stats"]["kinds"]["warn"]["all"].as_u64(), c["stats"]["kinds"]["ban"]["all"].as_u64(), c["stats"]["people"].as_u64()), (Some(1), Some(1), Some(2)));
+        assert_eq!((c["stats"]["members"][0]["id"].as_str(), c["stats"]["members"][0]["count"].as_u64(), c["stats"]["members"][0]["warnings"].as_u64()), (Some("7"), Some(2), Some(1)));
+        assert_eq!((c["stats"]["mods"][0]["id"].as_str(), c["stats"]["mods"][0]["count"].as_u64()), (Some("auto"), Some(3)));
+        assert_eq!(c["stats"]["days"].as_array().unwrap().len(), 30);
+        let now = 40 * 86_400_000;
+        let s = case_stats(&[json!({ "type": "warn", "at": now - 1000, "modId": "5", "targetId": "7" }), json!({ "type": "warn", "at": now - 3 * 86_400_000, "modId": "5", "targetId": "7" }), json!({ "type": "kick", "at": now - 35 * 86_400_000, "targetId": "9" })], now);
+        assert_eq!((s["kinds"]["warn"]["day"].as_u64(), s["kinds"]["warn"]["week"].as_u64(), s["kinds"]["kick"]["month"].as_u64(), s["kinds"]["kick"]["all"].as_u64()), (Some(1), Some(2), Some(0), Some(1)));
+        assert_eq!((s["days"][0]["counts"]["warn"].as_u64(), s["days"][3]["counts"]["warn"].as_u64(), s["mods"][0]["id"].as_str()), (Some(1), Some(1), Some("5")));
         let o = d.dashboard("100000000000000001").unwrap();
         assert_eq!((o["cases"].as_u64(), o["tickets"]["open"].as_u64()), (Some(3), Some(0)));
+        assert_eq!((o["levels"]["members"].as_u64(), o["supply"]["coins"].as_i64(), o["levels"]["bands"].as_array().unwrap().len()), (Some(0), Some(0), 6));
+        let l = level_stats(&[1_000_000, 50_000, 0, 0]);
+        assert_eq!((l["members"].as_u64(), l["total_xp"].as_i64(), l["median_level"].as_u64(), l["bands"][0]["count"].as_u64()), (Some(4), Some(1_050_000), Some(0), Some(2)));
+        assert!(l["top_level"].as_u64().unwrap() > 10);
+        let e = d.economy("100000000000000001").unwrap();
+        assert_eq!((e["supply"]["wallets"].as_i64(), e["richest"].as_array().map(Vec::len)), (Some(0), Some(0)));
         assert!(d.boards("100000000000000001", 5).unwrap()["xp"].as_array().unwrap().is_empty());
         let t = d.tickets("100000000000000001", 10).unwrap();
         assert_eq!((t["open"].as_u64(), t["total"].as_u64()), (Some(0), Some(0)));
