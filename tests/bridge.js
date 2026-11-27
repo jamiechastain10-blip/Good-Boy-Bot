@@ -17,7 +17,7 @@ async function test(name, fn) { try { await fn(); passed++; console.log(`  ok   
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'gb-bridge-'));
 const bytes = Buffer.from('pretend this is Good-Boy-4.exe'.repeat(50));
 const sha = crypto.createHash('sha256').update(bytes).digest('hex');
-const asset = (over = {}) => ({ name: 'Good-Boy-4.exe', size: bytes.length, state: 'uploaded', digest: `sha256:${sha}`, browser_download_url: `https://github.com/${BRIDGE.owner}/${BRIDGE.repo}/releases/download/v4.0.0/Good-Boy-4.exe`, ...over });
+const asset = (over = {}) => ({ name: 'Good-Boy-4.exe', size: bytes.length, state: 'uploaded', digest: `sha256:${sha}`, browser_download_url: `${BRIDGE.releases}/download/v4.0.0/Good-Boy-4.exe`, ...over });
 const release = (over = {}) => ({ tag_name: 'v4.0.0', draft: false, prerelease: false, body: 'Good Boy 4', assets: [asset()], ...over });
 const stream = (buf, ok = true) => async () => ({ ok, status: ok ? 200 : 500, body: { getReader() { let sent = false; return { read: async () => (sent ? { done: true } : (sent = true, { done: false, value: new Uint8Array(buf) })) }; } } });
 

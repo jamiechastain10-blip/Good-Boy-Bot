@@ -17,14 +17,14 @@ import { EventEmitter } from 'node:events';
 import nodeFs from 'node:fs';
 import path from 'node:path';
 
-/** Where Good Boy 4 is published (it must be a public place; the bridge cannot sign in to anything). */
+/** Where Good Boy 4 is found: the Basic Ghost Labs site, which looks it up where it is released (no sign-in needed). */
 export const BRIDGE = Object.freeze({
-  owner: 'jamiechastain10-blip', repo: 'Good-Boy-Bot',
+  releases: 'https://goodboyhub.pages.dev/v1/releases/goodboy',
   tagPrefix: 'v4', assetName: /^Good-Boy-4\.exe$/i,
   countdownSeconds: 300, keepBackupDays: 14, waitSeconds: 180,
 });
 const DAY = 86400000;
-export const releasesApi = (b = BRIDGE) => `https://api.github.com/repos/${b.owner}/${b.repo}/releases?per_page=20`;
+export const releasesApi = (b = BRIDGE) => b.releases;
 
 /** The sha256 GitHub records for a release file ("sha256:abcd…"), or null. */
 export function digestOf(asset) {
@@ -46,13 +46,13 @@ export function pickRelease(releases, { bridge = BRIDGE, allowTest = false } = {
     const asset = (r.assets ?? []).find((a) => bridge.assetName.test(String(a.name ?? '')) && a.state !== 'new');
     const sha256 = digestOf(asset);
     const url = String(asset?.browser_download_url ?? '');
-    if (!asset || !sha256 || !url.startsWith(`https://github.com/${bridge.owner}/${bridge.repo}/releases/download/`) || !(asset.size > 0)) return null;
+    if (!asset || !sha256 || !url.startsWith(`${bridge.releases}/download/`) || !(asset.size > 0)) return null;
     return { tag: r.tag_name, version: versionOf(r.tag_name), notes: String(r.body ?? '').slice(0, 2000), file: { name: asset.name, url, size: asset.size, sha256 } };
   }).filter(Boolean).sort((a, b) => (newer(a.version, b.version) ? -1 : newer(b.version, a.version) ? 1 : 0));
   return found[0] ?? null;
 }
 
-/** Asks GitHub which Good Boy 4 is out. Returns the release, or null when none is (or GitHub cannot be reached). */
+/** Asks the site which Good Boy 4 is out. Returns the release, or null when none is (or the site cannot be reached). */
 export async function findV4(fetchFn, opts = {}) {
   try {
     const r = await fetchFn(releasesApi(opts.bridge), { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'good-boy-bridge' }, signal: AbortSignal.timeout(15000) });
@@ -89,7 +89,7 @@ export class BridgeError extends Error { constructor(m) { super(m); this.name = 
 
 /** Downloads the program and checks its size and sha256 before it is allowed to run. Returns the file's path. */
 export async function download({ file, dest, fetchFn, fs = nodeFs, onProgress = () => {} }) {
-  if (!/^https:\/\/github\.com\//.test(file.url)) throw new BridgeError('The download address is not one Good Boy trusts.');
+  if (!String(file.url ?? '').startsWith(`${BRIDGE.releases}/download/`)) throw new BridgeError('The download address is not one Good Boy trusts.');
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const res = await fetchFn(file.url, { redirect: 'follow', headers: { 'User-Agent': 'good-boy-bridge' }, signal: AbortSignal.timeout(10 * 60000) });
   if (!res.ok) throw new BridgeError(`The download failed (${res.status}).`);

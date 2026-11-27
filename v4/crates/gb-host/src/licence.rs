@@ -12,7 +12,7 @@ use serde::Deserialize;
 /// The public key every Good Boy checks licences with (the same file Good Boy 3 ships).
 pub const PUBLIC_KEY_PEM: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAqqEyB1bxUMqXHZloy4OrSZFbRRcXPjAyNrYvmpqqVEo=\n-----END PUBLIC KEY-----\n";
 /// Where the owner publishes the list of cancelled licences (signed by Licence Studio).
-pub const CANCEL_LIST_URL: &str = "https://raw.githubusercontent.com/jamiechastain10-blip/Good-Boy-Bot/main/licences/revoked.json";
+pub const CANCEL_LIST_URL: &str = "https://goodboyhub.pages.dev/v1/cancel-list/goodboy";
 /// Where a bot's newest key waits once it was paid for on the website (the bot's application ID goes on the end).
 pub const KEY_URL: &str = "https://goodboyhub.pages.dev/v1/licence/";
 const PREFIX: &str = "GB1";
@@ -126,8 +126,8 @@ pub fn app_id_of(token: &str) -> Option<String> {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
-
-    /// A key pair made for the tests, and a licence signed with it.
+  
+  /// A key pair made for the tests, and a licence signed with it.
     fn pair() -> (SigningKey, String) {
         let sk = SigningKey::from_bytes(&[7u8; 32]);
         let mut der = vec![0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00];

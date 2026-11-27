@@ -26,7 +26,7 @@ import semver from 'semver';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const EPH = MessageFlags.Ephemeral;
-const RELEASES = 'https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases';
+const RELEASES = 'https://goodboyhub.pages.dev/v1/releases/goodboy/page';
 const currentVersion = () => { try { return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version; } catch { return null; } };
 
 /** The members-only part of a changelog section, or null when it has none. */
@@ -145,7 +145,7 @@ export async function announceUpdates(ctx, { version = currentVersion(), section
   ctx.data.set('lastVersion', version); // before posting: a failed post must not repeat on every restart
   for (const s of news) {
     if (ctx.config.get('adminUpdates')) {
-      await post(ctx, 'adminChannel', { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`🆙 Good Boy updated to ${s.version}`).setURL(`${RELEASES}/tag/v${s.version}`)
+      await post(ctx, 'adminChannel', { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`🆙 Good Boy updated to ${s.version}`).setURL(RELEASES)
         .setDescription(sectionForDiscord(s)).setFooter({ text: `Updated from ${last}` })] });
     }
     const members = memberNotes(s.body);
