@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! The pictures the bot draws. Rank cards are drawn exactly as Good Boy 3 draws them (src/rankcard.js): the same
 //! 760×220 card, the same themes, colours, fonts, sizes and positions, so a member sees the same card.

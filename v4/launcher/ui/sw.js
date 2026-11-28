@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // The phone app's service worker. It keeps the app's own screens ready so it opens at once and shows a calm message when
 // there is no connection. It never keeps anything from /api or /auth (what the bot says is always asked for fresh).
 'use strict';

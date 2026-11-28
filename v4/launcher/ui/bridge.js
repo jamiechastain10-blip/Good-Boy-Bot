@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // The one way the screens talk to the program. Inside the app this goes to the Rust side; opened in a plain
 // browser (for design work) it loads a pretend bot instead, so every screen can be looked at without Discord.
 'use strict';

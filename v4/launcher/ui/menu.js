@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // Good Boy's own items in the right-click menu (the menu itself is ctxmenu.js): open a page from the sidebar, go to the
 // main pages, start or stop the bot, and change the look and colours. It only uses what app.js hands over in window.GBApp.
 'use strict';

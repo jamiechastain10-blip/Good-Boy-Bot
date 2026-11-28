@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // A pretend bot for looking at the screens in a browser. Nothing here talks to Discord or saves anything.
 // Add ?first to the address to see the first run, ?old to pretend Good Boy 3 data was found.
 'use strict';

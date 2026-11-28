@@ -1,4 +1,4 @@
-; Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+; Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 ;
 ; The Windows installer. One script for every Basic Ghost Labs program: the program is chosen by the /D settings below,
 ; so the recording software and the Minecraft launcher can be packaged the same way later and sit beside Good Boy.

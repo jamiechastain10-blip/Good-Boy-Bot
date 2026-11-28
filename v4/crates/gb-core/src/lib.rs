@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! The bot's brain, kept apart from Discord. Things that happen arrive as plain events (`event`), modules decide
 //! what to do, and what they want done comes back as plain actions. The Discord connection is a thin layer

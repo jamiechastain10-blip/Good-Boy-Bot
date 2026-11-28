@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // The guided tour. Part one walks through the app with a spotlight; part two shows every feature the bot has,
 // drawn the way members will see it in Discord, with a button to its settings. Built from fixed text only.
 'use strict';
@@ -37,7 +37,7 @@
       demo: msg(box('#57f287', '💘 Kai × Rowan', 'Ship name: <b>Kawan</b><br><span class="bar">▰▰▰▰▰▰▰▰▰▰▱▱▱▱</span> <b>71%</b><br>Made for each other 💕')) },
     { id: 'music', icon: '🎵', name: 'Music', what: 'A player with buttons in a voice channel: a queue, repeat, shuffle, volume, the server\'s playlists and the words to the song. Links to audio files and your radio stations always work. YouTube and similar sites only work once the bot\'s owner turns on media links, because those sites\' rules forbid it.', cmds: ['/music player', '/music play', '/music queue', '/music lyrics', '/music playlists'],
       demo: msg(box('#eb459e', '🎵 Now playing', '<b>Midnight Drive</b> · Lo-Fi Ghost<br><span class="bar">▰▰▰▰▰▱▱▱▱▱▱▱▱▱</span> 1:12 / 3:07<br>Added by <span class="mention">@Kai</span><br><b>Up next</b><br>1. <b>Rain on Glass</b> · Lo-Fi Ghost<br><span class="sub">🔊 70% · Repeat off · 1 in queue</span>', '<span>⏮️</span><span class="p">⏸️ Pause</span><span>⏭️</span><span class="r">⏹️</span><span class="g">➕ Add</span><span>🎤 Lyrics</span>')) },
-    { id: 'soon', icon: '🚧', name: 'Coming next', what: 'Still being rebuilt for Good Boy 4: games in a pixel-art style, the clipper, economy upgrades, battles and more. Their settings and data from Good Boy 3 are kept until they arrive.', cmds: [],
+    { id: 'soon', icon: '🚧', name: 'Coming next', what: 'Still being rebuilt for the new Good Boy: games in a pixel-art style, the clipper, economy upgrades, battles and more. Their settings and data from Good Boy 3 are kept until they arrive.', cmds: [],
       demo: '<div class="note">Everything you set up in Good Boy 3 is kept, and each part switches on here as it is rebuilt.</div>' },
   ];
   // Escape closes whatever part of the tour is open

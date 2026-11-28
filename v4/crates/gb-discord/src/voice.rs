@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! Music in voice. The music module decides what plays; this joins the voice channel, gets each song ready
 //! (downloading it first when the server wants smooth sound), plays it, and tells the music module when a song

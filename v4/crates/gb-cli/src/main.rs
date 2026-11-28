@@ -1,6 +1,6 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
-//! `goodboy`: the command line for Good Boy 4. It runs the bot, checks a Good Boy database and brings 3.x data across.
+//! `goodboy`: the command line for Good Boy. It runs the bot, checks a Good Boy database and brings 3.x data across.
 //!   goodboy                                         first run and every run: get the data ready, ask for the token once, start
 //!   goodboy token forget                            remove the saved bot token from this computer
 //!   goodboy run <data folder>                       run the bot on that data (the token comes from DISCORD_TOKEN)
@@ -75,7 +75,7 @@ fn start(token: String, data: &std::path::Path) -> Result<(), String> {
             std::future::pending::<()>().await;
         });
         let report = std::sync::Arc::new(|s: gb_discord::Status| match s {
-            gb_discord::Status::Connecting => println!("Good Boy 4 is connecting to Discord..."),
+            gb_discord::Status::Connecting => println!("Good Boy is connecting to Discord..."),
             gb_discord::Status::Online { name, servers } => println!("Online as {name} in {servers} server(s)."),
             gb_discord::Status::Hiccup(why) => eprintln!("Connection hiccup: {why}"),
             gb_discord::Status::Notice(what) => println!("Note: {what}"),
@@ -100,7 +100,7 @@ fn guided() -> Result<(), String> {
     let folders = setup::folders(&|k| std::env::var(k).ok(), std::env::consts::OS)?;
     match setup::prepare_data(&folders)? {
         setup::Prepared::AlreadyHere(s) => {
-            println!("Using Good Boy 4's data in {}.", setup::describe(&folders.data));
+            println!("Using Good Boy's data in {}.", setup::describe(&folders.data));
             print_summary(&s);
         }
         setup::Prepared::CameFromGoodBoy3 { from, summary, files } => {
@@ -109,13 +109,13 @@ fn guided() -> Result<(), String> {
             println!("  Other files copied: {files}");
             println!("Your Good Boy 3 data in {} was not changed, so Good Boy 3 still works as before.", setup::describe(&from));
         }
-        setup::Prepared::StartedFresh => println!("No Good Boy 3 data was found on this computer, so Good Boy 4 starts fresh in {}.", setup::describe(&folders.data)),
+        setup::Prepared::StartedFresh => println!("No Good Boy 3 data was found on this computer, so Good Boy starts fresh in {}.", setup::describe(&folders.data)),
     }
     println!();
     let token = match std::env::var("DISCORD_TOKEN").ok().filter(|t| !t.trim().is_empty()).or_else(|| secrets::read(Secret::BotToken)) {
         Some(t) => t,
         None => {
-            println!("Good Boy 4 needs a bot token. Use a TEST bot, not your real Good Boy:");
+            println!("Good Boy needs a bot token. Use a TEST bot, not your real Good Boy:");
             println!("  - two programs cannot run the same bot at once, and");
             println!("  - this build replaces the bot's command list with its own short one.");
             println!("Make one at https://discord.com/developers/applications (New Application, then Bot, then Reset Token).\n");
@@ -124,7 +124,7 @@ fn guided() -> Result<(), String> {
             }
             let token = rpassword::prompt_password("Paste the test bot's token and press Enter (it is not shown): ").map_err(|e| e.to_string())?;
             if !secrets::looks_like_a_token(&token) {
-                return Err("That does not look like a bot token (it has three parts separated by dots). Copy it again from the Bot page and run Good Boy 4 again.".into());
+                return Err("That does not look like a bot token (it has three parts separated by dots). Copy it again from the Bot page and run Good Boy again.".into());
             }
             match secrets::write(Secret::BotToken, token.trim()) {
                 Ok(()) => println!("Saved in this computer's own credential store. Remove it any time with: goodboy token forget"),
@@ -177,7 +177,7 @@ fn run(args: &[String]) -> Result<(), String> {
             if json {
                 println!("{}", serde_json::to_string(&report).unwrap());
             } else if report.already_there {
-                println!("Good Boy 4 already has data in {}. It was kept, and nothing was copied over it.", report.to.display());
+                println!("Good Boy already has data in {}. It was kept, and nothing was copied over it.", report.to.display());
                 print_summary(&report.summary);
             } else {
                 println!("Your Good Boy 3 data was copied to {}.", report.to.display());

@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! The launcher: one window that sets Good Boy up, runs the bot inside this same program and is its dashboard.
 //! There is no web server and no browser tab. The screens (launcher/ui) ask for things by name and this file
