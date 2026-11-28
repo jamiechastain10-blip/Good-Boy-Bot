@@ -48,6 +48,8 @@ pub mod community;
 pub mod gallery;
 pub mod setup;
 pub mod guide;
+pub mod info;
+pub mod migrate;
 pub mod levels;
 pub mod logs;
 pub mod messages;

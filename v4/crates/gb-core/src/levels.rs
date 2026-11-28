@@ -240,13 +240,14 @@ pub fn rank(db: &Db, settings: &Settings, ev: &CommandEvent) -> Action {
     let rep = rec["rep"].as_i64().unwrap_or(0);
     let level = level_of(xp);
     let pos = store.xp_rank(&ev.guild, &who.id).ok().flatten().map(|(r, _)| r as i64);
+    let style = store.data_get(&ev.guild, MODULE, &format!("card:{}", who.id)).ok().flatten().unwrap_or(Value::Null);
+    drop(store); // let go of the database before reading settings (which take it again)
     // the text version (Good Boy 3's): shown when pictures are off, or when the picture can't be drawn
     let mut card = Card::new(Area::General).title(format!("Level {}", level.level)).picture(who.avatar.clone())
         .line(format!("**{}**", who.name))
         .line(format!("{}\n{} / {} XP to level {}", bar16(level.into, level.needed), level.into, level.needed, level.level + 1))
         .line(format!("**Rank** {} · **Total XP** {xp} · **Messages** {messages} · **Reputation** {rep}", pos.map(|p| format!("#{p}")).unwrap_or_else(|| "—".into())));
     if settings.bool(&ev.guild, MODULE, "rankCards") {
-        let style = store.data_get(&ev.guild, MODULE, &format!("card:{}", who.id)).ok().flatten().unwrap_or(Value::Null);
         card.art = Some(rank_art(settings, &ev.guild, who, xp, messages, pos, &style));
         // your own card can be styled
         if who.id == ev.member.id { card = card.button_with(format!("rankstyle:open:{}", ev.member.id), "Customise", ButtonStyle::Plain, Some("🎨".into())); }

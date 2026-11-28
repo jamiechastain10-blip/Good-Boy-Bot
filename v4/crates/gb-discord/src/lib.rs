@@ -577,6 +577,8 @@ impl Link {
             Action::Later { .. } | Action::Quote(_) | Action::Roblox { .. } | Action::Translate { .. } | Action::RpGifs { .. } | Action::TenorKey { .. } | Action::Backup { .. } => {}
             // server setup asked for from the dashboard (a command or button is answered in `on_interaction`)
             Action::Setup(job) => { let _ = self.run_setup(guild, &job).await; }
+            // /migrate is only ever answered in `on_interaction`
+            Action::Migrate { .. } => {}
             Action::Roles { user, add, remove, reason } => {
                 let user = user_id(&user)?;
                 for (roles, adding) in [(add, true), (remove, false)] {
@@ -812,6 +814,132 @@ impl Link {
         }).collect();
         let everyone = roles.iter().find(|r| r.id == guild.cast()).map(|r| r.permissions.bits()).unwrap_or(0);
         Ok(json!({ "version": 1, "guildName": name, "at": now_ms(), "everyone": everyone.to_string(), "roles": roles_json, "otherRoles": other, "channels": channels_json }))
+    }
+    /// Reads what /migrate needs from a server: its bots, roles, channels, recent messages (up to
+    /// `gb_core::migrate::PER_CHANNEL` in each channel and thread), bans, roles bots gave new members, and MEE6's public
+    /// leaderboard. Only reads; nothing in the server changes. Progress is shown on the answer as it goes.
+    async fn migrate_read(&self, guild: Id<GuildMarker>, token: &str) -> gb_core::migrate::ScanInput {
+        use gb_core::migrate::{ScanInput, ScanMsg, Mee6Player, PER_CHANNEL, TIME_BUDGET_MS, MEE6_ID};
+        use twilight_model::channel::{ChannelType as T, message::{EmojiReactionType as E, Component as C}};
+        let started = now_ms();
+        let mut input = ScanInput::default();
+        if let Some(g) = async { self.http.guild(guild).with_counts(true).await.ok()?.model().await.ok() }.await { input.server = g.name.clone(); input.members = g.approximate_member_count.unwrap_or(0); }
+        let mut joined: HashMap<String, i64> = HashMap::new();
+        let mut after = None;
+        loop {
+            let req = self.http.guild_members(guild).limit(1000);
+            let Ok(page) = (match after { Some(a) => req.after(a).await, None => req.await }) else { break };
+            let Ok(list) = page.models().await else { break };
+            for m in &list {
+                if m.user.bot { input.bots.push((m.user.id.to_string(), m.user.name.clone())); }
+                if let Some(t) = m.joined_at { joined.insert(m.user.id.to_string(), t.as_micros() / 1000); }
+            }
+            after = list.last().map(|m| m.user.id);
+            if list.len() < 1000 { break; }
+        }
+        if let Some(rs) = async { self.http.roles(guild).await.ok()?.models().await.ok() }.await { input.roles = rs.iter().map(|r| (r.id.to_string(), r.name.clone(), r.managed)).collect(); }
+        let mut text = Vec::new();
+        if let Some(cs) = async { self.http.guild_channels(guild).await.ok()?.models().await.ok() }.await {
+            for c in &cs {
+                let name = c.name.clone().unwrap_or_default();
+                match c.kind { T::GuildText | T::GuildAnnouncement => text.push((c.id, name)), T::GuildVoice | T::GuildStageVoice => input.voice.push((c.id.to_string(), name)), _ => {} }
+            }
+        }
+        if let Some(t) = async { self.http.active_threads(guild).await.ok()?.model().await.ok() }.await { for c in t.threads { text.push((c.id, c.name.unwrap_or_default())); } }
+        input.channels = text.iter().map(|(i, n)| (i.to_string(), n.clone())).collect();
+        input.total_channels = text.len();
+        let me = self.me.to_string();
+        let old: std::collections::HashSet<String> = gb_core::migrate::old_bots(&input.bots, Some(&me)).into_iter().map(|b| b.0).collect();
+        let emoji = |e: &E| match e { E::Custom { id, name, animated } => (format!("<{}:{}:{id}>", if *animated { "a" } else { "" }, name.clone().unwrap_or_else(|| "e".into())), id.to_string()), E::Unicode { name } => (name.clone(), name.clone()) };
+        let mut last_note = started;
+        if !old.is_empty() {
+            for (n, (cid, cname)) in text.iter().enumerate() {
+                if now_ms() - started > TIME_BUDGET_MS { input.stopped_early = true; break; }
+                if now_ms() - last_note > 15_000 {
+                    last_note = now_ms();
+                    let note = Card::new(gb_core::Area::General).line(format!("🔁 Reading the server… {n} of {} channels done (now #{cname}), {} messages so far. This can take a few minutes; nothing changes yet.", text.len(), input.messages.len())).private();
+                    if let Ok(parts) = components(&note) { let _ = self.http.interaction(self.app).update_response(token).flags(MessageFlags::IS_COMPONENTS_V2).components(Some(&parts)).await; }
+                }
+                let (mut before, mut got, mut readable) = (None, 0usize, true);
+                while got < PER_CHANNEL {
+                    let req = self.http.channel_messages(*cid).limit(100);
+                    let page = match before { Some(b) => req.before(b).await, None => req.await };
+                    let Ok(page) = page else { readable = got > 0; break };
+                    let Ok(list) = page.models().await else { readable = got > 0; break };
+                    if list.is_empty() { break; }
+                    before = list.iter().min_by_key(|m| m.timestamp.as_micros()).map(|m| m.id);
+                    got += list.len();
+                    for m in &list {
+                        let mut embed_text = Vec::new();
+                        for e in &m.embeds {
+                            embed_text.extend([e.author.as_ref().map(|a| a.name.clone()), e.title.clone(), e.description.clone()].into_iter().flatten());
+                            for f in &e.fields { embed_text.push(format!("{}\n{}", f.name, f.value)); }
+                            if let Some(f) = &e.footer { embed_text.push(f.text.clone()); }
+                        }
+                        let mut comps = Vec::new();
+                        let walk = |c: &C, comps: &mut Vec<gb_core::migrate::Part>| match c {
+                            C::Button(b) => { let e = b.emoji.as_ref().map(emoji); comps.push((b.custom_id.clone().unwrap_or_default(), b.label.clone(), e.as_ref().map(|x| x.0.clone()), e.map(|x| x.1))); }
+                            C::SelectMenu(sm) => for o in sm.options.iter().flatten() { let e = o.emoji.as_ref().map(emoji); comps.push((o.value.clone(), Some(o.label.clone()), e.as_ref().map(|x| x.0.clone()), e.map(|x| x.1))); },
+                            _ => {}
+                        };
+                        for c in &m.components { if let C::ActionRow(row) = c { for x in &row.components { walk(x, &mut comps); } } else { walk(c, &mut comps); } }
+                        #[allow(deprecated)]
+                        let used = m.interaction.as_ref().map(|x| x.name.clone());
+                        input.messages.push(ScanMsg {
+                            id: m.id.to_string(), channel: cid.to_string(), author: m.author.id.to_string(), author_bot: m.author.bot, at: m.timestamp.as_micros() / 1000,
+                            content: m.content.clone(), embed_text: embed_text.join("\n"), embed_title: m.embeds.first().and_then(|e| e.title.clone()), embed_description: m.embeds.first().and_then(|e| e.description.clone()),
+                            reactions: m.reactions.iter().map(|r| emoji(&r.emoji).1).collect(), components: comps,
+                            reply_to: m.reference.as_ref().and_then(|r| r.message_id).map(|x| x.to_string()), used,
+                        });
+                    }
+                    if list.len() < 100 { break; }
+                }
+                if !readable { input.unreadable.push(cid.to_string()); } else { input.scanned_channels += 1; }
+            }
+            // roles an old bot gave people within a minute of them joining (from the audit log)
+            if let Some(log) = async { self.http.audit_log(guild).action_type(twilight_model::guild::audit_log::AuditLogEventType::MemberRoleUpdate).limit(100).await.ok()?.model().await.ok() }.await {
+                let mut count: HashMap<String, u32> = HashMap::new();
+                for e in &log.entries {
+                    if !e.user_id.is_some_and(|u| old.contains(&u.to_string())) { continue; }
+                    let (Some(t), Some(target)) = (joined.get(&e.target_id.map(|t| t.to_string()).unwrap_or_default()), e.target_id) else { continue };
+                    let _ = target;
+                    let at = ((e.id.get() >> 22) + 1_420_070_400_000) as i64;
+                    if (at - t).abs() > 60_000 { continue; }
+                    for c in &e.changes { if let twilight_model::guild::audit_log::AuditLogChange::RoleAdded { new, .. } = c { for r in new { *count.entry(r.id.to_string()).or_default() += 1; } } }
+                }
+                input.join_roles = count.into_iter().collect();
+            }
+            let mut after = None;
+            loop {
+                let req = self.http.bans(guild).limit(1000);
+                let Ok(page) = (match after { Some(a) => req.after(a).await, None => req.await }) else { break };
+                let Ok(list) = page.models().await else { break };
+                for b in &list { input.bans.push((b.user.id.to_string(), b.user.name.clone(), b.reason.clone())); }
+                after = list.last().map(|b| b.user.id);
+                if list.len() < 1000 || input.bans.len() >= 5000 { break; }
+            }
+            // MEE6's levels, from its public leaderboard (only works when the server made it public)
+            if old.contains(MEE6_ID) {
+                let mut players = Vec::new();
+                let mut said = None;
+                for page in 0..10 {
+                    let url = format!("https://mee6.xyz/api/plugins/levels/leaderboard/{guild}?limit=1000&page={page}");
+                    let r = match tokio::time::timeout(std::time::Duration::from_secs(15), self.web.get(&url).header("Accept", "application/json").send()).await { Ok(Ok(r)) => r, Ok(Err(e)) => { said = Some(e.to_string()); break } Err(_) => { said = Some("timeout".into()); break } };
+                    if matches!(r.status().as_u16(), 401 | 403 | 404) { said = Some("private".into()); break; }
+                    if !r.status().is_success() { said = Some(format!("HTTP {}", r.status().as_u16())); break; }
+                    let Ok(d) = r.json::<serde_json::Value>().await else { said = Some("bad answer".into()); break };
+                    let list = d["players"].as_array().cloned().unwrap_or_default();
+                    for p in &list {
+                        let id = p["id"].as_str().map(str::to_string).unwrap_or_default();
+                        if id.len() < 17 || !id.bytes().all(|b| b.is_ascii_digit()) { continue; }
+                        players.push(Mee6Player { id, name: p["username"].as_str().unwrap_or("").chars().take(40).collect(), xp: p["xp"].as_i64().unwrap_or(0).max(0), level: p["level"].as_i64().unwrap_or(0), messages: p["message_count"].as_i64().unwrap_or(0) });
+                    }
+                    if list.len() < 1000 { break; }
+                }
+                input.mee6 = Some(if players.is_empty() { Err(said.unwrap_or_else(|| "empty".into())) } else { Ok(players) });
+            }
+        }
+        input
     }
     /// One step of server setup. The card is the answer for whoever asked; what happened is also kept for the dashboard.
     async fn run_setup(&self, guild: Id<GuildMarker>, job: &gb_core::SetupJob) -> Card {
@@ -1948,6 +2076,17 @@ impl Link {
             if let Ok(parts) = components(&card) { let _ = self.http.interaction(self.app).update_response(&i.token).flags(MessageFlags::IS_COMPONENTS_V2).components(Some(&parts)).await; }
             return;
         }
+        // /migrate scan: the server is read for what other bots left behind (this takes a while, so progress is shown)
+        if let (None, Some(Action::Migrate { by })) = (&failed, &answer) {
+            let defer = InteractionResponse { kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource, data: Some(twilight_model::http::interaction::InteractionResponseData { flags: Some(MessageFlags::EPHEMERAL), ..Default::default() }) };
+            let _ = self.http.interaction(self.app).create_response(i.id, &i.token, &defer).await;
+            self.dismiss_answer(i, true);
+            let token = i.token.clone();
+            let input = self.migrate_read(guild, &token).await;
+            let card = self.bot.migrate_scanned(&guild.to_string(), by, &input, now_ms());
+            if let Ok(parts) = components(&card) { let _ = self.http.interaction(self.app).update_response(&token).flags(MessageFlags::IS_COMPONENTS_V2).components(Some(&parts)).await; }
+            return;
+        }
         // /id roblox: Roblox is asked first ("thinking…", only the member sees it)
         if let (None, Some(Action::Roblox { name })) = (&failed, &answer) {
             let defer = InteractionResponse { kind: twilight_model::http::interaction::InteractionResponseType::DeferredChannelMessageWithSource, data: Some(twilight_model::http::interaction::InteractionResponseData { flags: Some(MessageFlags::EPHEMERAL), ..Default::default() }) };
@@ -2920,7 +3059,7 @@ mod tests {
     #[test]
     fn the_commands_are_ones_discord_accepts() {
         let list = commands();
-        assert_eq!(list.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["rank", "leaderboard", "remind", "giveaway", "ticket", "achievements", "poll", "suggest", "starboard", "xp", "levels", "help", "whatsnew", "about", "music", "time", "money", "games", "mod", "community", "roles", "me", "social", "voice", "server", "View wallet", "Pay member", "Warn member", "Message stats", "Translate", "Quote Image", "Quote Image (Color)", "Report message"]);
+        assert_eq!(list.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["rank", "leaderboard", "remind", "giveaway", "ticket", "achievements", "poll", "suggest", "starboard", "xp", "levels", "help", "migrate", "whatsnew", "about", "music", "time", "money", "games", "mod", "community", "roles", "me", "social", "voice", "server", "View wallet", "Pay member", "Warn member", "Message stats", "Translate", "Quote Image", "Quote Image (Color)", "Report message"]);
         assert_eq!(list.iter().find(|c| c.name == "Warn member").map(|c| c.kind), Some(twilight_model::application::command::CommandType::User), "right-click a member > Apps > Warn member");
         assert_eq!(list.last().map(|c| c.kind), Some(twilight_model::application::command::CommandType::Message), "right-click a message > Apps > Translate");
         assert!(list[0].options.is_empty(), "/rank's member box is asked in its popup");

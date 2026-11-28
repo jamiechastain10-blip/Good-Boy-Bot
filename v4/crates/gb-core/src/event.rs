@@ -290,6 +290,8 @@ pub enum Action {
     /// Server setup work for the Discord layer: read the server, then plan, build, check or fix. The card it makes answers the
     /// person who asked (a command or button), or is kept for the dashboard when `by` is "dashboard".
     Setup(Box<SetupJob>),
+    /// /migrate scan: read the server for what other bots left behind, then answer `by` with `Bot::migrate_scanned`.
+    Migrate { by: String },
     /// Open a private thread in a channel (a forum post in a forum) starting with `card`, pinging `roles`. When it
     /// exists the bot is told its id along with `note`.
     OpenThread { channel: String, name: String, card: Card, roles: Vec<String>, note: String },
