@@ -4,7 +4,7 @@ resolver = "2"
 members = ["crates/gb-data", "crates/gb-core", "crates/gb-art", "crates/gb-discord", "crates/gb-host", "crates/gb-cli", "crates/gb-launcher"]
 
 [workspace.package]
-version = "4.1.0"
+version = "4.1.1"
 edition = "2021"
 license-file = "../LICENSE.txt"
 publish = false

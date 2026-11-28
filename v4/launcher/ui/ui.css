@@ -537,3 +537,9 @@ details.fold > .card > h3{display:none}
 .staffrow b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card > .modchart + .modaxis + h3{margin-top:6px}
 @media (max-width:760px){.staffrow{grid-template-columns:minmax(0,1fr) 54px 48px 38px 66px;gap:6px;font-size:12.5px}.modchart{gap:2px}}
+/* phones: the menu is one row along the bottom, so its folding sections lie flat in that row (an open section stood up as a
+   column and pushed the page into the top half of the screen) */
+@media (max-width:760px){
+  .side .navfold{display:none}
+  .side .navsub,.side .navsub[hidden]{display:contents!important}
+}

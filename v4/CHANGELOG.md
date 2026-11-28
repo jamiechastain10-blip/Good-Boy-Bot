@@ -2,6 +2,9 @@
 
 The product is **Good Boy**; 4.1.0 is its version. Good Boy 3 means the older 3.x app.
 
+## 4.1.1
+**The phone and web dashboard use the whole screen again.** On a phone, opening a section of the menu made it stand up as a column inside the bottom bar, which pushed every page into the top half of the screen. The menu now stays one row along the bottom and pages use the full height. The computer layout is unchanged.
+
 ## 4.1.0
 **Copying your Good Boy 3 data again now really uses the new copy.** "Copy my Good Boy 3 data again" (From Good Boy 3, and Settings > Your data) kept the old database open: on Windows the copy failed with a "being used by another process" message, and elsewhere the bot went on reading the copy that had just been set aside, so old levels and coins stayed. The open database is now let go first, and the next screen and the bot read the fresh copy. What was there before is still kept in a dated folder, never deleted.
 
