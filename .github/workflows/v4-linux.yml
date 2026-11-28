@@ -1,0 +1,80 @@
+# Good Boy 4 for Linux servers: the `goodboy` program for x86_64 and ARM64, with the service file and install script.
+# Test builds (any branch but main) go on this repository's Releases page as the linux-test pre-release. On main, each
+# version is published once as linux-v<version>, which is never marked "latest" (only Good Boy 3 releases are, so the
+# Good Boy 3 updater keeps working).
+name: Good Boy 4 Linux build
+on:
+  push:
+    paths: ['v4/**', 'deploy/linux/**', '.github/workflows/v4-linux.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v4-linux-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, os: ubuntu-22.04 }
+          - { arch: aarch64, os: ubuntu-22.04-arm }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            v4/target
+          key: linux-${{ matrix.arch }}-${{ hashFiles('v4/Cargo.lock') }}
+      - name: Test the hosting parts (secrets, the web dashboard, access)
+        working-directory: v4
+        run: cargo test --release -p gb-host -p gb-cli
+      - name: Build
+        working-directory: v4
+        run: cargo build --release -p gb-cli
+      - name: Pack
+        run: |
+          set -euo pipefail
+          d=Good-Boy-4-linux
+          mkdir -p "$d"
+          cp v4/target/release/goodboy deploy/linux/install.sh deploy/linux/goodboy4@.service deploy/linux/Caddyfile.example deploy/linux/README.md LICENSE.txt "$d/"
+          ./"$d"/goodboy --version
+          f="Good-Boy-4-linux-${{ matrix.arch }}.tar.gz"
+          tar -czf "$f" "$d"
+          sha256sum "$f" > "$f.sha256"
+          ls -la "$f" "$d"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: Good-Boy-4-linux-${{ matrix.arch }}.tar.gz*
+          if-no-files-found: error
+
+  publish:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Put it on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -la out
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            gh release delete linux-test --yes --cleanup-tag --repo "${{ github.repository }}" 2>/dev/null || true
+            sleep 3
+            gh release create linux-test out/* --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease --latest=false --title "Good Boy 4 for Linux servers (test build)" --notes "Test build of the server version of Good Boy 4. Download the file for your processor (x86_64 for most servers, aarch64 for ARM and Raspberry Pi), unpack it and run: sudo bash install.sh. See README.md inside."
+            exit 0
+          fi
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' v4/Cargo.toml | head -1)
+          if gh release view "linux-v$v" --repo "${{ github.repository }}" >/dev/null 2>&1; then echo "linux-v$v is already published."; exit 0; fi
+          gh release create "linux-v$v" out/* --repo "${{ github.repository }}" --target "${{ github.sha }}" --latest=false --title "Good Boy $v for Linux servers" --notes "The server version of Good Boy $v. Download the file for your processor (x86_64 for most servers, aarch64 for ARM and Raspberry Pi), unpack it and run: sudo bash install.sh. See README.md inside."

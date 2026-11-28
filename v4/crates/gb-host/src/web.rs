@@ -3,7 +3,9 @@
 //!
 //! Who may do what: people sign in with Discord. The person who runs the bot may do everything except handle secrets (tokens
 //! and client secrets are never taken or shown over the web). Anyone else who has Manage Server in a server the bot is in
-//! may manage that server only. Nothing else gets in.
+//! may manage that server only. People the owner lets in (the Access page) may manage the servers they were given. On a
+//! bot Basic Ghost Labs hosts, support staff can come in with a pass from the site for an hour, to see the bot's health
+//! and start, stop or restart it, and nothing else (see access.rs). Every change made here goes in the access log.
 use crate::secrets::{self, Secret};
 use crate::Desk;
 use axum::extract::{Path, Query, State};
@@ -35,6 +37,14 @@ pub struct Session {
     #[serde(default)]
     pub staff: Vec<String>,
     pub expires: i64,
+    /// "support" for a Basic Ghost Labs support visit; "person" for someone the owner let in; otherwise empty.
+    #[serde(default)]
+    pub role: String,
+}
+impl Session {
+    pub fn support(&self) -> bool { self.role == "support" }
+    /// What the access log calls them.
+    fn role_name(&self) -> &str { if self.support() { "support" } else if self.owner { "owner" } else if self.role == "person" { "let in" } else if self.guilds.is_empty() { "ticket staff" } else { "server manager" } }
 }
 
 fn now_ms() -> i64 {
@@ -59,15 +69,21 @@ pub struct Web {
     /// The public address people reach this at, such as https://dash.example.com (used for the Discord sign-in).
     pub address: String,
     http: reqwest::Client,
+    /// Who else may come in, support visits, and the access log.
+    pub access: crate::access::Access,
 }
 
 impl Web {
     pub fn new(desk: Arc<Desk>, address: &str) -> Arc<Web> {
+        let access = crate::access::Access::open(&desk.folders.data, &|k| std::env::var(k).ok());
+        Web::with_access(desk, address, access)
+    }
+    pub fn with_access(desk: Arc<Desk>, address: &str, access: crate::access::Access) -> Arc<Web> {
         let file = desk.folders.data.join("web-sessions.json");
         let loaded: HashMap<String, Session> = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let now = now_ms();
         let sessions = loaded.into_iter().filter(|(_, s)| s.expires > now).collect();
-        Arc::new(Web { desk, sessions: Mutex::new(sessions), states: Mutex::new(HashMap::new()), file, address: address.trim_end_matches('/').to_string(), http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default() })
+        Arc::new(Web { desk, sessions: Mutex::new(sessions), states: Mutex::new(HashMap::new()), file, address: address.trim_end_matches('/').to_string(), http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default(), access })
     }
     fn save(&self, all: &HashMap<String, Session>) {
         if let Some(dir) = self.file.parent() { let _ = std::fs::create_dir_all(dir); }
@@ -80,7 +96,9 @@ impl Web {
         let mut all = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
         let now = now_ms();
         all.retain(|_, s| s.expires > now);
-        all.insert(digest(&token), Session { expires: now + SESSION_DAYS * 86_400_000, ..who });
+        // a support visit keeps the end it was given (an hour); everyone else gets 30 days
+        let expires = if who.support() { who.expires.min(now + crate::access::SUPPORT_VISIT_MS) } else { now + SESSION_DAYS * 86_400_000 };
+        all.insert(digest(&token), Session { expires, ..who });
         self.save(&all);
         token
     }
@@ -90,11 +108,21 @@ impl Web {
         let mut all = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
         let key = digest(token);
         let s = all.get(&key)?.clone();
-        if s.expires <= now_ms() { all.remove(&key); self.save(&all); return None; }
+        if s.expires <= now_ms() || (s.support() && !self.access.support_on()) { all.remove(&key); self.save(&all); return None; }
+        if s.support() { return Some(s); }
         // a session that is used stays good: it runs out 30 days after the last time
         let fresh = now_ms() + SESSION_DAYS * 86_400_000;
         if fresh - s.expires > 86_400_000 { if let Some(m) = all.get_mut(&key) { m.expires = fresh; } self.save(&all); }
         Some(s)
+    }
+    /// Signs out everyone who matches (someone the owner just removed, or every support visit).
+    pub fn sign_out_all(&self, which: impl Fn(&Session) -> bool) -> usize {
+        let mut all = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
+        let before = all.len();
+        all.retain(|_, s| !which(s));
+        let gone = before - all.len();
+        if gone > 0 { self.save(&all); }
+        gone
     }
     fn sign_out(&self, headers: &HeaderMap) {
         let Some(cookie) = headers.get(header::COOKIE).and_then(|c| c.to_str().ok()) else { return };
@@ -111,6 +139,13 @@ impl Web {
 const DESKTOP_ONLY: &[&str] = &["update_install", "setup_data", "token_test", "token_save", "token_forget", "helpers_list", "helper_add", "helper_remove", "secret_save", "secret_forget", "v3_status", "v3_folder_set", "v3_recopy", "v3_check", "backup_now", "open", "prefs_set", "licence_set", "licence_refresh", "brand_status", "brand_keep", "brand_custom"];
 /// Things only the owner may do (over the web): start and stop the bot, and see how it is doing.
 const OWNER_ONLY: &[&str] = &["bot_start", "bot_stop", "bot_restart", "announce_restart", "health"];
+/// All that Basic Ghost Labs support may ask for on a hosted bot: how it is doing, start, stop, restart and updates.
+/// Nothing that belongs to a server (every server-specific request is refused for them anyway, as they manage none).
+const SUPPORT_CALLS: &[&str] = &["overview", "support_view", "health", "update_status", "update_check", "whatsnew", "bot_start", "bot_stop", "bot_restart", "announce_restart"];
+/// The Access page: only the owner.
+const ACCESS_CALLS: &[&str] = &["access_view", "access_add", "access_remove", "access_support_set"];
+/// Requests that only look, which are not written in the access log (the screens ask for some of them every few seconds).
+const LOOKS: &[&str] = &["overview", "servers", "pulse", "activity", "update_status", "whatsnew", "health", "settings", "dashboard", "cases", "tickets", "ticket_view", "ticket_transcript", "economy", "members_lookup", "members_search", "leavers", "inactive_view", "commands_view", "commands_guide", "directory", "images_view", "critters_view", "panel", "permissions", "role_menus", "shop", "boards", "panel_preview", "greeting_preview", "setup_view", "eclipse_view", "gallery_view", "access_view", "support_view", "music_api"];
 /// All that ticket staff (who do not manage the server) may ask for: the tickets, and what the page needs to start.
 const STAFF_CALLS: &[&str] = &["overview", "servers", "tickets", "ticket_view", "ticket_transcript", "ticket_action"];
 
@@ -126,10 +161,14 @@ fn texts(a: &Value, k: &str) -> Vec<String> { a.get(k).and_then(Value::as_array)
 pub async fn dispatch(web: &Web, who: &Session, name: &str, a: &Value) -> Result<Value, String> {
     let desk = web.desk.clone();
     if DESKTOP_ONLY.contains(&name) { return Err("That can only be done in the Good Boy app on the computer.".into()); }
-    if OWNER_ONLY.contains(&name) && !who.owner { return Err("Only the person who runs the bot can do that.".into()); }
+    if who.support() {
+        if !web.access.support_on() { return Err("The owner has turned Basic Ghost Labs support access off.".into()); }
+        if !SUPPORT_CALLS.contains(&name) { return Err("Basic Ghost Labs support can see the bot's health and start, stop, restart or update it. Nothing about the servers, members, messages or settings.".into()); }
+    } else if OWNER_ONLY.contains(&name) && !who.owner { return Err("Only the person who runs the bot can do that.".into()); }
+    if ACCESS_CALLS.contains(&name) && (!who.owner || who.support()) { return Err("Only the person who runs the bot can change who comes in.".into()); }
     // every server-specific request must be for a server this person manages
     // someone who is only ticket staff may use the tickets and nothing else
-    let staff_only = !who.owner && who.guilds.is_empty();
+    let staff_only = !who.owner && who.guilds.is_empty() && !who.support();
     if staff_only && !STAFF_CALLS.contains(&name) { return Err("You can use the Tickets page. The rest of the dashboard is for people who manage the server.".into()); }
     if let Some(g) = a.get("guild").and_then(Value::as_str) {
         let manages = who.owner || who.guilds.iter().any(|x| x == g);
@@ -145,10 +184,48 @@ pub async fn dispatch(web: &Web, who: &Session, name: &str, a: &Value) -> Result
             if let Some(m) = o.as_object_mut() {
                 for k in ["data_folder", "old_data", "secret_saved", "keeps_secrets", "secret_store"] { m.remove(k); }
                 if let Some(p) = m.get_mut("prefs").and_then(Value::as_object_mut) { p.insert("setup_done".into(), json!(true)); p.insert("toured".into(), json!(true)); }
-                m.insert("web".into(), json!({ "owner": who.owner, "name": who.name, "staff_only": !who.owner && who.guilds.is_empty() }));
+                m.insert("web".into(), json!({ "owner": who.owner, "name": who.name, "staff_only": staff_only, "support": who.support(), "hosted": web.access.hosted.is_some() }));
+                // support sees how the bot is doing, not what it holds
+                if who.support() { m.remove("licence"); }
             }
             ok(o)
         }
+        "access_view" => ok(json!({
+            "people": web.access.people(),
+            "hosted": web.access.hosted.is_some(),
+            "support_on": web.access.support_on(),
+            "log": web.access.log(int(a, "most").unwrap_or(200).clamp(1, 1000) as usize),
+        })),
+        "access_add" => {
+            let guilds = texts(a, "guilds");
+            let ours = desk.guild_ids();
+            if guilds.iter().any(|g| !ours.contains(g)) { return Err("The bot is not in one of those servers.".into()); }
+            let p = web.access.add(&text(a, "user")?, &opt_text(a, "name").unwrap_or_default(), guilds)?;
+            // they sign in again to get the new list
+            web.sign_out_all(|s| s.user == p.user && !s.owner && !s.support());
+            ok(json!(p))
+        }
+        "access_remove" => {
+            let user = text(a, "user")?;
+            let gone = web.access.remove(&user)?;
+            web.sign_out_all(|s| s.user == user && !s.owner && !s.support());
+            ok(json!(gone))
+        }
+        "access_support_set" => {
+            let on = flag(a, "on").unwrap_or(false);
+            if on && web.access.hosted.is_none() { return Err("This bot is not hosted by Basic Ghost Labs.".into()); }
+            web.access.set_support(on)?;
+            if !on { web.sign_out_all(Session::support); }
+            ok(json!(on))
+        }
+        "support_view" => ok(json!({
+            "support": who.support(),
+            "name": who.name,
+            "until": if who.support() { Some(who.expires) } else { None },
+            "can": ["See the bot's health and check-up", "Start, stop and restart the bot", "Check for updates"],
+            "cannot": ["See or change your servers, members, messages, tickets or settings", "See the bot token, client secret or licence key", "Let anyone else in"],
+            "log": web.access.log(50).into_iter().filter(|l| l["role"] == "support").collect::<Vec<_>>(),
+        })),
         "bot_start" => desk.start().map(|_| Value::Null),
         "bot_stop" => { desk.stop().await; ok(Value::Null) }
         "bot_restart" => desk.restart().await.map(|_| Value::Null),
@@ -236,7 +313,15 @@ async fn api(State(web): State<Shared>, Path(name): Path<String>, headers: Heade
     if headers.get("x-gb").is_none() { return json_error(StatusCode::FORBIDDEN, "Not allowed."); }
     let Some(who) = web.who(&headers) else { return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "Sign in with Discord first.", "signin": true }))).into_response() };
     let args = body.map(|b| b.0).unwrap_or(Value::Null);
-    match dispatch(&web, &who, &name, &args).await {
+    let done = dispatch(&web, &who, &name, &args).await;
+    // every change goes in the access log, and everything support asks for; never what was typed
+    let looks = LOOKS.contains(&name.as_str()) && !(name == "music_api" && args["kind"] == "action");
+    if !looks || (who.support() && !["overview", "update_status", "support_view"].contains(&name.as_str())) {
+        let what = if name.len() <= 40 && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') { name.as_str() } else { "unknown" };
+        let detail = match what { "access_add" | "access_remove" => args["user"].as_str().unwrap_or("").to_string(), "access_support_set" => format!("{}", args["on"].as_bool().unwrap_or(false)), _ => String::new() };
+        web.access.note(&who.user, &who.name, who.role_name(), what, args.get("guild").and_then(Value::as_str), done.is_ok(), &detail);
+    }
+    match done {
         Ok(v) => Json(json!({ "ok": true, "result": v })).into_response(),
         Err(e) => json_error(StatusCode::BAD_REQUEST, &e),
     }
@@ -244,7 +329,7 @@ async fn api(State(web): State<Shared>, Path(name): Path<String>, headers: Heade
 
 async fn me(State(web): State<Shared>, headers: HeaderMap) -> Response {
     match web.who(&headers) {
-        Some(s) => Json(json!({ "user": s.user, "name": s.name, "owner": s.owner })).into_response(),
+        Some(s) => Json(json!({ "user": s.user, "name": s.name, "owner": s.owner, "support": s.support() })).into_response(),
         None => (StatusCode::UNAUTHORIZED, Json(json!({ "signin": true }))).into_response(),
     }
 }
@@ -277,6 +362,29 @@ async fn login(State(web): State<Shared>) -> Response {
     Redirect::to(&url).into_response()
 }
 
+#[derive(Deserialize)]
+struct PassQuery { pass: Option<String> }
+
+/// A Basic Ghost Labs support visit: the site sends staff here with a pass made for this one bot.
+async fn maintain(State(web): State<Shared>, Query(q): Query<PassQuery>) -> Response {
+    let back = |code: StatusCode, text: &str| secure((code, [(header::CACHE_CONTROL, "no-store")], text.to_string()).into_response());
+    let Some(pass) = q.pass.filter(|p| p.len() < 4096) else { return back(StatusCode::BAD_REQUEST, "Open this from the Basic Ghost Labs site.") };
+    match web.access.check_pass(&pass, now_ms()) {
+        Ok(v) => {
+            web.access.note(&v.staff, &v.name, "support", "support_sign_in", None, true, &v.reason);
+            let value = web.sign_in(Session { user: v.staff.clone(), name: v.name.clone(), owner: false, guilds: Vec::new(), staff: Vec::new(), expires: v.until, role: "support".into() });
+            let mut r = Redirect::to("/").into_response();
+            r.headers_mut().insert(header::SET_COOKIE, cookie(&value, crate::access::SUPPORT_VISIT_MS / 1000, &web.address).parse().unwrap_or(HeaderValue::from_static("")));
+            r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            secure(r)
+        }
+        Err(e) => {
+            web.access.note("unknown", "unknown", "support", "support_sign_in", None, false, &e);
+            back(StatusCode::FORBIDDEN, &e)
+        }
+    }
+}
+
 fn urlencode(s: &str) -> String {
     s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
@@ -307,10 +415,11 @@ async fn callback(State(web): State<Shared>, Query(q): Query<Callback>) -> Respo
     let (uid, uname) = (user["id"].as_str().unwrap_or("").to_string(), user["global_name"].as_str().or_else(|| user["username"].as_str()).unwrap_or("someone").to_string());
     let managed: Vec<String> = base.as_ref().map(|s| s.guilds.clone()).unwrap_or_default();
     let staff = if base.as_ref().is_some_and(|s| s.owner) || uid.is_empty() { Vec::new() } else { web.staff_guilds(&uid, &guilds, &managed).await };
-    let Some(mut session) = base.or_else(|| (!staff.is_empty()).then(|| Session { user: uid, name: uname, owner: false, guilds: Vec::new(), staff: Vec::new(), expires: 0 })) else {
+    let Some(mut session) = base.or_else(|| (!staff.is_empty()).then(|| Session { user: uid, name: uname, owner: false, guilds: Vec::new(), staff: Vec::new(), expires: 0, role: String::new() })) else {
         return (StatusCode::FORBIDDEN, "This dashboard is for the person who runs the bot, for people with Manage Server in a server the bot is in, and for the ticket staff of those servers. That is not you.").into_response()
     };
     session.staff = staff;
+    web.access.note(&session.user, &session.name, session.role_name(), "sign_in", None, true, "");
     let value = web.sign_in(session);
     let mut r = Redirect::to("/").into_response();
     r.headers_mut().insert(header::SET_COOKIE, cookie(&value, SESSION_DAYS * 86_400, &web.address).parse().unwrap_or(HeaderValue::from_static("")));
@@ -326,11 +435,18 @@ impl Web {
     pub fn session_for(&self, user: &Value, guilds: &Value) -> Option<Session> {
         let id = user["id"].as_str()?.to_string();
         let name = user["global_name"].as_str().or_else(|| user["username"].as_str()).unwrap_or("someone").to_string();
-        let owner = self.desk.owner_id().as_deref() == Some(id.as_str());
+        let owner = self.desk.owner_id().as_deref() == Some(id.as_str()) || self.access.owners.contains(&id);
         let ours: Vec<String> = self.desk.guild_ids();
-        let manages: Vec<String> = guilds.as_array().map(|l| l.iter().filter(|g| g["owner"] == true || g["permissions"].as_str().and_then(|p| p.parse::<u64>().ok()).is_some_and(|p| p & (MANAGE_GUILD | ADMINISTRATOR) != 0)).filter_map(|g| g["id"].as_str().map(str::to_string)).filter(|g| ours.contains(g)).collect()).unwrap_or_default();
+        let mut manages: Vec<String> = guilds.as_array().map(|l| l.iter().filter(|g| g["owner"] == true || g["permissions"].as_str().and_then(|p| p.parse::<u64>().ok()).is_some_and(|p| p & (MANAGE_GUILD | ADMINISTRATOR) != 0)).filter_map(|g| g["id"].as_str().map(str::to_string)).filter(|g| ours.contains(g)).collect()).unwrap_or_default();
+        // someone the owner let in gets the servers they were given (or every one), on top of the ones they manage
+        let mut role = String::new();
+        if let Some(p) = (!owner).then(|| self.access.person(&id)).flatten() {
+            let given: Vec<String> = if p.guilds.is_empty() { ours.clone() } else { p.guilds.iter().filter(|g| ours.contains(g)).cloned().collect() };
+            if !given.is_empty() { role = "person".into(); }
+            for g in given { if !manages.contains(&g) { manages.push(g); } }
+        }
         if !owner && manages.is_empty() { return None; }
-        Some(Session { user: id, name, owner, guilds: if owner { ours } else { manages }, staff: Vec::new(), expires: 0 })
+        Some(Session { user: id, name, owner, guilds: if owner { ours } else { manages }, staff: Vec::new(), expires: 0, role })
     }
     /// The servers where this person holds the tickets staff role without managing the server. The bot asks Discord for
     /// their roles in each server they share with it; a server with no staff role set counts for nothing.
@@ -364,6 +480,8 @@ const FILES: &[(&str, &str, &[u8])] = &[
     ("/ctxmenu.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/ctxmenu.css")),
     ("/ctxmenu.js", "text/javascript; charset=utf-8", include_bytes!("../../../launcher/ui/ctxmenu.js")),
     ("/menu.js", "text/javascript; charset=utf-8", include_bytes!("../../../launcher/ui/menu.js")),
+    ("/access.js", "text/javascript; charset=utf-8", include_bytes!("../../../launcher/ui/access.js")),
+    ("/access.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/access.css")),
     ("/fonts/Figtree-400.ttf", "font/ttf", include_bytes!("../../../launcher/ui/fonts/Figtree-400.ttf")),
     ("/fonts/Figtree-500.ttf", "font/ttf", include_bytes!("../../../launcher/ui/fonts/Figtree-500.ttf")),
     ("/fonts/Figtree-600.ttf", "font/ttf", include_bytes!("../../../launcher/ui/fonts/Figtree-600.ttf")),
@@ -405,7 +523,7 @@ async fn file(uri: axum::http::Uri) -> Response {
 /// The web app's routes.
 pub fn router(web: Shared) -> Router {
     let mut r = Router::new().route("/", get(page)).route("/index.html", get(page))
-        .route("/api/:name", post(api).layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))).route("/auth/me", get(me)).route("/auth/login", get(login)).route("/auth/callback", get(callback)).route("/auth/logout", post(logout));
+        .route("/api/:name", post(api).layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))).route("/auth/me", get(me)).route("/auth/login", get(login)).route("/auth/callback", get(callback)).route("/auth/logout", post(logout)).route("/auth/maintain", get(maintain));
     for (p, _, _) in FILES { r = r.route(p, get(file)); }
     r.with_state(web)
 }
@@ -434,7 +552,7 @@ mod tests {
         Web::new(desk, "https://dash.example.com")
     }
     fn session(owner: bool, guilds: &[&str]) -> Session {
-        Session { user: if owner { "42".into() } else { "7".into() }, name: "Basic".into(), owner, guilds: guilds.iter().map(|g| g.to_string()).collect(), staff: Vec::new(), expires: 0 }
+        Session { user: if owner { "42".into() } else { "7".into() }, name: "Basic".into(), owner, guilds: guilds.iter().map(|g| g.to_string()).collect(), staff: Vec::new(), expires: 0, role: String::new() }
     }
     async fn ask(app: &Router, method: &str, uri: &str, cookie: Option<&str>, body: Option<Value>, gb: bool) -> (StatusCode, Value, HeaderMap) {
         let mut req = axum::http::Request::builder().method(method).uri(uri);
@@ -606,5 +724,103 @@ mod tests {
             let err = dispatch(&w, &owner, &name, &json!({ "guild": "700000000000000001" })).await.err().unwrap_or_default();
             assert!(!err.contains("not something the web app can do"), "{name} is asked for by the screens but the web app does not know it");
         }
+    }
+
+    fn hosted_web(tmp: &std::path::Path) -> Arc<Web> {
+        let plain = web(tmp);
+        let access = crate::access::tests::hosted(&plain.desk.folders.data, &crate::access::tests::key());
+        Web::with_access(plain.desk.clone(), "https://dash.example.com", access)
+    }
+
+    #[tokio::test]
+    async fn support_comes_in_with_a_pass_sees_only_the_bot_itself_and_everything_is_logged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = hosted_web(tmp.path());
+        let app = router(w.clone());
+        let now = now_ms();
+        let pass = crate::access::tests::pass(&crate::access::tests::key(), "sub_abc123", now + 60_000, "visit-1");
+        let (code, _, headers) = ask(&app, "GET", &format!("/auth/maintain?pass={pass}"), None, None, false).await;
+        assert_eq!(code, StatusCode::SEE_OTHER);
+        let set = headers.get(header::SET_COOKIE).unwrap().to_str().unwrap().to_string();
+        assert!(set.contains("Max-Age=3600") && set.contains("HttpOnly") && set.contains("Secure"), "{set}");
+        let c = set.split(';').next().unwrap().trim_start_matches(&format!("{COOKIE}=")).to_string();
+        // the same pass cannot be used again
+        let (again, _, _) = ask(&app, "GET", &format!("/auth/maintain?pass={pass}"), None, None, false).await;
+        assert_eq!(again, StatusCode::FORBIDDEN);
+        // what support may ask for
+        let (code, v, _) = ask(&app, "POST", "/api/overview", Some(&c), None, true).await;
+        assert_eq!(code, StatusCode::OK, "{v}");
+        assert_eq!(v["result"]["web"]["support"], true);
+        assert!(v["result"].get("licence").is_none() && v["result"].get("data_folder").is_none());
+        let (code, _, _) = ask(&app, "POST", "/api/health", Some(&c), None, true).await;
+        assert_eq!(code, StatusCode::OK);
+        let (code, v, _) = ask(&app, "POST", "/api/support_view", Some(&c), None, true).await;
+        assert_eq!((code, v["result"]["support"].clone()), (StatusCode::OK, json!(true)));
+        // and everything else, server by server, is refused
+        for (call, body) in [("servers", json!({})), ("tickets", json!({ "guild": "700000000000000001" })), ("settings", json!({ "guild": "700000000000000001", "module": "levels" })), ("members_search", json!({ "guild": "700000000000000001" })), ("cases", json!({ "guild": "700000000000000001" })), ("access_view", json!({})), ("access_add", json!({ "user": "223456789012345678" })), ("token_save", json!({})), ("ticket_transcript", json!({ "guild": "700000000000000001", "number": 1 }))] {
+            let (code, v, _) = ask(&app, "POST", &format!("/api/{call}"), Some(&c), Some(body), true).await;
+            assert_eq!(code, StatusCode::BAD_REQUEST, "{call}: {v}");
+        }
+        let log = w.access.log(50);
+        assert!(log.iter().any(|l| l["what"] == "support_sign_in" && l["ok"] == true && l["who"] == "sam@basicghostlabs.com"));
+        assert!(log.iter().any(|l| l["what"] == "tickets" && l["ok"] == false && l["role"] == "support"), "refused asks are logged too");
+        assert!(log.iter().all(|l| l.get("args").is_none()), "nothing typed is kept");
+        // the owner sees it, and can turn support off, which ends the visit at once
+        let owner = w.sign_in(session(true, &[]));
+        let (_, v, _) = ask(&app, "POST", "/api/access_view", Some(&owner), None, true).await;
+        assert_eq!(v["result"]["hosted"], true);
+        assert!(v["result"]["log"].as_array().unwrap().iter().any(|l| l["role"] == "support"));
+        let (code, _, _) = ask(&app, "POST", "/api/access_support_set", Some(&owner), Some(json!({ "on": false })), true).await;
+        assert_eq!(code, StatusCode::OK);
+        let (code, _, _) = ask(&app, "POST", "/api/health", Some(&c), None, true).await;
+        assert_eq!(code, StatusCode::UNAUTHORIZED, "the visit is over");
+        let p2 = crate::access::tests::pass(&crate::access::tests::key(), "sub_abc123", now + 60_000, "visit-2");
+        let (code, _, _) = ask(&app, "GET", &format!("/auth/maintain?pass={p2}"), None, None, false).await;
+        assert_eq!(code, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_bot_people_run_themselves_has_no_way_in_for_support() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = web(tmp.path());
+        let app = router(w.clone());
+        let pass = crate::access::tests::pass(&crate::access::tests::key(), "sub_abc123", now_ms() + 60_000, "x");
+        let (code, _, _) = ask(&app, "GET", &format!("/auth/maintain?pass={pass}"), None, None, false).await;
+        assert_eq!(code, StatusCode::FORBIDDEN);
+        let owner = w.sign_in(session(true, &[]));
+        let (code, _, _) = ask(&app, "POST", "/api/access_support_set", Some(&owner), Some(json!({ "on": true })), true).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_owner_lets_someone_in_for_one_server_and_only_the_owner_can_change_the_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = web(tmp.path());
+        let app = router(w.clone());
+        let owner = w.sign_in(session(true, &[]));
+        let (code, v, _) = ask(&app, "POST", "/api/access_add", Some(&owner), Some(json!({ "user": "223456789012345678", "name": "Ari", "guilds": ["700000000000000009"] })), true).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "not a server the bot is in: {v}");
+        let (code, _, _) = ask(&app, "POST", "/api/access_add", Some(&owner), Some(json!({ "user": "223456789012345678", "name": "Ari", "guilds": ["700000000000000002"] })), true).await;
+        assert_eq!(code, StatusCode::OK);
+        // Ari has no Manage Server anywhere, but gets the server they were given
+        let s = w.session_for(&json!({ "id": "223456789012345678", "username": "ari" }), &json!([])).unwrap();
+        assert_eq!((s.guilds.clone(), s.owner, s.role.as_str()), (vec!["700000000000000002".to_string()], false, "person"));
+        let ari = w.sign_in(s);
+        let (code, _, _) = ask(&app, "POST", "/api/cases", Some(&ari), Some(json!({ "guild": "700000000000000002" })), true).await;
+        assert_eq!(code, StatusCode::OK);
+        let (code, _, _) = ask(&app, "POST", "/api/cases", Some(&ari), Some(json!({ "guild": "700000000000000001" })), true).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST);
+        for call in ["access_view", "access_add", "access_remove", "access_support_set", "bot_stop"] {
+            let (code, _, _) = ask(&app, "POST", &format!("/api/{call}"), Some(&ari), Some(json!({ "user": "223456789012345678" })), true).await;
+            assert_eq!(code, StatusCode::BAD_REQUEST, "{call}");
+        }
+        // removing them signs them out at once
+        let (code, _, _) = ask(&app, "POST", "/api/access_remove", Some(&owner), Some(json!({ "user": "223456789012345678" })), true).await;
+        assert_eq!(code, StatusCode::OK);
+        let (code, _, _) = ask(&app, "POST", "/api/cases", Some(&ari), Some(json!({ "guild": "700000000000000002" })), true).await;
+        assert_eq!(code, StatusCode::UNAUTHORIZED);
+        assert!(w.session_for(&json!({ "id": "223456789012345678" }), &json!([])).is_none());
+        let log = w.access.log(50);
+        assert!(log.iter().any(|l| l["what"] == "access_add" && l["detail"] == "223456789012345678" && l["role"] == "owner"));
     }
 }

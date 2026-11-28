@@ -3,6 +3,7 @@
 //! What a program that hosts the bot needs, shared by the launcher and the command line:
 //! where things are kept, the first run, the saved secrets, and starting and stopping the bot.
 
+pub mod access;
 pub mod brand;
 pub mod desk;
 pub mod handoff;

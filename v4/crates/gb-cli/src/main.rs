@@ -4,6 +4,8 @@
 //!   goodboy                                         first run and every run: get the data ready, ask for the token once, start
 //!   goodboy token forget                            remove the saved bot token from this computer
 //!   goodboy run <data folder>                       run the bot on that data (the token comes from DISCORD_TOKEN)
+//!   goodboy serve [data folder]                     on a Linux server: the bot and its web dashboard, as a service
+//!   goodboy secret set <bot-token|client-secret>    save a secret from what is typed or piped in (never the command line)
 //!   goodboy data check  <folder or eclipse.db>      what is in it, and whether it is sound
 //!   goodboy data find   <app data folder>           where Good Boy 3 keeps its data on this computer
 //!   goodboy data import <3.x data folder> <v4 data folder>   copy it across (the 3.x data is never changed)
@@ -36,8 +38,22 @@ fn print_summary(s: &Summary) {
     }
 }
 
+/// Waits for the program to be asked to stop: Ctrl+C, or (on Linux and macOS) the stop a service manager sends.
+async fn stop_asked() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        if let Ok(mut term) = signal(SignalKind::terminate()) {
+            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term.recv() => {} }
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
+}
+
 /// On a web host: the bot and the web app (for phones and other computers) together. Asked for with GOODBOY_WEB_ADDRESS
 /// (the public https link) and, if wanted, GOODBOY_WEB_PORT. The token is read the same way as without the web app.
+/// GOODBOY_WEB_BIND=local listens on this machine only (behind a web server such as Caddy that adds https).
 fn start_with_web(data: &std::path::Path, address: &str) -> Result<(), String> {
     use std::sync::Arc;
     let desk = Arc::new(gb_host::Desk::new(gb_host::Folders { data: data.to_path_buf(), old_app_data: None }));
@@ -45,11 +61,12 @@ fn start_with_web(data: &std::path::Path, address: &str) -> Result<(), String> {
     runtime.block_on(async {
         desk.capture_runtime();
         let port: u64 = std::env::var("GOODBOY_WEB_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(47890);
-        desk.prefs_set(&serde_json::json!({ "setup_done": true, "web_on": true, "web_all": true, "web_address": address, "web_port": port }))?;
+        let all = !std::env::var("GOODBOY_WEB_BIND").is_ok_and(|b| b.trim().eq_ignore_ascii_case("local"));
+        desk.prefs_set(&serde_json::json!({ "setup_done": true, "web_on": true, "web_all": all, "web_address": address, "web_port": port }))?;
         desk.web_apply();
         println!("Web app at {address} (port {port}). Add {address}/auth/callback under OAuth2 Redirects in the Discord Developer Portal.");
         desk.start()?;
-        let _ = tokio::signal::ctrl_c().await;
+        stop_asked().await;
         println!("Stopping.");
         desk.stop().await;
         Ok(())
@@ -68,7 +85,7 @@ fn start(token: String, data: &std::path::Path) -> Result<(), String> {
     runtime.block_on(async {
         let (stop, stop_rx) = tokio::sync::watch::channel(false);
         tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
+            stop_asked().await;
             println!("Stopping.");
             let _ = stop.send(true);
             // keep the sender alive until the program ends
@@ -137,11 +154,45 @@ fn guided() -> Result<(), String> {
     start(token.trim().to_string(), &folders.data)
 }
 
+/// `goodboy serve`: the server version. The data folder is the argument, else GOODBOY_DATA, else the folder systemd gives
+/// the service (STATE_DIRECTORY), else ./data. The token: a systemd credential, the secrets folder, or DISCORD_TOKEN.
+fn serve(folder: Option<&str>) -> Result<(), String> {
+    let data = folder.map(PathBuf::from)
+        .or_else(|| std::env::var_os("GOODBOY_DATA").filter(|d| !d.is_empty()).map(PathBuf::from))
+        .or_else(|| std::env::var("STATE_DIRECTORY").ok().and_then(|d| d.split(':').next().map(PathBuf::from)).filter(|d| !d.as_os_str().is_empty()))
+        .unwrap_or_else(|| PathBuf::from("data"));
+    std::fs::create_dir_all(&data).map_err(|e| format!("The data folder {} could not be made: {e}", data.display()))?;
+    let token = std::env::var("DISCORD_TOKEN").ok().filter(|t| !t.trim().is_empty()).or_else(|| secrets::read(Secret::BotToken))
+        .ok_or("No bot token. Put it in the bot-token credential (see deploy/linux/README.md), or run: goodboy secret set bot-token")?;
+    if !secrets::looks_like_a_token(&token) { return Err("The saved bot token does not look like a bot token (three parts separated by dots).".into()); }
+    let desk = gb_host::Desk::new(gb_host::Folders { data: data.clone(), old_app_data: None });
+    desk.setup_data(false)?;
+    println!("Good Boy {} (server version). Data in {}.", env!("CARGO_PKG_VERSION"), data.display());
+    drop(desk);
+    match std::env::var("GOODBOY_WEB_ADDRESS").ok().map(|a| a.trim().to_string()).filter(|a| !a.is_empty()) {
+        Some(address) => { std::env::set_var("DISCORD_TOKEN", token.trim()); start_with_web(&data, &address) }
+        None => { println!("No GOODBOY_WEB_ADDRESS, so the web dashboard is off."); std::env::remove_var("GOODBOY_WEB_ADDRESS"); start(token.trim().to_string(), &data) }
+    }
+}
+
 fn run(args: &[String]) -> Result<(), String> {
     let json = args.iter().any(|a| a == "--json");
     let args: Vec<&str> = args.iter().map(String::as_str).filter(|a| *a != "--json").collect();
     match args.as_slice() {
         [] => guided(),
+        ["--version"] | ["version"] => { println!("goodboy {}", env!("CARGO_PKG_VERSION")); Ok(()) }
+        ["serve"] => serve(None),
+        ["serve", folder] => serve(Some(folder)),
+        ["secret", "set", which] => {
+            let which = match *which { "bot-token" => Secret::BotToken, "client-secret" => Secret::ClientSecret, _ => return Err("Say which: bot-token or client-secret.".into()) };
+            let value = if std::io::IsTerminal::is_terminal(&std::io::stdin()) { rpassword::prompt_password("Paste it and press Enter (it is not shown): ").map_err(|e| e.to_string())? } else { let mut l = String::new(); std::io::stdin().read_line(&mut l).map_err(|e| e.to_string())?; l };
+            let value = value.trim();
+            let fits = match which { Secret::BotToken => secrets::looks_like_a_token(value), _ => secrets::looks_like_a_client_secret(value) };
+            if !fits { return Err("That does not look right. Copy it again from the Discord Developer Portal.".into()); }
+            secrets::write(which, value)?;
+            println!("Saved.");
+            Ok(())
+        }
         ["token", "forget"] => {
             secrets::forget(Secret::BotToken)?;
             println!("The saved bot token was removed from this computer.");
@@ -193,7 +244,7 @@ fn run(args: &[String]) -> Result<(), String> {
             let dir = db_path(data);
             start(token.trim().to_string(), dir.parent().unwrap_or(std::path::Path::new(".")))
         }
-        _ => Err("Usage:\n  goodboy                      (first run, and every run after)\n  goodboy token forget\n  goodboy run <data folder>\n  goodboy data check <folder or eclipse.db>\n  goodboy data find <app data folder>\n  goodboy data import <3.x data folder> <v4 data folder>\nAdd --json for machine-readable output.".into()),
+        _ => Err("Usage:\n  goodboy                      (first run, and every run after)\n  goodboy token forget\n  goodboy run <data folder>\n  goodboy serve [data folder]  (Linux servers: the bot and its web dashboard)\n  goodboy secret set <bot-token|client-secret>\n  goodboy data check <folder or eclipse.db>\n  goodboy data find <app data folder>\n  goodboy data import <3.x data folder> <v4 data folder>\nAdd --json for machine-readable output.".into()),
     }
 }
 
