@@ -404,12 +404,12 @@ impl Desk {
         for _ in 0..240 {
             match self.runner.live().phase {
                 crate::runner::Phase::Online => return crate::handoff::mark_started(&h.marker),
-                crate::runner::Phase::Problem => { let why = self.runner.live().problem.unwrap_or_default(); self.stop().await; return Err(format!("Good Boy 4 could not come online: {why}")); }
+                crate::runner::Phase::Problem => { let why = self.runner.live().problem.unwrap_or_default(); self.stop().await; return Err(format!("Good Boy could not come online: {why}")); }
                 _ => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
             }
         }
         self.stop().await;
-        Err("Good Boy 4 did not come online in time.".into())
+        Err("Good Boy did not come online in time.".into())
     }
 
     /// A licence Good Boy 3's app kept is taken over once (when there is none yet), so it carries over with the data.
@@ -421,6 +421,12 @@ impl Desk {
         next.licence_looked = true;
         if let Some(key) = crate::licence::read_3x_licence(&from) { next.licence = key; }
         let _ = self.write_prefs(next);
+    }
+
+    /// Lets go of the open database, so the next call to `bot` opens whatever is in the data folder now.
+    fn forget_bot(&self) {
+        let held = self.bot.lock().unwrap_or_else(|p| p.into_inner()).take();
+        drop(held);
     }
 
     /// The bot over this install's data, opened once and shared with the connection to Discord, so a setting
@@ -554,7 +560,7 @@ impl Desk {
     /// now is moved into a dated folder first, never deleted, and Good Boy 3's own data is only read.
     pub fn v3_recopy(&self) -> Result<Value, String> {
         if self.runner.is_running() {
-            return Err("Stop Good Boy 4 first (Home > Stop), then copy again.".into());
+            return Err("Stop Good Boy first (Home > Stop), then copy again.".into());
         }
         let from = self.old_data().ok_or("Good Boy 3's data was not found on this computer.")?;
         self.replace_with_3x(from, "before-recopy")
@@ -563,6 +569,10 @@ impl Desk {
     /// folder called `folder` first, never deleted; if the copy fails it is all put back. Good Boy 3's own data is only read.
     fn replace_with_3x(&self, from: PathBuf, folder: &str) -> Result<Value, String> {
         let data = &self.folders.data;
+        // The app keeps one connection to the database open (see `bot`). It has to be let go first: on Windows an open
+        // database cannot be moved aside at all, and anywhere else the app would carry on reading the copy that was
+        // just set aside, so the bot would start on the old data. The next call opens the new copy.
+        self.forget_bot();
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let aside = data.join(folder).join(stamp.to_string());
         let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -572,7 +582,7 @@ impl Desk {
                 if name.to_string_lossy().starts_with("eclipse.db") && e.path().is_file() {
                     std::fs::create_dir_all(&aside).map_err(text)?;
                     let to = aside.join(&name);
-                    std::fs::rename(e.path(), &to).map_err(|e| format!("Good Boy 4's data could not be set aside: {e}. Nothing was changed."))?;
+                    std::fs::rename(e.path(), &to).map_err(|e| format!("The current data could not be set aside: {e}. Nothing was changed."))?;
                     moved.push((to, e.path()));
                 }
             }
@@ -581,7 +591,7 @@ impl Desk {
             Ok(r) => Ok(json!({ "servers": r.summary.servers, "settings": r.summary.settings, "records": r.summary.records, "kept": if moved.is_empty() { Value::Null } else { json!(aside.display().to_string()) } })),
             Err(e) => {
                 for (from_back, to_back) in moved { let _ = std::fs::rename(from_back, to_back); } // put everything back
-                Err(format!("Your Good Boy 3 data could not be copied: {e}. Your Good Boy 4 data is as it was."))
+                Err(format!("Your Good Boy 3 data could not be copied: {e}. The current data is as it was."))
             }
         }
     }
@@ -589,7 +599,7 @@ impl Desk {
     pub fn v3_check(&self) -> Result<Value, String> {
         let old = self.old_data().ok_or("Good Boy 3's data was not found on this computer.")?;
         let a = Store::open_read_only(old.join("eclipse.db")).map_err(text)?;
-        let b = Store::open_read_only(self.db_file()).map_err(|_| "Good Boy 4 has no data yet. Copy Good Boy 3's data first.".to_string())?;
+        let b = Store::open_read_only(self.db_file()).map_err(|_| "Good Boy has no data yet. Copy Good Boy 3's data first.".to_string())?;
         let (sa, sb) = (a.summary().map_err(text)?, b.summary().map_err(text)?);
         let mut rows = Vec::new();
         for (t, n) in &sa.tables {
@@ -805,7 +815,7 @@ impl Desk {
     }
     pub fn module_set(&self, guild: &str, module: &str, on: bool) -> Result<(), String> {
         if !MODULES.iter().any(|m| m.id == module) {
-            return Err("This build of Good Boy 4 does not have that module yet.".into());
+            return Err("This version of Good Boy does not have that module yet.".into());
         }
         let bot = self.bot()?;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
@@ -1436,6 +1446,24 @@ mod tests {
         assert!(d.db_file().is_file());
         assert_eq!(d.v3_check().unwrap()["problems"], 0);
         assert!(old.join("eclipse.db").is_file(), "Good Boy 3's own data is untouched");
+    }
+
+    #[test]
+    fn copying_again_while_the_app_has_its_data_open_uses_the_new_copy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("appdata").join("Good Boy").join("bot-data");
+        std::fs::create_dir_all(&old).unwrap();
+        { let v3 = Store::create(old.join("eclipse.db")).unwrap(); v3.data_set("g1", "community", "who", &json!("first")).unwrap(); }
+        let d = Desk::new(Folders { data: tmp.path().join("gb4"), old_app_data: Some(tmp.path().join("appdata")) });
+        assert_eq!(d.setup_data(true).unwrap()["how"], "copied");
+        // any page of the app opens the bot's database and keeps it open
+        let seen = { let b = d.bot().unwrap(); let v = b.db.get().data_get("g1", "community", "who").unwrap(); v };
+        assert_eq!(seen, Some(json!("first")));
+        // Good Boy 3 carries on, then the data is copied again
+        { let v3 = Store::open(old.join("eclipse.db")).unwrap(); v3.data_set("g1", "community", "who", &json!("second")).unwrap(); }
+        d.v3_recopy().unwrap();
+        let now = { let b = d.bot().unwrap(); let v = b.db.get().data_get("g1", "community", "who").unwrap(); v };
+        assert_eq!(now, Some(json!("second")), "the bot reads the new copy, not the one set aside");
     }
 
     #[test]

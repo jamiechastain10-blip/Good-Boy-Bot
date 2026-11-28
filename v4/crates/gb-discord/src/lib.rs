@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! The connection to Discord. It does three small jobs and nothing else:
 //!   1. turns what Discord sends into the core's plain events,

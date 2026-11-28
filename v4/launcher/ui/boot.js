@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // The boot animation: the mascot comes in and a ring fills as the real start-up steps finish, then it settles
 // into the app. It never holds the app back: it lasts at least a moment so it doesn't flash, and any click skips it.
 'use strict';
@@ -9,7 +9,7 @@
     el.className = 'boot';
     el.setAttribute('role', 'status');
     el.innerHTML = '<div class="stage"><div class="orb"><svg viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6d8cff"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><circle class="track" cx="100" cy="100" r="95"/><circle class="fill" cx="100" cy="100" r="95"/></svg><div class="pup"><img src="mascot.png" alt=""></div></div>'
-      + '<h1>Good Boy</h1><div class="step"></div><div class="tag">Good Boy 4</div></div>';
+      + '<h1>Good Boy</h1><div class="step"></div><div class="tag">by Basic Ghost Labs</div></div>';
     document.body.append(el);
     const fill = el.querySelector('.fill'), step = el.querySelector('.step'), orb = el.querySelector('.orb');
     const born = Date.now();

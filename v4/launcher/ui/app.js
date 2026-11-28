@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // The launcher's screens. Everything is built from DOM nodes and text (no HTML strings), from the parts in ui.css.
 'use strict';
 (function () {
@@ -223,14 +223,14 @@
       const done = (r) => { S.setup = r; next(2); };
       const go = (copy) => (e) => busy(e.target, async () => { const r = await call('setup_data', { copy }); await refresh(); done(r); });
       if (o.data) {
-        body = [h('div', { class: 'head' }, h('h1', {}, 'Your data is here'), h('p', { class: 'muted' }, `Good Boy 4 already has data on this computer: ${plural(o.data.servers, 'server', 'servers')} and ${plural(o.data.records, 'saved record', 'saved records')}. It is kept as it is.`)),
+        body = [h('div', { class: 'head' }, h('h1', {}, 'Your data is here'), h('p', { class: 'muted' }, `Good Boy already has data on this computer: ${plural(o.data.servers, 'server', 'servers')} and ${plural(o.data.records, 'saved record', 'saved records')}. It is kept as it is.`)),
           h('div', { class: 'row end' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => next(0) }, 'Back'), h('button', { class: 'btn', type: 'button', onclick: () => next(2) }, 'Continue'))];
       } else if (o.old_data) {
         body = [h('div', { class: 'head' }, h('h1', {}, 'Good Boy 3 was found'), h('p', { class: 'muted' }, `It has ${plural(o.old_data.servers || 0, 'server', 'servers')} and ${plural(o.old_data.records || 0, 'saved record', 'saved records')} (levels, coins, settings and more).`)),
           h('p', { class: 'note' }, 'Copying only reads Good Boy 3\'s data. Nothing there is changed, and Good Boy 3 keeps working as before.'),
           h('div', { class: 'row end' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => next(0) }, 'Back'), h('button', { class: 'btn quiet', type: 'button', onclick: go(false) }, 'Start fresh instead'), h('button', { class: 'btn', type: 'button', onclick: go(true) }, 'Copy my data across'))];
       } else {
-        body = [h('div', { class: 'head' }, h('h1', {}, 'A fresh start'), h('p', { class: 'muted' }, 'No Good Boy 3 data was found on this computer, so Good Boy 4 starts with a clean slate.')),
+        body = [h('div', { class: 'head' }, h('h1', {}, 'A fresh start'), h('p', { class: 'muted' }, 'No Good Boy 3 data was found on this computer, so Good Boy starts with a clean slate.')),
           h('p', { class: 'small muted' }, `Your data will be kept in ${o.data_folder}`),
           h('div', { class: 'row end' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => next(0) }, 'Back'), h('button', { class: 'btn', type: 'button', onclick: go(false) }, 'Continue'))];
       }
@@ -2041,13 +2041,13 @@
       const ready = S.swOk.stopped && S.swOk.token && !st.running;
       let asked = false;
       box.replaceChildren(...[
-        h('div', { class: 'stats' }, tile(st.v3?.servers, 'Servers in Good Boy 3'), tile(st.v3?.records, 'Saved records in Good Boy 3'), tile(st.v4?.servers, 'Servers in Good Boy 4'), tile(st.v4?.records, 'Saved records in Good Boy 4')),
+        h('div', { class: 'stats' }, tile(st.v3?.servers, 'Servers in Good Boy 3'), tile(st.v3?.records, 'Saved records in Good Boy 3'), tile(st.v4?.servers, 'Servers in this Good Boy'), tile(st.v4?.records, 'Saved records in Good Boy 4')),
         h('div', { class: 'card pad' }, h('h2', {}, st.found ? 'Where Good Boy 3\'s data is' : 'Good Boy 3\'s data was not found'),
           st.found ? h('p', { class: 'muted small' }, st.folder) : h('p', { class: 'muted' }, `Looked in ${st.looked_in || 'the usual place'}. If Good Boy 3 keeps its data somewhere else, paste the folder that holds the file eclipse.db (it is usually called bot-data).`),
           (() => { const inp = h('input', { type: 'text', placeholder: 'C:\\Users\\you\\AppData\\Roaming\\Good Boy\\bot-data', spellcheck: 'false', style: { width: '100%' } });
             return h('div', { class: 'field' }, h('label', {}, st.found ? 'Use a different folder' : 'Folder with eclipse.db'), inp, h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.currentTarget, async () => { st = await call('v3_folder_set', { path: inp.value }); toast('Found it.'); paint(); }) }, 'Use this folder'))); })()),
         step(1, 'Copy your Good Boy 3 data', h('p', { class: 'muted' }, 'This only reads Good Boy 3\'s data; nothing there is changed, and Good Boy 3 keeps working. Copy again any time to bring in what happened since. Whatever Good Boy 4 has now is set aside in a dated folder, never deleted.'),
-          st.running ? h('p', { class: 'note warn' }, 'Good Boy 4 is running. Stop it on Home first.') : null,
+          st.running ? h('p', { class: 'note warn' }, 'Good Boy is running. Stop it on Home first.') : null,
           h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', disabled: !st.found || st.running, onclick: (e) => {
             const b = e.currentTarget;
             if (st.v4 && b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Set my current copy aside and copy again?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Copy my Good Boy 3 data again'; }, 6000); return; }
@@ -2058,13 +2058,13 @@
           checked ? [h('p', { class: checked.problems || !checked.v3_ok || !checked.v4_ok ? 'msg bad' : 'msg good' }, !checked.v3_ok || !checked.v4_ok ? 'One of the databases did not pass its own integrity check. Do not switch yet.' : checked.problems ? `${plural(checked.problems, 'table has', 'tables have')} fewer rows than Good Boy 3 (listed below).` : `Everything from Good Boy 3 is in the copy (${plural(checked.rows.length, 'table', 'tables')} checked).`),
             checked.rows.some((r) => r.state !== 'same') ? h('div', { class: 'list' }, checked.rows.filter((r) => r.state !== 'same').map((r) => h('div', { class: 'case' }, h('div', { class: 'text' }, h('b', {}, r.table), h('p', { class: 'muted small' }, `Good Boy 3: ${r.v3.toLocaleString()} · Good Boy 4: ${r.v4 == null ? 'missing' : r.v4.toLocaleString()} · ${{ fewer: 'fewer in the copy', missing: 'not in the copy', more: 'more in the copy (new activity)' }[r.state]}`))))) : null] : null),
         step(3, 'Switch over', h('p', { class: 'muted' }, 'Two programs must never run the same bot at once: members would get every answer twice. Tick both, then start.'),
-          tick('stopped', 'Good Boy 3 is closed completely (not just minimised).'), tick('token', 'Settings has the token of the bot I want Good Boy 4 to be.'),
-          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', disabled: !ready, onclick: (e) => busy(e.currentTarget, async () => { await call('bot_start'); toast('Good Boy 4 is starting. Watch Home for the green light.'); await refresh(); await load(); }) }, st.running ? 'Good Boy 4 is running' : 'Start Good Boy 4 now'))),
-        step(4, 'Going back to Good Boy 3', h('p', { class: 'muted' }, 'Stop Good Boy 4 on Home, close this app, and open Good Boy 3 again. Its data was never changed, so it carries on where it was. Anything members earned or did while Good Boy 4 was running stays in Good Boy 4\'s copy and will not appear in Good Boy 3.'))].filter(Boolean));
+          tick('stopped', 'Good Boy 3 is closed completely (not just minimised).'), tick('token', 'Settings has the token of the bot I want this Good Boy to run.'),
+          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', disabled: !ready, onclick: (e) => busy(e.currentTarget, async () => { await call('bot_start'); toast('Good Boy is starting. Watch Home for the green light.'); await refresh(); await load(); }) }, st.running ? 'Good Boy 4 is running' : 'Start Good Boy 4 now'))),
+        step(4, 'Going back to Good Boy 3', h('p', { class: 'muted' }, 'Stop Good Boy on Home, close this app, and open Good Boy 3 again. Its data was never changed, so it carries on where it was. Anything members earned or did while Good Boy 4 was running stays in Good Boy 4\'s copy and will not appear in Good Boy 3.'))].filter(Boolean));
       void asked;
     }
     load().catch((e) => box.replaceChildren(h('div', { class: 'card note' }, e.message || String(e))));
-    return [h('div', { class: 'head' }, h('h1', {}, 'From Good Boy 3'), h('p', { class: 'muted' }, 'Try Good Boy 4 on a copy of your data, check it, and switch when you are happy. You can always go back.')), box];
+    return [h('div', { class: 'head' }, h('h1', {}, 'From Good Boy 3'), h('p', { class: 'muted' }, 'Try the new Good Boy on a copy of your data, check it, and switch when you are happy. You can always go back.')), box];
   }
 
   // ---- Check-up: what would stop the bot working, in plain words
@@ -2201,7 +2201,7 @@
       h('div', { class: 'card' }, h('h2', {}, 'Your data'), h('p', { class: 'muted small path' }, o.data_folder),
         h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, () => call('open', { what: 'data' })) }, 'Open folder'),
           h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, async () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); const file = await call('backup_now', { stamp: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` }); toast(`Backed up to ${file}`); }) }, 'Back up now'),
-          !window.GB.web ? h('button', { class: 'btn quiet', type: 'button', title: 'Use this if Good Boy 4 shows old levels or coins instead of what Good Boy 3 had', onclick: (e) => confirmInline(e.currentTarget, 'This puts Good Boy 3\'s data here in place of what this app holds now. What is here now is kept in a dated folder, not deleted. The bot is stopped for a moment.', 'Copy it again', async () => {
+          !window.GB.web ? h('button', { class: 'btn quiet', type: 'button', title: 'Use this if Good Boy shows old levels or coins instead of what Good Boy 3 had', onclick: (e) => confirmInline(e.currentTarget, 'This puts Good Boy 3\'s data here in place of what this app holds now. What is here now is kept in a dated folder, not deleted. The bot is stopped for a moment.', 'Copy it again', async () => {
             try { await call('bot_stop'); } catch { /* not running */ }
             try { const r = await call('v3_recopy'); toast(r.kept ? `Copied Good Boy 3's data. The old data is kept in ${r.kept}` : 'Copied Good Boy 3\'s data.'); } catch (err) { toast(err.message || String(err), true); }
             try { await call('bot_start'); } catch { /* the Home page says why */ }
@@ -2212,7 +2212,7 @@
   }
 
   /** What changed in this version, from the change notes that come with the program. */
-  /** Updates: what is installed, whether a newer Good Boy 4 is out, and one button to install it. */
+  /** Updates: what is installed, whether a newer Good Boy is out, and one button to install it. */
   function pageUpdates() {
     const box = h('div', { class: 'stack' });
     const mb = (n) => `${(n / 1048576).toFixed(0)} MB`;
@@ -2243,7 +2243,7 @@
     };
     paint();
     call('update_check').then((r) => { S.upd = r; paint(); }, () => { /* the last answer stays */ });
-    return [h('div', { class: 'head' }, h('h1', {}, 'Updates'), h('p', { class: 'muted' }, 'Keep Good Boy 4 current without downloading anything.')), box];
+    return [h('div', { class: 'head' }, h('h1', {}, 'Updates'), h('p', { class: 'muted' }, 'Keep Good Boy current without downloading anything.')), box];
   }
   function pageWhatsNew() {
     const box = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));

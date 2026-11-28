@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! Updating Good Boy 4 from inside the program. It asks the Basic Ghost Labs site which Good Boy 4 is out (the site
 //! looks it up where Good Boy is released, so a move on GitHub never strands an installed copy), and when one is newer it

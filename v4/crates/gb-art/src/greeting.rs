@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! The welcome and goodbye picture: the server's own background picture (or a colour theme), the member's profile picture
 //! in a ring, and two lines of text. 1000 x 360, so it sits well in a Discord channel. The dashboard draws the very same

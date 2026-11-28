@@ -1,4 +1,4 @@
-/* Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
 /* The pixel look. It sits on top of ui.css: the same pages, menus and buttons, drawn with chunky borders, hard shadows
    and pixel fonts. Switch it off (Settings > Appearance > Classic look) and the plain look from ui.css shows. */
 @font-face{font-family:"Press Start 2P";src:url(fonts/PressStart2P.woff2) format("woff2");font-display:swap}

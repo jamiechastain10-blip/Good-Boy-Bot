@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! The data layer. Good Boy 4 opens the very same SQLite file Good Boy 3 wrote (`eclipse.db`), with the same
 //! tables and the same JSON values, so nothing has to be converted and a server's levels, coins, tickets,
