@@ -2383,7 +2383,7 @@
     const SCROLLS = ['.main', '.side', '.gbm-main', '.gbm-lib-list'];
     const kept = SCROLLS.map((q) => [q, document.querySelector(q)?.scrollTop || 0]);
     app.replaceChildren(h('div', { class: 'shell' },
-      h('nav', { class: 'side', 'aria-label': 'Pages' }, h('div', { class: 'brand' }, h('img', { src: 'mascot.png', alt: '', width: 40, height: 40, class: 'pup-logo' }), h('span', {}, 'Good Boy')),
+      h('nav', { class: 'side', 'aria-label': 'Pages' }, h('div', { class: 'brand' }, h('img', { src: 'wordmark.png', alt: 'Good Boy', width: 200, height: 58, class: 'brand-wm' }), h('img', { src: 'mascot.png', alt: '', width: 40, height: 40, class: 'pup-logo' }), h('span', {}, 'Good Boy')),
         navMenu(pages),
         h('span', { class: 'grow' }), h('div', { class: 'pup-corner' }, h('div', { class: 'pup-bubble', role: 'status' }), h('div', { class: 'dog' }, h('img', { src: 'mascot.png', alt: '' })), h('span', {}, 'On duty')), h('div', { class: 'state' }, h('span', { class: `dot ${dot}` }), h('span', {}, line)),
         window.GB.web ? h('button', { class: 'nav signout', type: 'button', title: `Signed in as ${S.o.web ? S.o.web.name : ''}`, onclick: async () => { try { await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'x-gb': '1' } }); } catch { /* leave anyway */ } location.reload(); } }, 'Sign out') : null),

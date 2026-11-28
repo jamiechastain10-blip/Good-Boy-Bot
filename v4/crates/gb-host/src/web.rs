@@ -359,6 +359,7 @@ const FILES: &[(&str, &str, &[u8])] = &[
     ("/music.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/music.css")),
     ("/tour.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/tour.css")),
     ("/mascot.png", "image/png", include_bytes!("../../../launcher/ui/mascot.png")),
+    ("/wordmark.png", "image/png", include_bytes!("../../../launcher/ui/wordmark.png")),
     ("/pixel.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/pixel.css")),
     ("/bgl.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/bgl.css")),
     ("/ctxmenu.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/ctxmenu.css")),
