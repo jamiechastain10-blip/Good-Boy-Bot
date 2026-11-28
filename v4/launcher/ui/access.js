@@ -10,7 +10,7 @@
     module_set: 'Turned a module on or off', setting_set: 'Changed a setting', staff_action: 'Moderation action', ticket_action: 'Ticket action',
     treasury_give: 'Gave money from the treasury', treasury_add: 'Added to the treasury', economy_reset: 'Reset the economy', inactive_kick: 'Kicked inactive members',
     post_panel: 'Posted a panel', permission_set: 'Changed a permission', shop_save: 'Changed the shop', shop_remove: 'Removed a shop item', command_run: 'Ran a command',
-    music_api: 'Music control',
+    music_api: 'Music control', tickets: 'Looked at tickets', settings: 'Looked at settings', servers: 'Looked at the server list', cases: 'Looked at moderation cases', members_search: 'Looked at members', access_view: 'Opened the Access page',
   };
   const when = (ms) => { try { return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch { return String(ms); } };
   const ROLE = { owner: 'Owner', support: 'Basic Ghost Labs support', 'let in': 'Let in', 'server manager': 'Server manager', 'ticket staff': 'Ticket staff' };
@@ -39,7 +39,7 @@
         h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await call('access_remove', { user: p.user }); toast(`${p.name} can no longer come in.`); load(); }) }, 'Remove')));
       const id = h('input', { id: 'acc-id', inputmode: 'numeric', autocomplete: 'off', placeholder: '123456789012345678' });
       const nm = h('input', { id: 'acc-name', autocomplete: 'off', placeholder: 'Their name (only for you)' });
-      const picks = (servers || []).map((s) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: s.id }), ` ${s.name}`));
+      const picks = (servers || []).map((s) => h('label', { class: 'chk' }, h('input', { type: 'checkbox', value: s.id }), ` ${s.name}`));
       const add = h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.currentTarget, async () => {
         const guilds = picks.map((l) => l.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
         await call('access_add', { user: id.value.trim(), name: nm.value.trim(), guilds });
@@ -50,7 +50,7 @@
         rows.length ? h('div', { class: 'list' }, rows) : h('p', { class: 'muted small' }, 'Nobody yet. People with Manage Server in a server can already manage that server.'),
         h('div', { class: 'field' }, h('label', { for: 'acc-id' }, 'Their Discord user ID'), id, h('span', { class: 'hint' }, 'In Discord: Settings, Advanced, turn on Developer Mode. Then right-click them and press Copy User ID.')),
         h('div', { class: 'field' }, h('label', { for: 'acc-name' }, 'Name'), nm),
-        picks.length ? h('div', { class: 'field' }, h('span', { class: 'label' }, 'Servers (none ticked means every server)'), h('div', { class: 'stack' }, picks)) : null,
+        picks.length ? h('div', { class: 'stack' }, h('p', { class: 'small' }, 'Servers (none ticked means every server)'), ...picks) : null,
         h('div', { class: 'btns' }, add));
       // support
       const support = v.hosted ? h('div', { class: 'card' }, h('h2', {}, 'Basic Ghost Labs support'),

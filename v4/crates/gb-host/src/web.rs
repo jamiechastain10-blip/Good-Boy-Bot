@@ -316,7 +316,7 @@ async fn api(State(web): State<Shared>, Path(name): Path<String>, headers: Heade
     let done = dispatch(&web, &who, &name, &args).await;
     // every change goes in the access log, and everything support asks for; never what was typed
     let looks = LOOKS.contains(&name.as_str()) && !(name == "music_api" && args["kind"] == "action");
-    if !looks || (who.support() && name != "overview" && name != "update_status") {
+    if !looks || (who.support() && !["overview", "update_status", "support_view"].contains(&name.as_str())) {
         let what = if name.len() <= 40 && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') { name.as_str() } else { "unknown" };
         let detail = match what { "access_add" | "access_remove" => args["user"].as_str().unwrap_or("").to_string(), "access_support_set" => format!("{}", args["on"].as_bool().unwrap_or(false)), _ => String::new() };
         web.access.note(&who.user, &who.name, who.role_name(), what, args.get("guild").and_then(Value::as_str), done.is_ok(), &detail);
