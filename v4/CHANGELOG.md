@@ -2,6 +2,17 @@
 
 The product is **Good Boy**; 4.1.0 is its version. Good Boy 3 means the older 3.x app.
 
+## 4.1.1
+**The phone and web dashboard use the whole screen again.** On a phone, opening a section of the menu made it stand up as a column inside the bottom bar, which pushed every page into the top half of the screen. The menu now stays one row along the bottom and pages use the full height. The computer layout is unchanged.
+
+**`/migrate` is back: move from other bots without setting everything up again.** `/migrate scan` (admins) reads what Carl-bot, MEE6, Dyno, YAGPDB, Statbot, TTS Bot, Lawliet, Arcane, Tatsu or ProBot left in the server (up to 1,000 messages per channel) and lists what it can bring over: reaction-role messages (Good Boy answers the same reactions), button and dropdown role menus (replaced by a Good Boy menu in the same place), log channels, the starboard, welcome and goodbye messages, roles given on join, counter channels, custom commands members used, the ban list (copied into the moderation history) and MEE6 levels from its public leaderboard (nobody goes down). It also shows which commands members used and what to use in Good Boy instead. Nothing changes until you pick what to bring over or press **Bring everything over**. `/migrate tags` takes custom commands pasted in: a name on the first line, the reply under it, and `---` between them.
+
+**Good Boy 3's server tools are back in `/server`.** `/server` → **modules** lists every feature and whether it is on, **module** turns one on or off, **config** shows a feature's settings and changes one (on/off, a number, a channel, a role or text), **channel** makes a feature quiet in one channel, and **health** shows the version, uptime, licence and which Discord intents are missing.
+
+**`/whatsnew` and `/about` work again, and Good Boy 3's leftover commands are cleared.** Good Boy 3 added its commands to each server, and they stayed in Discord's list after the move, so some of them (like `/whatsnew`) did nothing. Good Boy now clears those old copies when it starts. `/whatsnew` shows this version's notes with a menu for older ones, and `/about` shows the version and how many features are on.
+
+**`/rank` works again.** It stopped with "something went wrong" because it read the server's settings while still holding the database, which the bot refuses. It now lets go first.
+
 ## 4.1.0
 **Copying your Good Boy 3 data again now really uses the new copy.** "Copy my Good Boy 3 data again" (From Good Boy 3, and Settings > Your data) kept the old database open: on Windows the copy failed with a "being used by another process" message, and elsewhere the bot went on reading the copy that had just been set aside, so old levels and coins stayed. The open database is now let go first, and the next screen and the bot read the fresh copy. What was there before is still kept in a dated folder, never deleted.
 
