@@ -174,6 +174,20 @@ pub struct KeepFile {
     /// The name it is kept under.
     pub stored: String,
 }
+/// One step of server setup, asked for by `by`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetupJob { pub by: String, pub step: SetupStep }
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetupStep {
+    /// Show what a layout would add.
+    Plan(String),
+    /// Build a layout and connect it to the bot.
+    Build(String),
+    /// Check the server.
+    Scan,
+    /// Apply one fix from a check (connect, modules, empty, everyone, logs).
+    Fix(String),
+}
 /// Something the bot wants done in Discord.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
@@ -273,6 +287,9 @@ pub enum Action {
     /// A server backup: the Discord layer reads the server's layout. `id` None: save it (`/backup create`); Some with
     /// `restore` false: show what restoring would add; with `restore` true: put that back.
     Backup { id: Option<i64>, by: String, restore: bool },
+    /// Server setup work for the Discord layer: read the server, then plan, build, check or fix. The card it makes answers the
+    /// person who asked (a command or button), or is kept for the dashboard when `by` is "dashboard".
+    Setup(Box<SetupJob>),
     /// Open a private thread in a channel (a forum post in a forum) starting with `card`, pinging `roles`. When it
     /// exists the bot is told its id along with `note`.
     OpenThread { channel: String, name: String, card: Card, roles: Vec<String>, note: String },

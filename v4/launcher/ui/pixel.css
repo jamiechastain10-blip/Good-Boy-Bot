@@ -1,4 +1,4 @@
-/* Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
 /* The pixel look. It sits on top of ui.css: the same pages, menus and buttons, drawn with chunky borders, hard shadows
    and pixel fonts. Switch it off (Settings > Appearance > Classic look) and the plain look from ui.css shows. */
 @font-face{font-family:"Press Start 2P";src:url(fonts/PressStart2P.woff2) format("woff2");font-display:swap}
@@ -172,3 +172,27 @@
 :root[data-look="pixel"] .stat span,:root[data-look="pixel"] .stat small,:root[data-look="pixel"] .saved,:root[data-look="pixel"] .confirm-q{font-size:19px}
 :root[data-look="pixel"] .case .muted,:root[data-look="pixel"] .tfoot,:root[data-look="pixel"] .hint{font-size:19px}
 :root[data-look="pixel"] .gbm small,:root[data-look="pixel"] .gbm .gbm-muted{font-size:18px}
+
+/* The menu is taller than a short window, so it scrolls (ui.css) and gets tighter as the window gets shorter, so on a tall
+   screen it fits whole and nothing is cut off. The phone layout (a row along the edge) is not touched. */
+@media (min-width: 701px) and (max-height: 1600px) {
+  :root[data-look="pixel"] .side { padding: 12px 10px; gap: 2px; }
+  :root[data-look="pixel"] .nav { padding: 6px 10px; border-width: 3px; }
+  :root[data-look="pixel"] .navgroup { padding: 8px 12px 2px; }
+  :root[data-look="pixel"] .brand { padding: 2px 6px 8px; }
+  :root[data-look="pixel"] .pup-corner .dog { width: 56px; }
+}
+@media (min-width: 701px) and (max-height: 1250px) {
+  :root[data-look="pixel"] .nav { padding: 4px 10px; border-width: 2px; }
+  :root[data-look="pixel"] .pup-corner { display: none; }
+}
+
+@media (min-width: 1800px) { :root[data-look="pixel"] .page { max-width: 1500px; } }
+:root[data-look="pixel"] button.chip{cursor:pointer;padding:4px 10px}
+:root[data-look="pixel"] button.chip[aria-pressed="true"]{background:var(--accent);color:var(--dark)}
+/* the moderation log in the pixel look: square bars and rows */
+:root[data-look="pixel"] .modbar,:root[data-look="pixel"] .modstack,:root[data-look="pixel"] .modlegend i,:root[data-look="pixel"] .logrow,:root[data-look="pixel"] .rankrow,:root[data-look="pixel"] .casedetail{border-radius:0}
+:root[data-look="pixel"] .logrow.loghead{font:8px/1.6 var(--display);letter-spacing:0}
+:root[data-look="pixel"] .logrow .lwhen,:root[data-look="pixel"] .logrow .lby{font-size:19px}
+:root[data-look="pixel"] .pill.kind{background:var(--k);color:var(--dark)}
+:root[data-look="pixel"] .spreadbar,:root[data-look="pixel"] .spreadbar i{border-radius:0}

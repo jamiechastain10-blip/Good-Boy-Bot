@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // The launcher's screens. Everything is built from DOM nodes and text (no HTML strings), from the parts in ui.css.
 'use strict';
 (function () {
@@ -43,6 +43,8 @@
     lists: 'M8 6h13M8 12h13M8 18h13M3.500 6h.01M3.500 12h.01M3.500 18h.01',
     permissions: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v2',
     commands: 'M4 6l6 6-6 6M12 18h8',
+    setup: 'M14.700 6.300a1 1 0 0 0 0 1.400l1.600 1.600a1 1 0 0 0 1.400 0l3.770-3.770a6 6 0 0 1-7.940 7.940l-6.910 6.910a2.120 2.120 0 0 1-3-3l6.910-6.910a6 6 0 0 1 7.940-7.940z',
+    images: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.500 9.500h.01',
     rolemenus: 'M20.600 13.400 13.400 20.600a2 2 0 0 1-2.800 0L3 13V3h10l7.600 7.600a2 2 0 0 1 0 2.800zM7.500 7.500h.01',
     checkup: 'M3 12h4l2-5 4 10 2-5h6',
     switch: 'M7 7h11l-3-3M17 17H6l3 3',
@@ -66,6 +68,8 @@
     automod: ['########', '#......#', '#.#..#.#', '#..##..#', '#..##..#', '.#.##.#.', '..#..#..', '...##...'],
     economy: ['..####..', '.######.', '##.##.##', '##.##...', '.######.', '...##.##', '.######.', '..####..'],
     shop: ['..####..', '.#....#.', '########', '#......#', '#......#', '#......#', '#......#', '########'],
+    setup: ['..####..', '.##..##.', '.##.....', '..####..', '.....##.', '.##..##.', '..####..', '........'],
+    images: ['########', '#......#', '#.#....#', '#......#', '#...##.#', '#..####.', '########', '........'],
     rolemenus: ['..#####.', '.######.', '########', '###..###', '###..###', '.######.', '..####..', '........'],
     lists: ['........', '##.#####', '........', '##.#####', '........', '##.#####', '........', '........'],
     commands: ['........', '##......', '.##.....', '..##....', '.##.....', '##..####', '........', '........'],
@@ -122,6 +126,49 @@
     const dark = t === 'dark' || (t === 'system' && !matchMedia('(prefers-color-scheme: light)').matches);
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   }
+  // ---- your own colours: a perk for paid supporters. Four colours are picked; the rest of the look is worked out from them.
+  const OWN_VARS = ['--bg', '--panel', '--raised', '--field', '--line', '--ink', '--ink-2', '--ink-3', '--accent', '--accent-ink', '--accent-soft', 'color-scheme'];
+  const OWN_PRESETS = [['Bubblegum', { accent: '#fd78f7', bg: '#222222', panel: '#2a2a2d', ink: '#f6f2f7' }], ['Ocean', { accent: '#5ce1e6', bg: '#0c1824', panel: '#13243a', ink: '#e6f4ff' }],
+    ['Forest', { accent: '#62f0b4', bg: '#0f1a14', panel: '#17271e', ink: '#e8f5ec' }], ['Sunset', { accent: '#ffb057', bg: '#1f1320', panel: '#2c1a2c', ink: '#fff0e6' }],
+    ['Grape', { accent: '#b68cff', bg: '#15112a', panel: '#211a40', ink: '#efeaff' }], ['Paper', { accent: '#e4407a', bg: '#f6f1ea', panel: '#ffffff', ink: '#2a2230' }]];
+  const rgb = (hex) => { const n = parseInt(String(hex).slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const hex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+  const mix = (a, b, t) => { const x = rgb(a), y = rgb(b); return hex(x.map((v, i) => v + (y[i] - v) * t)); };
+  const alpha = (a, t) => `rgba(${rgb(a).join(',')},${t})`;
+  const light = (a) => { const [r, g, b] = rgb(a).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const paid = () => !!(S.o && S.o.perks && S.o.perks.own_colours);
+  function ownColours(preview) {
+    const c = preview || (S.o && S.o.prefs.colours), st = document.documentElement.style;
+    const on = !!c && (preview ? true : c.on && paid());
+    for (const k of OWN_VARS) st.removeProperty(k);
+    document.documentElement.toggleAttribute('data-own-colours', on);
+    if (!on) return;
+    const dim = light(c.bg) < 0.35;
+    const set = { '--bg': c.bg, '--panel': c.panel, '--raised': mix(c.panel, c.ink, 0.07), '--field': mix(c.bg, dim ? '#000000' : '#ffffff', 0.25), '--line': alpha(c.ink, 0.12),
+      '--ink': c.ink, '--ink-2': mix(c.ink, c.panel, 0.3), '--ink-3': mix(c.ink, c.panel, 0.5),
+      '--accent': c.accent, '--accent-soft': alpha(c.accent, 0.16), '--accent-ink': light(c.accent) > 0.4 ? '#0b0b12' : '#ffffff', 'color-scheme': dim ? 'dark' : 'light' };
+    for (const [k, v] of Object.entries(set)) st.setProperty(k, v);
+  }
+  async function setColours(patch, msg) {
+    try { await call('prefs_set', { patch: { colours: patch } }); await refresh(); draw(); if (msg) toast(msg); } catch (e) { toast(e.message, true); }
+  }
+  function coloursCard() {
+    const o = S.o, c = Object.assign({}, o.prefs.colours || {});
+    if (!paid()) {
+      return h('div', { class: 'card own-colours locked', id: 'own-colours' }, h('div', { class: 'row' }, h('div', { class: 'text' }, h('h2', {}, 'Your own colours ', h('span', { class: 'tag' }, 'Supporter')),
+        h('p', { class: 'muted' }, 'Supporters can give this dashboard their own colours: pick an accent, a background, cards and text, or start from a ready-made set. They show in the app and on the phone and web dashboard, and the right-click menu follows them.')),
+        h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.currentTarget, () => call('open', { what: 'supporter' })) }, 'Become a supporter')),
+        h('div', { class: 'own-swatches', 'aria-hidden': 'true' }, OWN_PRESETS.map(([n, p]) => h('span', { class: 'own-swatch', title: n, style: `--a:${p.accent};--b:${p.bg};--p:${p.panel}` }))));
+    }
+    const pick = (key, label) => h('label', { class: 'own-pick' }, h('input', { type: 'color', value: c[key], oninput: (e) => { c[key] = e.target.value; ownColours(c); }, onchange: (e) => setColours({ [key]: e.target.value, on: true }) }), h('span', {}, label));
+    return h('div', { class: 'card own-colours', id: 'own-colours' },
+      h('div', { class: 'row' }, h('div', { class: 'text' }, h('h2', {}, 'Your own colours ', h('span', { class: 'tag' }, 'Supporter')), h('p', { class: 'muted' }, 'Thanks for supporting Good Boy. These colours go over the look you picked above, here and on the phone and web dashboard.')),
+        h('input', { type: 'checkbox', class: 'toggle', role: 'switch', 'aria-label': 'Use my own colours', checked: o.prefs.colours && o.prefs.colours.on ? true : null, onchange: (e) => setColours({ on: e.target.checked }, e.target.checked ? 'Your colours are on.' : 'Back to the regular colours.') })),
+      h('div', { class: 'own-picks' }, pick('accent', 'Accent'), pick('bg', 'Background'), pick('panel', 'Cards'), pick('ink', 'Text')),
+      h('div', { class: 'stack' }, h('span', { class: 'muted small' }, 'Start from a set'),
+        h('div', { class: 'btns' }, OWN_PRESETS.map(([n, p]) => h('button', { class: 'btn quiet small own-preset', type: 'button', onclick: () => setColours(Object.assign({ on: true }, p), `${n} colours on.`) }, h('span', { class: 'own-swatch', style: `--a:${p.accent};--b:${p.bg};--p:${p.panel}` }), n)),
+          h('button', { class: 'btn quiet small', type: 'button', onclick: () => setColours({ reset: true }, 'Colours put back to the first set.') }, 'Reset'))));
+  }
   function ago(ms) {
     const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
     if (m < 1) return 'less than a minute';
@@ -138,7 +185,7 @@
     if (live.phase === 'problem') return ['bad', 'Stopped: needs attention'];
     return ['', 'Stopped'];
   }
-  async function refresh() { S.o = await call('overview'); try { S.upd = await call('update_status'); } catch { /* an older host */ } theme(); return S.o; }
+  async function refresh() { S.o = await call('overview'); try { S.upd = await call('update_status'); } catch { /* an older host */ } theme(); ownColours(); return S.o; }
   /** A confirmation that sits where the button was, so nothing pops over the page. */
   function confirmInline(btn, question, yes, work) {
     const row = h('div', { class: 'btns' }, h('span', { class: 'small muted confirm-q' }, question),
@@ -176,14 +223,14 @@
       const done = (r) => { S.setup = r; next(2); };
       const go = (copy) => (e) => busy(e.target, async () => { const r = await call('setup_data', { copy }); await refresh(); done(r); });
       if (o.data) {
-        body = [h('div', { class: 'head' }, h('h1', {}, 'Your data is here'), h('p', { class: 'muted' }, `Good Boy 4 already has data on this computer: ${plural(o.data.servers, 'server', 'servers')} and ${plural(o.data.records, 'saved record', 'saved records')}. It is kept as it is.`)),
+        body = [h('div', { class: 'head' }, h('h1', {}, 'Your data is here'), h('p', { class: 'muted' }, `Good Boy already has data on this computer: ${plural(o.data.servers, 'server', 'servers')} and ${plural(o.data.records, 'saved record', 'saved records')}. It is kept as it is.`)),
           h('div', { class: 'row end' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => next(0) }, 'Back'), h('button', { class: 'btn', type: 'button', onclick: () => next(2) }, 'Continue'))];
       } else if (o.old_data) {
         body = [h('div', { class: 'head' }, h('h1', {}, 'Good Boy 3 was found'), h('p', { class: 'muted' }, `It has ${plural(o.old_data.servers || 0, 'server', 'servers')} and ${plural(o.old_data.records || 0, 'saved record', 'saved records')} (levels, coins, settings and more).`)),
           h('p', { class: 'note' }, 'Copying only reads Good Boy 3\'s data. Nothing there is changed, and Good Boy 3 keeps working as before.'),
           h('div', { class: 'row end' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => next(0) }, 'Back'), h('button', { class: 'btn quiet', type: 'button', onclick: go(false) }, 'Start fresh instead'), h('button', { class: 'btn', type: 'button', onclick: go(true) }, 'Copy my data across'))];
       } else {
-        body = [h('div', { class: 'head' }, h('h1', {}, 'A fresh start'), h('p', { class: 'muted' }, 'No Good Boy 3 data was found on this computer, so Good Boy 4 starts with a clean slate.')),
+        body = [h('div', { class: 'head' }, h('h1', {}, 'A fresh start'), h('p', { class: 'muted' }, 'No Good Boy 3 data was found on this computer, so Good Boy starts with a clean slate.')),
           h('p', { class: 'small muted' }, `Your data will be kept in ${o.data_folder}`),
           h('div', { class: 'row end' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => next(0) }, 'Back'), h('button', { class: 'btn', type: 'button', onclick: go(false) }, 'Continue'))];
       }
@@ -236,6 +283,48 @@
       out.set(day, how === 'sum' ? (was ?? 0) + v : how === 'max' ? Math.max(was ?? 0, v) : v);
     });
     return [...out.values()];
+  }
+  // ---- small charts the data pages share
+  /** Bars, one per value. `bits`: [{ value, tip }]; `ends`: words under the left and right ends (and the middle). */
+  function barChart(bits, label, ends, colour) {
+    const top = Math.max(1, ...bits.map((b) => b.value || 0));
+    return [h('div', { class: 'modchart', style: `--n:${bits.length}`, role: 'img', 'aria-label': label }, bits.map((b) => h('div', { class: 'modbar', title: b.tip },
+      h('div', { class: 'modstack', style: `height:${Math.round(((b.value || 0) / top) * 100)}%` }, b.value ? h('i', { style: `flex:1;background:${b.colour || colour || 'var(--accent)'}` }) : null)))),
+    ends ? h('div', { class: 'modaxis muted small' }, ends.map((e) => h('span', {}, e))) : null];
+  }
+  /** How a whole splits into parts: a line per part with a bar, the count and its share. `rows`: [[label, count, colour?]]. */
+  function spread(rows, unit) {
+    const all = rows.reduce((a, r) => a + (r[1] || 0), 0);
+    if (!all) return h('p', { class: 'muted' }, 'Nothing yet.');
+    const top = Math.max(...rows.map((r) => r[1] || 0));
+    return h('div', { class: 'spread' }, rows.map(([label, count, colour]) => h('div', { class: 'spreadrow', title: `${label}: ${Number(count).toLocaleString()} ${unit || ''} (${Math.round((count / all) * 100)}%)`.replace(/\s+\(/, ' (') },
+      h('span', {}, label), h('span', { class: 'spreadbar' }, count ? h('i', { style: `width:${Math.round((count / top) * 100)}%;${colour ? `background:${colour}` : ''}` }) : null),
+      h('b', {}, Number(count).toLocaleString()), h('span', { class: 'muted small' }, `${Math.round((count / all) * 100)}%`))));
+  }
+  /** One fact in a grid of facts: a small label, the number, and a line under it. */
+  const fact = (label, value, under, tone) => h('div', { class: 'fact' }, h('span', { class: 'muted small' }, label), h('b', { class: tone || '' }, value), under ? h('small', { class: 'muted small' }, under) : null);
+  const HOUR_WORD = (hr) => new Date(2000, 0, 1, hr).toLocaleTimeString([], { hour: 'numeric' });
+  const DAY_WORD = (d) => new Date(2000, 0, 2 + d).toLocaleDateString([], { weekday: 'long' }); // 2 Jan 2000 was a Sunday
+  /** Up or down against before, as words: "12% more than last week". */
+  function versus(now, before, what = 'last week') {
+    if (!before) return now ? `nothing to compare with ${what}` : null;
+    const pc = Math.round(((now - before) / before) * 100);
+    return pc === 0 ? `the same as ${what}` : `${Math.abs(pc)}% ${pc > 0 ? 'more' : 'less'} than ${what}`;
+  }
+  const median = (xs) => { const s = xs.filter((x) => x != null).sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
+  const signed = (n) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toLocaleString()}`;
+  /** The pulse's hours, read for patterns: when people talk (by hour of the day and day of the week) and the peaks. */
+  function rhythm(p) {
+    const byHour = Array.from({ length: 24 }, () => [0, 0]), byDay = Array.from({ length: 7 }, () => [0, 0]);
+    let peakVoice = { n: 0, at: null }, busiestHour = { n: 0, at: null };
+    p.messages.forEach((v, i) => { if (v == null) return; const d = new Date(p.from + i * p.hourMs); byHour[d.getHours()][0] += v; byHour[d.getHours()][1]++; if (v > busiestHour.n) busiestHour = { n: v, at: d.getTime() }; });
+    // whole days only, so a half-counted today does not drag its weekday down
+    const days = new Map();
+    p.messages.forEach((v, i) => { if (v == null) return; const d = new Date(p.from + i * p.hourMs); const k = d.toDateString(); const was = days.get(k) || { day: d.getDay(), n: 0, hours: 0 }; was.n += v; was.hours++; days.set(k, was); });
+    for (const d of days.values()) if (d.hours >= 20) { byDay[d.day][0] += d.n; byDay[d.day][1]++; }
+    p.voice.forEach((v, i) => { if (v != null && v > peakVoice.n) peakVoice = { n: v, at: p.from + i * p.hourMs }; });
+    const avg = ([sum, n]) => (n ? sum / n : null);
+    return { hours: byHour.map(avg), days: byDay.map(avg), peakVoice, busiestHour };
   }
   function homeServer() {
     const greet = () => { const hr = new Date().getHours(); return hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'; };
@@ -292,7 +381,36 @@
       numbers.children[3].querySelector('b').textContent = `${on.length} / ${(g.modules || []).length}`;
       // the numbers follow the server: new ones every half minute
       whileShown(numbers, 30000, async () => { const q = await call('pulse', { guild }); const live = [q.now.members, q.now.voice]; const b = numbers.querySelectorAll('b'); if (live[0] != null) b[0].textContent = live[0].toLocaleString(); b[1].textContent = String(live[1]); });
-      return [numbers,
+      // the week in numbers, and when the server is busy
+      const N = p.messages.length, WEEK = Math.min(N, 7 * 24);
+      const add = (arr, a, b) => arr.slice(Math.max(0, a), b).reduce((t, v) => t + (v || 0), 0);
+      const known = (arr, a, b) => arr.slice(Math.max(0, a), b).some((v) => v != null);
+      const thisWeek = add(p.messages, N - WEEK, N), lastWeek = known(p.messages, N - 2 * WEEK, N - WEEK) ? add(p.messages, N - 2 * WEEK, N - WEEK) : 0;
+      const firstMembers = p.members.slice(N - WEEK).find((v) => v != null);
+      const grew = members != null && firstMembers != null ? members - firstMembers : null;
+      const rh = rhythm(p);
+      const bestHour = rh.hours.reduce((b, v, i) => (v != null && (b < 0 || v > rh.hours[b]) ? i : b), -1);
+      const bestDay = rh.days.reduce((b, v, i) => (v != null && (b < 0 || v > rh.days[b]) ? i : b), -1);
+      const perDay = series('messages', 'sum').filter((v) => v != null);
+      const cst = cs && cs.stats ? Object.values(cs.stats.kinds).reduce((a, k) => [a[0] + (k.day || 0), a[1] + (k.week || 0)], [0, 0]) : null;
+      const oldest = open.reduce((o, t) => (!o || t.opened_at < o.opened_at ? t : o), null);
+      const facts = h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'This week'), h('span', { class: 'muted small' }, 'The last 7 days, next to the 7 before')),
+        h('div', { class: 'facts' },
+          fact('Messages', thisWeek.toLocaleString(), versus(thisWeek, lastWeek)),
+          fact('A day, on average', perDay.length ? Math.round(perDay.reduce((a, b) => a + b, 0) / perDay.length).toLocaleString() : '—', perDay.length ? `best day ${Math.max(...perDay).toLocaleString()}` : 'collecting'),
+          fact('Members', grew == null ? '—' : signed(grew), grew == null ? 'collecting' : grew === 0 ? 'no change this week' : `${grew > 0 ? 'more' : 'fewer'} than 7 days ago`, grew > 0 ? 'good' : grew < 0 ? 'bad' : ''),
+          fact('Most in voice', rh.peakVoice.n.toLocaleString(), rh.peakVoice.at ? `${new Date(rh.peakVoice.at).toLocaleDateString([], { weekday: 'short' })} around ${HOUR_WORD(new Date(rh.peakVoice.at).getHours())}` : 'nobody yet'),
+          fact('Busiest hour', bestHour < 0 ? '—' : HOUR_WORD(bestHour), bestHour < 0 ? 'collecting' : `about ${Math.round(rh.hours[bestHour]).toLocaleString()} messages`),
+          fact('Busiest day', bestDay < 0 ? '—' : DAY_WORD(bestDay), bestDay < 0 ? 'needs a whole day first' : `about ${Math.round(rh.days[bestDay]).toLocaleString()} messages`),
+          fact('Moderation', cst ? `${cst[0]} today` : '—', cst ? `${cst[1]} this week, ${cs.total.toLocaleString()} in all` : null),
+          fact('Tickets open', open.length.toLocaleString(), oldest ? `oldest waiting ${ago(oldest.opened_at)}` : 'none waiting', waiting.length ? 'bad' : ''),
+          fact('Bot online for', p.uptime_seconds != null ? ago(Date.now() - p.uptime_seconds * 1000) : '—', S.o.live.servers != null ? `in ${plural(S.o.live.servers, 'server', 'servers')}` : null)));
+      const dayBits = series('messages', 'sum').map((v, i, all) => { const d = new Date(Date.now() - (all.length - 1 - i) * 864e5); return { value: v || 0, tip: `${i === all.length - 1 ? 'Today' : d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${v == null ? 'not counted' : `${v.toLocaleString()} messages`}` }; });
+      const charts = h('div', { class: 'two' },
+        h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Messages each day'), h('span', { class: 'muted small' }, `${(thisWeek + lastWeek).toLocaleString()} in 14 days`)), barChart(dayBits, 'Messages each day, last 14 days', [`${dayBits.length - 1} days ago`, 'Today'])),
+        h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'When people talk'), h('span', { class: 'muted small' }, 'Messages an hour, on average')),
+          barChart(rh.hours.map((v, i) => ({ value: v || 0, tip: `${HOUR_WORD(i)}: ${v == null ? 'not counted yet' : `about ${Math.round(v).toLocaleString()} messages`}`, colour: i === bestHour ? 'var(--good)' : null })), 'Messages by hour of the day', [HOUR_WORD(0), HOUR_WORD(12), HOUR_WORD(23)])));
+      return [numbers, facts, charts,
         h('div', { class: 'home-grid' },
           h('div', { class: 'home-col' }, h('div', { class: 'card' }, h('h3', {}, 'Needs attention'), list), h('div', { class: 'card' }, h('h3', {}, 'Your tools'), tools)),
           h('div', { class: 'home-col' }, h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Recent activity'), h('span', { class: 'live muted small' }, h('span', { class: 'dot on' }), 'Updates by itself')), empty, feed)))];
@@ -357,7 +475,7 @@
     input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 180); });
     input.addEventListener('focus', search);
     input.addEventListener('blur', () => setTimeout(() => { menu.hidden = true; }, 150));
-    return { el: h('div', { class: 'picker' }, input, menu, chip), id: () => (chosen ? chosen.id : null), name: () => (chosen ? chosen.name : null), clear };
+    return { el: h('div', { class: 'picker' }, input, menu, chip), id: () => (chosen ? chosen.id : null), name: () => (chosen ? chosen.name : null), clear, choose };
   }
   const when = (ms) => new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   /** The server picker both data pages share. Calls `then(guildId)` once a server is chosen. */
@@ -377,27 +495,42 @@
     })();
     return [body];
   }
-  function caseRow(c) {
-    return h('div', { class: 'case' }, h('span', { class: `dot ${CASE_DOT[c.type] || 'info'}` }),
-      h('div', { class: 'text' }, h('b', {}, `#${c.id} · ${CASE_WORDS[c.type] || c.type}`, ' · ', who(c.targetId, c.targetTag)), h('p', { class: 'muted small' }, c.reason || 'No reason given.')),
-      h('span', { class: 'muted small' }, c.at ? when(c.at) : ''));
-  }
   function board(title, rows, line) {
     return h('div', { class: 'card' }, h('h3', {}, title), rows.length ? h('div', { class: 'list' }, rows.map((r, i) => h('div', {}, h('span', {}, `${i + 1}. `, r.name || who(r.user)), h('b', {}, line(r))))) : h('p', { class: 'muted' }, 'Nobody yet.'));
   }
   function pageServer() {
     return withServer('Members', 'How the server is doing', async (guild) => {
-      const d = await call('dashboard', { guild });
+      const [d, p, lv] = await Promise.all([call('dashboard', { guild }), call('pulse', { guild }).catch(() => null), call('leavers', { guild, days: 30, q: '' }).catch(() => null)]);
       await learn(guild, [...d.boards.xp.map((r) => r.user), ...d.boards.coins.map((r) => r.user), ...d.recent_cases.flatMap((c) => [c.targetId, c.modId])]);
       const n = (v) => (v == null ? '-' : Number(v).toLocaleString());
+      const L = d.levels || { members: d.ranked, bands: [] }, M = d.supply || {};
+      const pc = (a, b) => (b ? `${Math.round((a / b) * 100)}% of members` : null);
+      // growth: the members count at the end of each day, and how it moved
+      const growth = p ? daily(p.members, p.from, p.hourMs, 'last') : [];
+      const known = growth.filter((v) => v != null);
+      const moved = known.length >= 2 ? known.at(-1) - known[0] : null;
+      const left = lv ? lv.leavers : [];
+      const leftBy = (how) => left.filter((x) => x.how === how).length;
+      const weekLeft = left.filter((x) => Date.now() - x.left_at < 7 * 864e5).length;
+      const flagged = left.filter((x) => (x.flags || []).length).length;
+      const growBits = growth.map((v, i, all) => ({ value: v == null ? 0 : v - Math.min(...known) + 1, tip: `${i === all.length - 1 ? 'Today' : new Date(Date.now() - (all.length - 1 - i) * 864e5).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${v == null ? 'not counted' : `${v.toLocaleString()} members`}` }));
+      const top = d.boards.xp[0];
       return [
         h('div', { class: 'stats' },
-          h('div', { class: 'stat' }, h('b', {}, n(d.members)), h('span', {}, 'Members')),
-          h('div', { class: 'stat' }, h('b', {}, n(d.ranked)), h('span', {}, 'On the level board')),
-          h('div', { class: 'stat' }, h('b', {}, n(d.wallets)), h('span', {}, 'With coins')),
-          h('div', { class: 'stat' }, h('b', {}, n(d.tickets.open)), h('span', {}, `Open tickets (of ${n(d.tickets.total)})`)),
-          h('div', { class: 'stat' }, h('b', {}, n(d.cases)), h('span', {}, 'Moderation cases'))),
+          h('div', { class: 'stat' }, h('b', {}, n(d.members)), h('span', {}, 'Members'), h('small', { class: 'hint' }, moved == null ? 'counting growth' : `${signed(moved)} in ${known.length} days`)),
+          h('div', { class: 'stat' }, h('b', {}, n(d.ranked)), h('span', {}, 'Have XP'), h('small', { class: 'hint' }, pc(d.ranked, d.members) || ' ')),
+          h('div', { class: 'stat' }, h('b', {}, n(L.avg_level)), h('span', {}, 'Average level'), h('small', { class: 'hint' }, `half are level ${n(L.median_level)} or under`)),
+          h('div', { class: 'stat' }, h('b', {}, n(L.total_xp)), h('span', {}, 'XP earned in all'), h('small', { class: 'hint' }, top ? `top: ${who(top.user, top.name)}, level ${top.level}` : 'nobody yet')),
+          h('div', { class: 'stat' }, h('b', {}, n(d.wallets)), h('span', {}, 'With a wallet'), h('small', { class: 'hint' }, M.holders != null ? `${n(M.holders)} have coins` : ' ')),
+          h('div', { class: 'stat' }, h('b', {}, n(left.length)), h('span', {}, 'Left in 30 days'), h('small', { class: 'hint' }, `${weekLeft} this week`))),
+        h('div', { class: 'two' },
+          h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Members each day'), h('span', { class: 'muted small' }, moved == null ? '' : `${signed(moved)} in ${known.length} days`)),
+            known.length >= 2 ? barChart(growBits, 'Members each day', [`${growth.length - 1} days ago`, 'Today'], 'var(--good)') : h('p', { class: 'muted' }, 'Counting. This fills in over the next day or two.')),
+          h('div', { class: 'card' }, h('h3', {}, 'Where members are on levels'), spread((L.bands || []).map((b) => [`Level ${b.label}`, b.count]), 'members'),
+            h('p', { class: 'muted small' }, `${n(d.members && d.ranked != null ? Math.max(0, d.members - d.ranked) : null)} members have not earned any XP yet.`))),
         h('div', { class: 'two' }, board('Top levels', d.boards.xp, (r) => `Level ${r.level} · ${n(r.xp)} XP`), board('Richest', d.boards.coins, (r) => `${n(r.coins)} coins`)),
+        lv ? h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Who left, last 30 days'), h('button', { class: 'btn quiet', type: 'button', onclick: () => go('leavers') }, 'See everyone')),
+          h('div', { class: 'facts' }, fact('Left by themselves', n(leftBy('left'))), fact('Kicked', n(leftBy('kicked'))), fact('Banned', n(leftBy('banned'))), fact('Stood out', n(flagged), 'left soon after joining, had warnings or similar', flagged ? 'bad' : ''), fact('Came back', n(left.filter((x) => x.returned_at).length)))) : null,
         h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Latest cases'), h('button', { class: 'btn quiet', type: 'button', onclick: () => go('cases') }, 'See all')),
           d.recent_cases.length ? h('div', { class: 'list' }, d.recent_cases.map(caseRow)) : h('p', { class: 'muted' }, 'No cases yet. Nothing to worry about.')),
       ];
@@ -425,26 +558,148 @@
         toast(said); reason.value = ''; pick.clear(); after();
       });
     });
-    return h('div', { class: 'card' }, h('h3', {}, 'Take an action'), h('p', { class: 'muted small' }, 'The bot must be running. This is recorded as a case and logged like the command.'),
+    const card = h('div', { class: 'card' }, h('h3', {}, 'Take an action'), h('p', { class: 'muted small' }, 'The bot must be running. This is recorded as a case and logged like the command.'),
       h('div', { class: 'grid2' }, f('What to do', kind), f('Member', pick.el)), f('Reason', reason), lengthRow, h('div', { class: 'btns' }, go));
+    /** Fills the form from the moderation log: what to do and to whom. */
+    card.fill = (what, id, name) => { if (what) kind.value = what; sync(); if (id) pick.choose({ id, name: name || who(id) }); reason.focus(); };
+    return card;
+  }
+  // ---- the moderation log: numbers, a month at a glance, who acts and who gets acted on, and every case in full
+  const KIND_COLOUR = { warn: 'var(--warn)', timeout: '#f08a4b', kick: 'var(--bad)', ban: '#c43a5a', automod: 'var(--accent)', unwarn: 'var(--good)', untimeout: 'var(--good)', unban: 'var(--good)', purge: 'var(--ink-3)' };
+  const PERIODS = [['day', 'Last 24 hours', 864e5], ['week', 'Last 7 days', 7 * 864e5], ['month', 'Last 30 days', 30 * 864e5], ['all', 'All time', Infinity]];
+  const agoText = (ms) => { const m = Math.round((Date.now() - ms) / 6e4); if (m < 1) return 'just now'; if (m < 60) return `${m} min ago`; const hr = Math.round(m / 60); if (hr < 48) return `${hr} h ago`; const d = Math.round(hr / 24); return d < 60 ? `${d} days ago` : new Date(ms).toLocaleDateString(); };
+  const lengthWords = (ms) => { if (!ms) return null; const m = Math.round(ms / 6e4); if (m < 60) return `${m} min`; const hr = m / 60; if (hr < 48) return `${Math.round(hr * 10) / 10} h`; return `${Math.round(hr / 24)} days`; };
+  const kindCount = (n, k) => { if (k === 'automod') return `${n} AutoMod action${n === 1 ? '' : 's'}`; const w = (CASE_WORDS[k] || k).toLowerCase(); return `${n} ${n === 1 ? w : `${w}s`}`; };
+  const byWho = (c) => (c.modId ? who(c.modId) : 'AutoMod');
+  function kindPill(type) { return h('span', { class: 'pill kind', style: `--k:${KIND_COLOUR[type] || 'var(--ink-3)'}` }, CASE_WORDS[type] || type); }
+  function caseRow(c) {
+    return h('div', { class: 'case', 'data-case': c.id, 'data-member': c.targetId || '' }, h('span', { class: `dot ${CASE_DOT[c.type] || 'info'}` }),
+      h('div', { class: 'text' }, h('b', {}, `#${c.id} · ${CASE_WORDS[c.type] || c.type}`, ' · ', who(c.targetId, c.targetTag)),
+        h('p', { class: 'muted small' }, c.reason || 'No reason given.', ' · by ', byWho(c), c.durationMs ? ` · ${lengthWords(c.durationMs)}` : '')),
+      h('span', { class: 'muted small', title: c.at ? when(c.at) : '' }, c.at ? agoText(c.at) : ''));
+  }
+  /** Thirty days of cases as bars, one per day, coloured by kind. */
+  function caseChart(days) {
+    const rows = days.slice().reverse();
+    const top = Math.max(1, ...rows.map((d) => Object.values(d.counts).reduce((a, b) => a + b, 0)));
+    const kinds = [...new Set(rows.flatMap((d) => Object.keys(d.counts)))];
+    return h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'The last 30 days'), h('span', { class: 'muted small' }, `Busiest day: ${top} case${top === 1 ? '' : 's'}`)),
+      h('div', { class: 'modchart', role: 'img', 'aria-label': 'Cases per day for the last 30 days' }, rows.map((d) => {
+        const total = Object.values(d.counts).reduce((a, b) => a + b, 0);
+        const day = new Date(Date.now() - d.ago * 864e5);
+        const tip = `${d.ago === 0 ? 'Today' : d.ago === 1 ? 'Yesterday' : day.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${total ? Object.entries(d.counts).map(([k, n]) => kindCount(n, k)).join(', ') : 'nothing'}`;
+        return h('div', { class: 'modbar', title: tip }, h('div', { class: 'modstack', style: `height:${Math.round((total / top) * 100)}%` },
+          Object.entries(d.counts).map(([k, n]) => h('i', { style: `flex:${n};background:${KIND_COLOUR[k] || 'var(--ink-3)'}` }))));
+      })),
+      h('div', { class: 'modaxis muted small' }, h('span', {}, '30 days ago'), h('span', {}, 'Today')),
+      kinds.length ? h('div', { class: 'modlegend' }, kinds.map((k) => h('span', {}, h('i', { style: `background:${KIND_COLOUR[k] || 'var(--ink-3)'}` }), CASE_WORDS[k] || k))) : h('p', { class: 'muted small' }, 'Nothing in the last 30 days.'));
   }
   function pageCases() {
-    S.caseType = S.caseType || 'all'; S.caseFind = S.caseFind || ''; S.caseMax = S.caseMax || 50;
-    return withServer('Moderation', 'Cases, and warn, time out, kick or ban', async (guild) => {
+    S.caseType = S.caseType || 'all'; S.caseFind = S.caseFind || ''; S.caseMax = S.caseMax || 200; S.casePeriod = S.casePeriod || 'all'; S.caseMod = S.caseMod || 'all';
+    return withServer('Moderation', 'Every warning, timeout, kick and ban, who did it and why', async (guild) => {
       const r = await call('cases', { guild, limit: S.caseMax });
-      await learn(guild, r.cases.flatMap((c) => [c.targetId, c.modId]));
-      const list = h('div', { class: 'list' });
-      const types = ['all', ...new Set(r.cases.map((c) => c.type))];
-      const paint = () => {
-        const q = S.caseFind.toLowerCase();
-        const shown = r.cases.filter((c) => (S.caseType === 'all' || c.type === S.caseType) && (!q || `${c.targetTag || ''} ${c.targetId} ${c.reason || ''} ${c.id}`.toLowerCase().includes(q)));
-        list.replaceChildren(...(shown.length ? shown.map(caseRow) : [h('p', { class: 'muted' }, r.cases.length ? 'No case matches that.' : 'No cases yet.')]));
+      const st = r.stats || { kinds: {}, days: [], mods: [], members: [], people: 0 };
+      await learn(guild, [...r.cases.flatMap((c) => [c.targetId, c.modId]), ...st.mods.map((m) => m.id).filter((x) => x !== 'auto'), ...st.members.map((m) => m.id)]);
+      const n = (v) => Number(v || 0).toLocaleString();
+      const sum = (per, kinds) => Object.entries(st.kinds).filter(([k]) => !kinds || kinds.includes(k)).reduce((a, [, v]) => a + (v[per] || 0), 0);
+      const form = actionForm(guild, () => draw());
+      const formBox = h('details', { class: 'card fold' }, h('summary', {}, h('h3', {}, 'Take an action'), h('span', { class: 'muted small' }, 'Warn, time out, kick or ban someone')), form);
+      const act = (what, id, name) => { formBox.open = true; form.fill(what, id, name); formBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+      const onlyMember = (id) => { S.caseFind = who(id); S.casePeriod = 'all'; S.caseType = 'all'; S.caseMod = 'all'; findBox.value = S.caseFind; periodSel.value = 'all'; kindSel.value = 'all'; modSel.value = 'all'; paint(); logCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
+      // the numbers
+      const tiles = h('div', { class: 'stats' },
+        h('div', { class: 'stat' }, h('b', {}, n(sum('day'))), h('span', {}, 'Cases today'), h('small', { class: 'hint' }, `${n(sum('week'))} this week`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month'))), h('span', {}, 'Last 30 days'), h('small', { class: 'hint' }, `${n(r.total)} in all`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month', ['warn']))), h('span', {}, 'Warnings (30 days)'), h('small', { class: 'hint' }, `${n(sum('all', ['warn']))} ever`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month', ['timeout']))), h('span', {}, 'Timeouts (30 days)'), h('small', { class: 'hint' }, `${n(sum('all', ['timeout']))} ever`)),
+        h('div', { class: 'stat' }, h('b', {}, n(sum('month', ['kick', 'ban']))), h('span', {}, 'Kicks and bans (30 days)'), h('small', { class: 'hint' }, `${n(sum('all', ['kick']))} kicks, ${n(sum('all', ['ban']))} bans ever`)),
+        h('div', { class: 'stat' }, h('b', {}, n((st.mods.find((m) => m.id === 'auto') || {}).count)), h('span', {}, 'By AutoMod (ever)'), h('small', { class: 'hint' }, `${n(st.people)} member${st.people === 1 ? ' has' : 's have'} a case`)));
+
+      // who acts, and who gets acted on
+      const modsCard = h('div', { class: 'card' }, h('h3', {}, 'Who moderates'),
+        st.mods.length ? h('div', { class: 'list ranks' }, st.mods.map((m, i) => h('button', { type: 'button', class: 'rankrow', title: 'Show only their cases', onclick: () => { S.caseMod = m.id; modSel.value = m.id; paint(); logCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
+          h('span', { class: 'muted' }, `${i + 1}.`), h('span', { class: 'grow' }, m.id === 'auto' ? 'AutoMod' : who(m.id), h('small', { class: 'muted' }, Object.entries(m.kinds).sort((a, b) => b[1] - a[1]).map(([k, c]) => kindCount(c, k)).join(' · '))),
+          h('b', {}, n(m.count)), h('small', { class: 'muted' }, agoText(m.last))))) : h('p', { class: 'muted' }, 'Nobody has moderated yet.'));
+      const membersCard = h('div', { class: 'card' }, h('h3', {}, 'Members with the most cases'),
+        st.members.length ? h('div', { class: 'list ranks' }, st.members.map((m, i) => h('button', { type: 'button', class: 'rankrow', 'data-member': m.id, title: 'Show their whole history', onclick: () => onlyMember(m.id) },
+          h('span', { class: 'muted' }, `${i + 1}.`), h('span', { class: 'grow' }, m.name || who(m.id), h('small', { class: 'muted' }, m.warnings ? `${m.warnings} warning${m.warnings === 1 ? '' : 's'} standing` : 'no warnings standing')),
+          h('b', {}, n(m.count)), h('small', { class: 'muted' }, agoText(m.last))))) : h('p', { class: 'muted' }, 'Nobody yet.'));
+
+      // the log itself
+      const body = h('div', { class: 'modlog' });
+      const count = h('span', { class: 'muted small' });
+      const findBox = h('input', { type: 'search', placeholder: 'Search member, reason, moderator or #number', 'aria-label': 'Search the log', value: S.caseFind, oninput: (e) => { S.caseFind = e.target.value; paint(); } });
+      const types = ['all', ...new Set([...Object.keys(st.kinds), ...r.cases.map((c) => c.type)])];
+      const kindSel = h('select', { 'aria-label': 'Kind of case', onchange: (e) => { S.caseType = e.target.value; paint(); } }, types.map((t) => h('option', { value: t, selected: t === S.caseType }, t === 'all' ? 'Every kind' : CASE_WORDS[t] || t)));
+      const mods = [...new Set(r.cases.map((c) => c.modId || 'auto'))];
+      const modSel = h('select', { 'aria-label': 'Moderator', onchange: (e) => { S.caseMod = e.target.value; paint(); } }, [h('option', { value: 'all' }, 'Every moderator'), ...mods.map((m) => h('option', { value: m, selected: m === S.caseMod }, m === 'auto' ? 'AutoMod' : who(m)))]);
+      const periodSel = h('select', { 'aria-label': 'When', onchange: (e) => { S.casePeriod = e.target.value; paint(); } }, PERIODS.map(([v, l]) => h('option', { value: v, selected: v === S.casePeriod }, l)));
+      let shown = [];
+      const exportCsv = () => {
+        const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+        const lines = [['Case', 'When', 'Kind', 'Member', 'Member ID', 'Reason', 'Moderator', 'Moderator ID', 'Length', 'Notes'].map(q).join(',')].concat(shown.map((c) => [c.id, c.at ? new Date(c.at).toISOString() : '', CASE_WORDS[c.type] || c.type, who(c.targetId, c.targetTag), c.targetId, c.reason, byWho(c), c.modId || '', lengthWords(c.durationMs) || '', c.notes || ''].map(q).join(',')));
+        const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+        const a = h('a', { href: url, download: `moderation-log-${new Date().toISOString().slice(0, 10)}.csv` }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast(`Saved ${shown.length} case${shown.length === 1 ? '' : 's'}.`);
       };
-      const find = h('input', { type: 'search', placeholder: 'Search by member, reason or number', 'aria-label': 'Search cases', value: S.caseFind, oninput: (e) => { S.caseFind = e.target.value; paint(); } });
-      const kind = h('select', { 'aria-label': 'Kind of case', onchange: (e) => { S.caseType = e.target.value; paint(); } }, types.map((t) => h('option', { value: t, selected: t === S.caseType }, t === 'all' ? 'All kinds' : CASE_WORDS[t] || t)));
+      const historyOf = (id) => r.cases.filter((c) => c.targetId === id);
+      const detail = (c) => {
+        const past = historyOf(c.targetId);
+        const fact = (label, value) => (value == null || value === '' ? null : h('div', {}, h('span', { class: 'muted small' }, label), h('b', {}, value)));
+        return h('div', { class: 'casedetail' },
+          h('p', { class: 'casereason' }, c.reason || 'No reason given.'),
+          h('div', { class: 'facts' }, fact('When', c.at ? when(c.at) : null), fact('Member', who(c.targetId, c.targetTag)), fact('By', byWho(c)), fact('Length', lengthWords(c.durationMs)), fact('Notes', c.notes),
+            fact('Their record', `${past.length} case${past.length === 1 ? '' : 's'}: ${Object.entries(past.reduce((a, x) => { a[x.type] = (a[x.type] || 0) + 1; return a; }, {})).map(([k, v]) => kindCount(v, k)).join(', ')}`),
+            fact('First case', past.length ? when(past[past.length - 1].at) : null)),
+          h('div', { class: 'btns' },
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => onlyMember(c.targetId) }, 'All their cases'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => act('warn', c.targetId, who(c.targetId, c.targetTag)) }, 'Warn'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => act('timeout', c.targetId, who(c.targetId, c.targetTag)) }, 'Time out'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => act('kick', c.targetId, who(c.targetId, c.targetTag)) }, 'Kick'),
+            h('button', { class: 'btn quiet small danger', type: 'button', onclick: () => act('ban', c.targetId, who(c.targetId, c.targetTag)) }, 'Ban'),
+            h('button', { class: 'btn quiet small', type: 'button', onclick: () => window.BGLMenu.copy(c.targetId, 'Member ID copied.') }, 'Copy member ID')));
+      };
+      const open = new Set();
+      function paint() {
+        const q = S.caseFind.trim().toLowerCase().replace(/^#/, '');
+        const since = Date.now() - PERIODS.find((p) => p[0] === S.casePeriod)[2];
+        shown = r.cases.filter((c) => (S.caseType === 'all' || c.type === S.caseType) && (S.caseMod === 'all' || (c.modId || 'auto') === S.caseMod) && (!c.at || c.at >= since)
+          && (!q || String(c.id) === q || `${who(c.targetId, c.targetTag)} ${c.targetId} ${c.reason || ''} ${byWho(c)} ${CASE_WORDS[c.type] || c.type} ${c.notes || ''}`.toLowerCase().includes(q)));
+        count.textContent = `${shown.length} of ${r.cases.length} shown${r.total > r.cases.length ? ` (${r.total} in all)` : ''}`;
+        if (!shown.length) { body.replaceChildren(h('p', { class: 'muted' }, r.cases.length ? 'No case matches that.' : 'No cases yet. Nothing to worry about.')); return; }
+        body.replaceChildren(h('div', { class: 'logrow loghead', 'aria-hidden': 'true' }, ['When', '#', 'What', 'Member', 'Reason', 'By'].map((x) => h('span', {}, x))),
+          ...shown.map((c) => {
+            const row = h('div', { class: 'logrow' + (open.has(c.id) ? ' open' : ''), role: 'button', tabindex: '0', 'aria-expanded': String(open.has(c.id)), 'data-case': c.id, 'data-member': c.targetId || '',
+              onclick: () => { if (open.has(c.id)) open.delete(c.id); else open.add(c.id); paint(); },
+              onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } },
+              h('span', { class: 'lwhen', title: c.at ? when(c.at) : '' }, c.at ? agoText(c.at) : '-'), h('span', { class: 'muted' }, `#${c.id}`), h('span', {}, kindPill(c.type)),
+              h('b', { class: 'lwho' }, who(c.targetId, c.targetTag)), h('span', { class: 'lwhy' }, c.reason || h('i', { class: 'muted' }, 'No reason given'), c.durationMs ? h('span', { class: 'muted' }, ` · ${lengthWords(c.durationMs)}`) : null),
+              h('span', { class: 'muted lby' }, byWho(c)));
+            return open.has(c.id) ? [row, detail(c)] : row;
+          }));
+      }
       paint();
-      return [actionForm(guild, () => draw()), h('div', { class: 'card' }, h('div', { class: 'tools' }, find, kind), list,
-        r.total > r.cases.length ? h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => { S.caseMax += 100; draw(); } }, `Show more (${r.cases.length} of ${r.total})`)) : h('p', { class: 'muted small' }, `${r.total} in all.`))];
+      // the right-click menu (menu.js) asks here what can be done with a case or a member
+      S.caseMenu = (el) => {
+        const c = el.dataset.case ? r.cases.find((x) => String(x.id) === el.dataset.case) : null;
+        const id = el.dataset.member || (c && c.targetId);
+        if (!id) return [];
+        const name = who(id, c && c.targetTag);
+        return [{ heading: c ? `Case #${c.id} · ${name}` : name },
+          { label: 'All their cases', icon: 'list', run: () => onlyMember(id) },
+          { label: 'Warn…', icon: 'help', run: () => act('warn', id, name) }, { label: 'Time out…', icon: 'stop', run: () => act('timeout', id, name) },
+          { label: 'Kick…', icon: 'back', run: () => act('kick', id, name) }, { label: 'Ban…', icon: 'lock', danger: true, run: () => act('ban', id, name) },
+          { label: 'Copy member ID', icon: 'copy', run: () => window.BGLMenu.copy(id, 'Member ID copied.') },
+          ...(c ? [{ label: 'Copy case', icon: 'copy', run: () => window.BGLMenu.copy(`Case #${c.id} · ${CASE_WORDS[c.type] || c.type} · ${name} · ${c.reason || 'No reason given'} · by ${byWho(c)}${c.at ? ` · ${when(c.at)}` : ''}`, 'Case copied.') }] : [])];
+      };
+      const logCard = h('div', { class: 'card' },
+        h('div', { class: 'row' }, h('h3', {}, 'Moderation log'), count),
+        h('div', { class: 'tools wrap' }, findBox, kindSel, modSel, periodSel, h('button', { class: 'btn quiet', type: 'button', onclick: exportCsv }, 'Save as spreadsheet')),
+        h('p', { class: 'muted small' }, 'Click a case for everything about it, or right-click it to act on the member.'),
+        body,
+        r.total > r.cases.length ? h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => { S.caseMax = Math.min(500, S.caseMax + 200); draw(); } }, `Load more (${r.cases.length} of ${r.total})`)) : null);
+      return [tiles, caseChart(st.days.length ? st.days : Array.from({ length: 30 }, (_, ago) => ({ ago, counts: {} }))), h('div', { class: 'two' }, modsCard, membersCard), logCard, formBox];
     });
   }
 
@@ -458,6 +713,61 @@
     const a = h('a', { href: url, download: r.file });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+  const SEV_COLOUR = { urgent: 'var(--bad)', high: '#f08a4b', normal: 'var(--accent)', low: 'var(--good)' };
+  /** Everything worth knowing about a server's tickets, worked out from the newest 500: the numbers, how quickly
+   * staff answer and close, what they are about, how they end, who handles them and who opens them. */
+  function ticketNumbers(r) {
+    const T = r.tickets, now = Date.now(), DAY = 864e5;
+    const n = (v) => Number(v || 0).toLocaleString();
+    const inside = (t, from, to) => t >= now - from && t < now - to;
+    const open = T.filter((t) => t.open), closed = T.filter((t) => !t.open && t.closed_at);
+    const opened7 = T.filter((t) => inside(t.opened_at, 7 * DAY, 0)).length, opened14 = T.filter((t) => inside(t.opened_at, 14 * DAY, 7 * DAY)).length;
+    const closed7 = closed.filter((t) => inside(t.closed_at, 7 * DAY, 0)).length;
+    const reply = median(T.map((t) => t.first_response_ms)), toClose = median(closed.map((t) => t.closed_at - t.opened_at));
+    const unanswered = open.filter((t) => t.first_response_ms == null).length;
+    const answered = T.filter((t) => t.first_response_ms != null);
+    const fast = answered.filter((t) => t.first_response_ms <= 15 * 6e4).length;
+    const long = (ms) => (ms == null ? '—' : ms < 36e5 ? span(ms) : ms < 2 * DAY ? `${Math.round(ms / 36e5)} h` : `${Math.round(ms / DAY)} days`);
+    const tiles = h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('b', {}, n(r.open)), h('span', {}, 'Open now'), h('small', { class: 'hint' }, `${n(open.filter((t) => !t.claimed_by).length)} not claimed`)),
+      h('div', { class: 'stat' }, h('b', {}, n(opened7)), h('span', {}, 'Opened this week'), h('small', { class: 'hint' }, versus(opened7, opened14) || ' ')),
+      h('div', { class: 'stat' }, h('b', {}, n(closed7)), h('span', {}, 'Closed this week'), h('small', { class: 'hint' }, `${n(r.total)} tickets in all`)),
+      h('div', { class: 'stat' }, h('b', {}, long(reply)), h('span', {}, 'Typical first reply'), h('small', { class: 'hint' }, answered.length ? `${Math.round((fast / answered.length) * 100)}% answered within 15 min` : 'no replies yet')),
+      h('div', { class: 'stat' }, h('b', {}, long(toClose)), h('span', {}, 'Typical time to close'), h('small', { class: 'hint' }, `from ${n(closed.length)} closed`)),
+      h('div', { class: 'stat' }, h('b', { class: unanswered ? 'bad' : '' }, n(unanswered)), h('span', {}, 'Open with no reply'), h('small', { class: 'hint' }, unanswered ? 'someone is waiting' : 'everyone has an answer')));
+    // 30 days: opened each day
+    const bits = Array.from({ length: 30 }, (_, i) => { const ago = 29 - i; const start = new Date(now - ago * DAY); start.setHours(0, 0, 0, 0); const end = start.getTime() + DAY;
+      const o = T.filter((t) => t.opened_at >= start.getTime() && t.opened_at < end).length; const c = closed.filter((t) => t.closed_at >= start.getTime() && t.closed_at < end).length;
+      return { value: o, tip: `${ago === 0 ? 'Today' : ago === 1 ? 'Yesterday' : start.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}: ${o} opened, ${c} closed` }; });
+    const count = (key) => { const m = new Map(); for (const t of T) { const k = key(t); if (k) m.set(k, (m.get(k) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+    const cats = count((t) => t.category_label || t.category);
+    const sevs = ['urgent', 'high', 'normal', 'low'].map((id) => { const one = T.find((t) => t.severity.id === id); return [one ? one.severity.label.replace(/^\S+\s/, '') : id, T.filter((t) => t.severity.id === id).length, SEV_COLOUR[id]]; }).filter((x) => x[1]);
+    const ends = count((t) => (t.open ? null : CLOSED[t.kind] || 'Closed'));
+    // staff: who claims, who closes, and how fast the tickets they had were first answered
+    const staff = new Map();
+    const one = (p) => { const k = p.name || p.id; if (!staff.has(k)) staff.set(k, { name: k, claimed: 0, closed: 0, open: 0, replies: [] }); return staff.get(k); };
+    for (const t of T) {
+      if (t.claimed_by) { const s = one(t.claimed_by); s.claimed++; if (t.open) s.open++; if (t.first_response_ms != null) s.replies.push(t.first_response_ms); }
+      if (t.closed_by) one(t.closed_by).closed++;
+    }
+    const staffRows = [...staff.values()].sort((a, b) => b.claimed + b.closed - (a.claimed + a.closed)).slice(0, 10);
+    const openers = count((t) => (t.opener && t.opener.name) || null).slice(0, 8);
+    const busy = Array.from({ length: 24 }, (_, hr) => T.filter((t) => new Date(t.opened_at).getHours() === hr).length);
+    const peak = busy.indexOf(Math.max(...busy));
+    const table = staffRows.length ? h('div', { class: 'stafftable' }, h('div', { class: 'staffrow head muted small' }, h('span', {}, 'Staff'), h('span', {}, 'Claimed'), h('span', {}, 'Closed'), h('span', {}, 'Has open'), h('span', {}, 'Typical first reply')),
+      staffRows.map((s) => h('div', { class: 'staffrow' }, h('b', {}, s.name), h('span', {}, n(s.claimed)), h('span', {}, n(s.closed)), h('span', {}, n(s.open)), h('span', {}, long(median(s.replies)))))) : h('p', { class: 'muted' }, 'Nobody has claimed or closed a ticket yet.');
+    return [tiles,
+      h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Opened each day'), h('span', { class: 'muted small' }, `${n(bits.reduce((a, b) => a + b.value, 0))} in 30 days`)), barChart(bits, 'Tickets opened each day, last 30 days', ['30 days ago', 'Today'])),
+      h('div', { class: 'two' },
+        h('div', { class: 'card' }, h('h3', {}, 'What they are about'), spread(cats, 'tickets')),
+        h('div', { class: 'card' }, h('h3', {}, 'How urgent'), spread(sevs, 'tickets'))),
+      h('div', { class: 'two' },
+        h('div', { class: 'card' }, h('h3', {}, 'Staff'), table, h('h3', {}, 'How they ended'), spread(ends, 'tickets')),
+        h('div', { class: 'card' }, h('h3', {}, 'Who opens the most'), openers.length ? h('div', { class: 'list' }, openers.map(([name, c], i) => h('div', {}, h('span', {}, `${i + 1}. ${name}`), h('b', {}, plural(c, 'ticket', 'tickets'))))) : h('p', { class: 'muted' }, 'Nobody yet.'),
+          h('h3', {}, 'When tickets come in'), barChart(busy.map((v, hr) => ({ value: v, tip: `${HOUR_WORD(hr)}: ${plural(v, 'ticket', 'tickets')}`, colour: hr === peak && v ? 'var(--good)' : null })), 'Tickets by hour of the day', [HOUR_WORD(0), HOUR_WORD(12), HOUR_WORD(23)]),
+          T.length ? h('p', { class: 'muted small' }, `Most come in around ${HOUR_WORD(peak)}.`) : null)),
+      T.length < r.total ? h('p', { class: 'muted small' }, `Worked out from the newest ${n(T.length)} of ${n(r.total)} tickets.`) : null];
   }
   function pageTickets() {
     S.tkShow = S.tkShow || 'all';
@@ -501,7 +811,7 @@
         };
         slot.replaceChildren(box);
         await draw();
-        whileShown(box, 5000, async () => { if (box.querySelector('textarea:focus')) return; await draw(); });
+        whileShown(box, 5000, async () => { if (box.querySelector('input:focus, textarea:focus, select:focus')) return; await draw(); });
       };
       // closing asks how it ended (kept in the staff log)
       const closeAsk = (t, then) => {
@@ -531,7 +841,7 @@
       const find = h('input', { type: 'search', placeholder: 'Search every ticket: words anyone said, a number, a name', 'aria-label': 'Search tickets', value: S.tkFind || '', oninput: (e) => { S.tkFind = e.target.value.trim(); clearTimeout(S.tkT); S.tkT = setTimeout(() => reload().catch((er) => toast(er.message || String(er), true)), 300); } });
       const seg = h('div', { class: 'segs', role: 'group', 'aria-label': 'Show' }, [['all', 'All'], ['open', 'Open'], ['closed', 'Closed']].map(([k, l]) => h('button', { class: 'seg', type: 'button', 'aria-pressed': String(S.tkShow === k), onclick: (e) => { S.tkShow = k; for (const b of e.currentTarget.parentNode.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); paint(); } }, l)));
       paint();
-      return [h('div', { class: 'stats' }, h('div', { class: 'stat' }, h('b', {}, r.open.toLocaleString()), h('span', {}, 'Open now')), h('div', { class: 'stat' }, h('b', {}, r.total.toLocaleString()), h('span', {}, 'In all'))),
+      return [...ticketNumbers(S.tkFind ? (await call('tickets', { guild, limit: 500 })) : r.total > r.tickets.length ? await call('tickets', { guild, limit: 500 }) : r),
         slot, h('div', { class: 'card' }, h('div', { class: 'tools' }, find, seg), list, r.total > r.tickets.length ? h('p', { class: 'muted small' }, `Showing the newest ${r.tickets.length} of ${r.total}.`) : null)];
     });
   }
@@ -750,12 +1060,12 @@
 
 
   // ---- Economy: the treasury, taxes and the second currency
-  const KIND_WORDS = { 'tax:pay': 'Tax on payments', 'tax:income': 'Tax on daily and work', 'tax:withdraw': 'Bank withdrawal fees', 'tax:winnings': 'Tax on game winnings', shop: 'Shop sales', 'fee:exchange': 'Exchange fees', grant: 'Paid out', donation: 'Gifts from members' };
+  const KIND_WORDS = { 'tax:pay': 'Tax on payments', 'tax:income': 'Tax on daily and work', 'tax:withdraw': 'Bank withdrawal fees', 'tax:winnings': 'Tax on game winnings', shop: 'Shop sales', 'fee:exchange': 'Exchange fees', grant: 'Paid out', donation: 'Gifts from members', staff: 'Added by staff' };
   function pageEconomy() {
-    return withServer('Economy', 'The treasury, taxes and the second currency', async (guild) => {
+    return withServer('Economy', 'The money members hold, the treasury, taxes and the second currency', async (guild) => {
       const box = h('div', { class: 'stack big' });
       let v = await call('economy', { guild });
-      const know = () => learn(guild, [...v.log.map((e) => e.user), ...v.top_gems.map((g) => g.user)]);
+      const know = () => learn(guild, [...v.log.map((e) => e.user), ...v.top_gems.map((g) => g.user), ...(v.richest || []).map((r) => r.user)]);
       await know();
       const reload = async () => { v = await call('economy', { guild }); await know(); paint(); };
       const n = (x) => Number(x || 0).toLocaleString();
@@ -777,15 +1087,51 @@
         return h('div', { class: 'card' }, h('h3', {}, 'Pay out from the treasury'), h('p', { class: 'muted small' }, 'Prizes, event rewards, refunds. The reason is kept in the record. It never pays more than it has.'),
           h('div', { class: 'grid2' }, f('Member', pick.el), f('Amount', amount)), f('Reason', reason), h('div', { class: 'btns' }, go));
       }
+      function addCoins() {
+        const amount = h('input', { type: 'text', placeholder: 'e.g. 50000' });
+        const note = h('input', { type: 'text', maxlength: 100, placeholder: 'What it is for (optional)' });
+        const go = h('button', { class: 'btn', type: 'button' }, 'Add to the treasury');
+        go.addEventListener('click', () => busy(go, async () => {
+          const total = await call('treasury_add', { guild, amount: Number(String(amount.value).replace(/[, ]/g, '')) || 0, note: note.value });
+          toast(`Added. The treasury has ${n(total)}.`); amount.value = ''; note.value = ''; await reload();
+        }));
+        const f = (l, el) => h('div', { class: 'field' }, h('label', {}, l), el);
+        return h('div', { class: 'card' }, h('h3', {}, 'Add coins to the treasury'), h('p', { class: 'muted small' }, 'Puts new coins in the treasury, for prizes and rewards you pay out later. It shows in the record as added by staff.'),
+          h('div', { class: 'grid2' }, f('Amount', amount), f('Note', note)), h('div', { class: 'btns' }, go));
+      }
+      const net = (rows) => (rows || []).reduce((a, [, x]) => a + x, 0);
+      /** All the money members hold: wallets and banks, the typical member, how it is spread and the richest ten. */
+      function moneyNumbers() {
+        const m = v.supply;
+        if (!m) return null;
+        const all = m.coins + m.bank;
+        const share = all ? Math.round((m.top10 / all) * 100) : 0;
+        const avg = m.holders ? Math.round(all / m.holders) : 0;
+        const BANDS = ['Under 100', '100 to 999', '1,000 to 9,999', '10,000 to 99,999', '100,000 and up'];
+        return h('div', { class: 'stack big' },
+          h('div', { class: 'stats' },
+            h('div', { class: 'stat' }, h('b', {}, n(all)), h('span', {}, 'Money members hold'), h('small', { class: 'hint' }, `${n(m.coins)} in wallets, ${n(m.bank)} in banks`)),
+            h('div', { class: 'stat' }, h('b', {}, n(m.median)), h('span', {}, 'Typical member has'), h('small', { class: 'hint' }, `the average is ${n(avg)}`)),
+            h('div', { class: 'stat' }, h('b', {}, `${share}%`), h('span', {}, 'Held by the richest 10'), h('small', { class: 'hint' }, share > 60 ? 'a few hold most of it' : share > 30 ? 'fairly spread' : 'well spread')),
+            h('div', { class: 'stat' }, h('b', {}, n(m.earned)), h('span', {}, 'Earned in all'), h('small', { class: 'hint' }, 'daily, work and games, ever')),
+            h('div', { class: 'stat' }, h('b', {}, n(m.holders)), h('span', {}, 'Members with money'), h('small', { class: 'hint' }, `of ${n(m.wallets)} wallets`))),
+          h('div', { class: 'two' },
+            board('Richest', v.richest || [], (r) => coin(r.coins)),
+            h('div', { class: 'card' }, h('h3', {}, 'How much members have'), spread(BANDS.map((b, i) => [b, m.bands[i] || 0]), 'members'),
+              h('p', { class: 'muted small' }, 'Wallet and bank together.'),
+              h('h3', {}, 'Where it is kept'), spread([['In wallets', m.coins, 'var(--accent)'], ['In banks', m.bank, 'var(--good)']], 'coins'),
+              h('h3', {}, 'Treasury next to members'), spread([['Members hold', all, 'var(--accent)'], ['Treasury', v.treasury.balance, 'var(--warn)']], 'coins'))));
+      }
       function paint() {
         const t = v.treasury;
         const kinds = (rows) => rows.length ? h('div', { class: 'list' }, rows.map(([k, x]) => h('div', {}, h('span', {}, KIND_WORDS[k] || k), h('b', {}, `${x < 0 ? '−' : '+'}${n(Math.abs(x))}`)))) : h('p', { class: 'muted' }, 'Nothing yet.');
         box.replaceChildren(
           !v.on ? h('div', { class: 'card note' }, 'Money is off in this server. Turn it on in Modules to use any of this.') : null,
+          moneyNumbers(),
           h('div', { class: 'stats' },
-            h('div', { class: 'stat' }, h('b', {}, n(t.balance)), h('span', {}, 'In the treasury')), h('div', { class: 'stat' }, h('b', {}, n(t.collected)), h('span', {}, 'Collected in all')),
-            h('div', { class: 'stat' }, h('b', {}, n(t.paid_out)), h('span', {}, 'Paid out')), h('div', { class: 'stat' }, h('b', {}, n(v.wallets)), h('span', {}, 'Wallets'))),
-          h('div', { class: 'two' }, h('div', { class: 'card' }, h('h3', {}, 'Last 7 days'), kinds(v.week)), h('div', { class: 'card' }, h('h3', {}, 'Last 30 days'), kinds(v.month))),
+            h('div', { class: 'stat' }, h('b', {}, n(t.balance)), h('span', {}, 'In the treasury'), h('small', { class: 'hint' }, `${signed(net(v.week))} this week`)), h('div', { class: 'stat' }, h('b', {}, n(t.collected)), h('span', {}, 'Collected in all'), h('small', { class: 'hint' }, 'taxes, fees, sales, gifts')),
+            h('div', { class: 'stat' }, h('b', {}, n(t.paid_out)), h('span', {}, 'Paid out'), h('small', { class: 'hint' }, 'prizes and rewards')), h('div', { class: 'stat' }, h('b', {}, signed(net(v.month))), h('span', {}, 'Treasury, 30 days'), h('small', { class: 'hint' }, 'in, less what went out'))),
+          h('div', { class: 'two' }, h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Treasury, last 7 days'), h('b', {}, signed(net(v.week)))), kinds(v.week)), h('div', { class: 'card' }, h('div', { class: 'row' }, h('h3', {}, 'Treasury, last 30 days'), h('b', {}, signed(net(v.month)))), kinds(v.month))),
           h('div', { class: 'card' }, h('h3', {}, 'Taxes'), h('p', { class: 'muted small' }, 'All start at 0, so nothing changes until you choose. Taxes come off what members earn or move and go to the treasury.'),
             h('div', { class: 'grid2' }, num('taxPay', 'Payments between members (%)', 'Comes off what the receiver gets'), num('taxIncome', 'Daily and work rewards (%)'), num('taxWithdraw', 'Bank withdrawals (%)'), num('taxWinnings', 'Game winnings (%)', 'Only on the profit, never the stake')),
             toggle('shopToTreasury', 'Shop sales go to the treasury (otherwise the coins disappear)')),
@@ -794,7 +1140,7 @@
             v.rates.gemsEnabled ? h('div', { class: 'grid2' }, num('exchangeRate', `${v.rates.currencyName || 'Coins'} for one ${v.rates.gemName || 'gem'}`, null, 1000000), num('exchangeFee', 'Exchange fee, either way (%)', 'Goes to the treasury')) : null,
             v.rates.gemsEnabled && v.top_gems.length ? h('div', { class: 'list' }, v.top_gems.map((g, i) => h('div', {}, h('span', {}, `${i + 1}. ${who(g.user)}`), h('b', {}, `${n(g.gems)} ${v.rates.gemEmoji || ''}`)))) : null,
             h('p', { class: 'muted small' }, 'The name and emoji are in Modules > Money > Settings.')),
-          give(),
+          addCoins(), give(),
           h('div', { class: 'card' }, h('h3', {}, 'Record'), v.log.length ? h('div', { class: 'list' }, v.log.map((e) => h('div', { class: 'case' }, h('div', { class: 'text' }, h('b', {}, `${e.delta < 0 ? '−' : '+'}${n(Math.abs(e.delta))} · ${KIND_WORDS[e.kind] || e.kind}`), h('p', { class: 'muted small' }, [e.user ? who(e.user) : null, e.note].filter(Boolean).join(' · ') || ' ')), h('span', { class: 'muted small' }, when(e.at))))) : h('p', { class: 'muted' }, 'No taxes or fees collected yet.')));
       }
       paint();
@@ -843,6 +1189,107 @@
   }
 
 
+  // ---- Images: every picture uploaded for the bot, kept in the server's gallery so it is saved and can be used again
+  function pageImages() {
+    return withServer('Images', 'Pictures saved for the bot, ready to use again', async (guild) => {
+      const box = h('div', { class: 'stack big' });
+      const draw = async () => {
+        const v = await call('gallery_view', { guild });
+        const slotName = Object.fromEntries(v.slots);
+        const input = h('input', { type: 'file', multiple: true, accept: 'image/png,image/jpeg,image/gif,image/webp', class: 'hidden-file', 'aria-label': 'Add pictures', onchange: async () => {
+          const files = [...input.files]; input.value = '';
+          let ok = 0; const bad = [];
+          for (const f of files) { try { const pic = await readPicture(f); await call('gallery_add', { guild, name: pic.name, data: pic.data }); ok++; } catch (e) { bad.push(`${f.name}: ${e.message || e}`); } }
+          if (ok) toast(ok === 1 ? 'Picture saved to the gallery.' : `${ok} pictures saved to the gallery.`);
+          if (bad.length) toast(bad.join(' · '), true);
+          await draw();
+        } });
+        const add = h('div', { class: 'row' }, h('div', {}, h('b', {}, `${v.pictures.length} of ${v.max} pictures`), h('p', { class: 'muted small' }, 'PNG, JPG, GIF or WebP, each under 8 MB. Pick as many as you like.')),
+          h('div', { class: 'btns' }, input, h('button', { class: 'btn', type: 'button', onclick: () => input.click() }, 'Add pictures')));
+        const using = v.slots.map(([id, label]) => [label, v.pictures.find((p) => p.uses.includes(id))]);
+        const where = h('div', { class: 'card' }, h('h3', {}, 'Where pictures are used'), h('div', { class: 'list' }, using.map(([label, p]) => h('div', {}, h('span', {}, label), h('span', { class: 'muted' }, p ? p.name : 'Nothing yet')))),
+          h('p', { class: 'muted small' }, 'Pick a picture below and choose where to use it. Welcome and goodbye pictures can also be designed on the Welcome module page. Characters have their own pictures on the Critters page.'));
+        const tile = (p) => {
+          const menu = h('select', { 'aria-label': `Use ${p.name} for`, onchange: async (e) => {
+            const slot = e.target.value; e.target.value = '';
+            if (!slot) return;
+            try { await call('gallery_use', { guild, id: p.id, slot }); toast(`${p.name} is now the ${slotName[slot].toLowerCase()}.`); await draw(); } catch (er) { toast(er.message || String(er), true); }
+          } }, h('option', { value: '' }, 'Use for…'), v.slots.map(([id, label]) => h('option', { value: id }, label)));
+          return h('div', { class: 'gtile' },
+            p.preview ? h('img', { src: p.preview, alt: p.name, loading: 'lazy' }) : h('div', { class: 'gnone muted' }, 'No preview'),
+            h('b', { class: 'gname', title: p.name }, p.name),
+            h('span', { class: 'muted small' }, `${p.size >= 1048576 ? (p.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(p.size / 1024)) + ' KB'} · ${when(p.at)}`),
+            p.uses.length ? h('div', { class: 'tags' }, p.uses.map((u) => h('span', { class: 'tag' }, slotName[u]))) : null,
+            h('div', { class: 'btns' }, menu,
+              h('button', { class: 'btn quiet small', type: 'button', onclick: (e) => busy(e.target, async () => {
+                const name = prompt('New name for this picture', p.name);
+                if (name === null || !name.trim()) return;
+                await call('gallery_rename', { guild, id: p.id, name }); await draw();
+              }) }, 'Rename'),
+              h('button', { class: 'btn quiet small', type: 'button', onclick: (e) => busy(e.target, async () => {
+                if (!confirm(`Delete ${p.name} from the gallery? Anywhere it is already in use keeps its own copy.`)) return;
+                await call('gallery_remove', { guild, id: p.id }); toast('Picture deleted.'); await draw();
+              }) }, 'Delete')));
+        };
+        box.replaceChildren(h('div', { class: 'card' }, add),
+          v.pictures.length ? h('div', { class: 'ggrid' }, [...v.pictures].reverse().map(tile)) : h('div', { class: 'card empty' }, h('h2', {}, 'No pictures yet'), h('p', { class: 'muted' }, 'Add pictures here, or with /images add in Discord. Everything you upload for the bot is kept here.')),
+          where);
+      };
+      await draw();
+      return [box];
+    });
+  }
+  // ---- Server setup: build a layout's roles and channels and connect them to the bot, or check a server that is already set up
+  function pageSetup() {
+    return withServer('Server setup', 'Build the roles and channels a server needs, or tidy the one you have', async (guild) => {
+      const box = h('div', { class: 'stack big' });
+      const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+      // the work happens in Discord and takes a little while: ask, then look every second or two for the answer
+      const run = async (btn, step, what, doneWhen, say) => {
+        const before = await call('setup_view', { guild });
+        await call('setup_run', { guild, step, what });
+        toast(say);
+        for (let k = 0; k < 40; k++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const v = await call('setup_view', { guild });
+          if (doneWhen(v, before)) { await draw(v); return v; }
+        }
+        toast('Still working. Look again in a moment.', true);
+        await draw();
+      };
+      const sel = { id: null };
+      const draw = async (given) => {
+        const v = given || await call('setup_view', { guild });
+        const scan = v.scan; const last = v.last;
+        const check = h('div', { class: 'card' }, h('div', { class: 'row' }, h('div', {}, h('h2', {}, 'Check my server'),
+            h('p', { class: 'muted small' }, scan ? `Last checked ${ago(scan.at)}: ${scan.channels} channels, ${scan.roles} roles.` : 'Looks for clutter, risky permissions and channels the bot is not using. Nothing changes until you press a Fix button.')),
+          h('div', { class: 'btns' }, h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.target, () => run(e.target, 'scan', '', (n, b) => n.scan && (!b.scan || n.scan.at > b.scan.at), 'Checking your server…')) }, scan ? 'Check again' : 'Check now'))),
+          scan ? (scan.findings.length ? h('div', { class: 'stack' }, scan.findings.map((f) => h('div', { class: 'finding ' + f.level },
+              h('div', {}, h('b', {}, (f.level === 'warn' ? '⚠️ ' : '💡 ') + f.title), h('p', { class: 'muted small' }, f.detail)),
+              f.fix ? h('button', { class: 'btn quiet small', type: 'button', onclick: (e) => busy(e.target, async () => {
+                const label = (v.fixes.find((x) => x[0] === f.fix) || [])[1] || 'Fix';
+                if (!confirm(`${label}?\n\n${f.title}\n${f.detail}`)) return;
+                await run(e.target, 'fix', f.fix, (n, b) => n.last && (!b.last || n.last.at > b.last.at), 'Working on it…');
+              }) }, (v.fixes.find((x) => x[0] === f.fix) || [])[1] || 'Fix') : null))) : h('p', { class: 'ok' }, '✅ Nothing to tidy. Your channels, roles and bot connections look good.')) : null);
+        const pick = (l) => h('button', { type: 'button', class: 'layout' + (sel.id === l.id ? ' on' : ''), 'aria-pressed': String(sel.id === l.id), onclick: () => { sel.id = l.id; draw(v); } },
+          h('b', {}, l.name), h('span', { class: 'muted small' }, l.about), h('span', { class: 'muted small' }, `${l.roles.length} roles · ${l.channels} channels`));
+        const chosen = v.layouts.find((l) => l.id === sel.id);
+        const tree = chosen ? h('div', { class: 'tree' }, chosen.tree.map((c) => h('div', {}, h('b', {}, (c.private ? '🔒 ' : '') + c.name), h('ul', {}, c.channels.map((ch) => h('li', {}, (ch.voice ? '🔊 ' : '# ') + ch.name, ch.private ? ' 🔒' : ch.read_only ? ' (read only)' : ''))))),
+          h('p', { class: 'muted small' }, `Roles: ${chosen.roles.join(', ')}. Turns on: ${chosen.modules.join(', ')}. Connects the welcome, log, ticket and suggestion channels, posts the rules and the ticket buttons.`)) : null;
+        const build = h('div', { class: 'card' }, h('h2', {}, 'Build a layout'),
+          h('p', { class: 'muted small' }, 'Pick one, look at what it adds, then build. It only adds what is missing and never changes or deletes anything you already have. The bot needs Manage Roles and Manage Channels.'),
+          h('div', { class: 'layouts' }, v.layouts.map(pick)), tree,
+          chosen ? h('div', { class: 'btns' }, h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.target, async () => {
+            if (!confirm(`Build the ${chosen.name} layout? It adds the roles and channels this server is missing, and connects them to the bot.`)) return;
+            await run(e.target, 'build', chosen.id, (n, b) => n.last && (!b.last || n.last.at > b.last.at), 'Building… this takes up to a minute.');
+          }) }, `Build the ${chosen.name} layout`)) : h('p', { class: 'muted small' }, 'Pick a layout to see what it would add.'));
+        const result = last ? h('div', { class: 'card' }, h('h3', {}, 'Last result'), h('p', {}, last.text), h('p', { class: 'muted small' }, `${last.what === 'build' ? 'Build' : last.what === 'error' ? 'Problem' : 'Fix'} · ${ago(last.at)}`)) : null;
+        box.replaceChildren(check, build, result);
+      };
+      await draw();
+      return [box];
+    });
+  }
   // ---- List pages (giveaways, custom commands, backups, top inviters, counting): what Good Boy 3's dashboard showed
   const LISTS = [['giveaways', 'Giveaways'], ['commands', 'Custom commands'], ['inviters', 'Top inviters'], ['counting', 'Counting'], ['backups', 'Backups']];
   function pageLists() {
@@ -1160,9 +1607,18 @@
   }
 
   // Modules as Good Boy 3's dashboard shows them: a grid of app tiles in groups, each opening its own page.
-  const MOD_CAT = { moderation: 0, support: 0, community: 1, 'member-management': 1, economy: 2, fun: 2, counting: 2, giveaways: 2, tags: 3, roles: 3, music: 4, reminders: 5, timezones: 5, altwatch: 0, plural: 1 };
-  const MOD_CATS = ['Safety & moderation', 'Community & levels', 'Fun & games', 'Messages & roles', 'Voice', 'Tools'];
-  const MOD_ICON = { moderation: '🛡️', support: '🎫', community: '⭐', 'member-management': '👋', economy: '🪙', fun: '🎲', counting: '🔢', giveaways: '🎉', tags: '📝', roles: '🏷️', music: '🎵', reminders: '⏰', timezones: '🕒', altwatch: '🕵️', plural: '🧩' };
+  const MOD_CATS = ['Safety & support', 'Welcome & members', 'Levels & stats', 'Money', 'Games & fun', 'Social & profiles', 'Roles & messages', 'Music & voice', 'Connections', 'Tools & backup'];
+  const MOD_CAT = { moderation: 0, altwatch: 0, modmail: 0, support: 0,
+    'member-management': 1, invites: 1, deadchat: 1,
+    community: 2, stats: 2, achievements: 2,
+    economy: 3,
+    fun: 4, games: 4, critters: 4, counting: 4, roleplay: 4, giveaways: 4,
+    eclipseid: 5, family: 5, plural: 5, partyfinder: 5, quotes: 5, timezones: 5,
+    roles: 6, tags: 6, messages: 6, engagement: 6, botnews: 6,
+    music: 7, voice: 7, tempvoice: 7,
+    integrations: 8, clips: 8,
+    reminders: 9, utility: 9, backup: 9 };
+  const MOD_ICON = { moderation: '🛡️', support: '🎫', modmail: '📬', altwatch: '🕵️', community: '⭐', 'member-management': '👋', invites: '🔗', deadchat: '💬', stats: '📊', achievements: '🏆', economy: '🪙', fun: '🎲', games: '🎮', critters: '🐾', counting: '🔢', roleplay: '🤗', giveaways: '🎉', eclipseid: '🪪', family: '👪', plural: '🧩', partyfinder: '🧭', quotes: '❝', timezones: '🕒', roles: '🏷️', tags: '📝', messages: '📣', engagement: '🗳️', botnews: '📰', music: '🎵', voice: '🗣️', tempvoice: '🔊', integrations: '🔌', clips: '🎬', reminders: '⏰', utility: '🧰', backup: '💾' };
   const TAB_OF = (kind) => (kind === 'channel' || kind === 'category' || kind === 'role' ? 'setup' : kind === 'toggle' || kind === 'select' || kind === 'colour' ? 'settings' : 'advanced');
   function modStatus(m) {
     if (m.needs_setup) return h('span', { class: 'mstatus warn' }, h('i'), 'Needs setup');
@@ -1195,18 +1651,21 @@
     return [body];
   }
   function moduleGrid(g, picker, invite) {
-    S.modq = S.modq || ''; S.modf = S.modf || 'all';
+    S.modq = S.modq || ''; S.modf = S.modf || 'all'; S.modc = S.modc ?? -1;
     const list = h('div', { class: 'modlist' });
     const search = h('input', { type: 'search', placeholder: 'Search modules', 'aria-label': 'Search modules', value: S.modq, oninput: (e) => { S.modq = e.target.value.toLowerCase(); paint(); } });
     const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Show' }, [['all', 'All'], ['on', 'On'], ['off', 'Off'], ['setup', 'Needs setup']].map(([k, l]) =>
       h('button', { type: 'button', 'aria-pressed': String(S.modf === k), onclick: (e) => { S.modf = k; for (const b of seg.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); paint(); } }, l)));
+    const cats = h('div', { class: 'chips', role: 'group', 'aria-label': 'Category' }, [[-1, 'Everything'], ...MOD_CATS.map((c, k) => [k, c])].map(([k, label]) =>
+      h('button', { type: 'button', class: 'chip', 'aria-pressed': String(S.modc === k), onclick: (e) => { S.modc = k; for (const b of cats.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); paint(); } }, label)));
     function paint() {
       const shown = g.modules.filter((m) => (!S.modq || `${m.name} ${m.id} ${m.about}`.toLowerCase().includes(S.modq))
+        && (S.modc < 0 || (MOD_CAT[m.id] ?? 9) === S.modc)
         && (S.modf === 'all' || (S.modf === 'on' && m.on) || (S.modf === 'off' && !m.on) || (S.modf === 'setup' && m.needs_setup)));
-      const groups = MOD_CATS.map((c, ci) => [c, shown.filter((m) => (MOD_CAT[m.id] ?? 5) === ci)]).filter(([, ms]) => ms.length);
+      const groups = MOD_CATS.map((c, ci) => [c, shown.filter((m) => (MOD_CAT[m.id] ?? 9) === ci)]).filter(([, ms]) => ms.length);
       list.replaceChildren(...(groups.length ? groups.flatMap(([c, ms]) => [h('h3', { class: 'section-title' }, c), h('div', { class: 'tiles' }, ms.map((m) =>
         h('div', { class: 'tile', role: 'button', tabindex: '0', onclick: () => { S.open = m.id; S.modTab = null; draw(); }, onkeydown: (e) => { if (e.key === 'Enter') { S.open = m.id; S.modTab = null; draw(); } } },
-          h('div', { class: 'ttop' }, h('span', { class: 'ticon', 'data-cat': String(MOD_CAT[m.id] ?? 5), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'), h('strong', {}, m.name)),
+          h('div', { class: 'ttop' }, h('span', { class: 'ticon', 'data-cat': String(MOD_CAT[m.id] ?? 9), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'), h('strong', {}, m.name)),
           h('p', { class: 'tdesc' }, m.about),
           h('div', { class: 'tfoot' }, modStatus(m), moduleSwitch(g, m, paint)))))]) : [h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'No modules match. Try another word.'))]));
     }
@@ -1214,6 +1673,7 @@
     return [
       h('div', { class: 'card modhead' }, h('div', {}, h('h1', {}, 'Modules'), h('p', { class: 'muted' }, 'Turn features on or off. Click one to set it up.')),
         h('div', { class: 'modtools' }, picker, h('label', { class: 'msearch' }, h('span', { 'aria-hidden': 'true' }, '🔍'), search), seg, invite)),
+      cats,
       list,
       g.waiting ? h('p', { class: 'note' }, `${plural(g.waiting, 'more module from Good Boy 3 is', 'more modules from Good Boy 3 are')} turned on in this server. Their settings and data are kept, and each one returns as it is rebuilt.`) : null,
     ].filter(Boolean);
@@ -1372,24 +1832,91 @@
     } });
     return [input, h('button', { class: 'btn quiet', type: 'button', onclick: () => input.click() }, label)];
   }
-  /** Welcome module: the pictures shown with welcome and goodbye messages. */
+  /** Welcome module: design the welcome and goodbye messages, with a live preview drawn the way Discord will get it. */
+  const THEME_CHOICES = [['dark', 'Dark'], ['light', 'Light'], ['midnight', 'Midnight'], ['sunset', 'Sunset'], ['forest', 'Forest'], ['ocean', 'Ocean'], ['candy', 'Candy']];
+  const HOLES = [['{user}', 'Mention them'], ['{username}', 'Their name'], ['{server}', 'Server name'], ['{count}', 'Member number']];
+  /** Discord shows **words** in bold; the preview does the same (and nothing else, so nothing can be injected). */
+  function boldWords(text) {
+    return String(text).split('**').map((part, i) => (i % 2 ? h('b', {}, part) : part));
+  }
   function greetingPicturesCard(g, r) {
-    const body = h('div', { class: 'picgrid' }, h('p', { class: 'muted' }, 'Loading…'));
-    const load = async () => {
-      let v; try { v = await call('images_view', { guild: g.id }); } catch (e) { body.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
-      body.replaceChildren(...[['welcome', 'Welcome picture', 'Shown with the message when someone joins.'], ['goodbye', 'Goodbye picture', 'Shown with the message when someone leaves.']].map(([kind, title, about]) => {
-        const one = v[kind];
-        const raw = ((r && r.settings.find((d) => d.key === `${kind}Message`)) || {}).value || '';
-        const shown = String(raw).replace(/\{user\}/g, '@NewMember').replace(/\{username\}/g, 'NewMember').replace(/\{server\}/g, g.name || 'your server').replace(/\{count\}/g, '123');
-        return h('div', { class: 'pic' }, h('b', {}, title), h('p', { class: 'muted small' }, about),
-          h('div', { class: 'msgprev', 'aria-label': `How the ${kind} message will look` }, h('b', {}, 'Good Boy ', h('span', { class: 'tagapp' }, 'APP')), h('div', {}, shown || h('span', { class: 'muted' }, 'No message written yet')),
-            one.has ? h('img', { class: 'picprev', src: one.preview, alt: `${title}, as saved` }) : h('div', { class: 'picprev none' }, 'No picture: the message is plain text')),
-          h('div', { class: 'btns' }, ...pictureButton(one.has ? 'Change picture' : 'Choose a picture', async (f) => { await call('greeting_image_set', { guild: g.id, kind, name: f.name, data: f.data }); toast('Saved.'); load(); }),
-            one.has ? h('button', { class: 'btn quiet', type: 'button', onclick: async () => { try { await call('greeting_image_clear', { guild: g.id, kind }); toast('Removed.'); load(); } catch (e) { toast(e.message || String(e), true); } } }, 'Remove') : null));
-      }));
+    const get = (key) => ((r && r.settings.find((d) => d.key === key)) || {}).value;
+    const root = h('div', { class: 'card gdesign-card' });
+    let kind = 'welcome';
+    const build = async () => {
+      const keys = { look: `${kind}Look`, message: `${kind}Message`, title: `${kind}CardTitle`, line: `${kind}CardLine`, accent: `${kind}CardAccent`, theme: `${kind}CardTheme` };
+      const v = {}; for (const [f, key] of Object.entries(keys)) v[f] = get(key) ?? '';
+      if (!v.look) v.look = 'plain';
+      let pics; try { pics = await call('images_view', { guild: g.id }); } catch (e) { root.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
+      const pic = pics[kind];
+      const preview = h('div', { class: 'gpreview', 'aria-live': 'polite' });
+      let timer = 0;
+      const paint = async () => {
+        let out; try { out = await call('greeting_preview', { guild: g.id, kind, tried: v }); } catch (e) { preview.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
+        const img = out.image || (v.look === 'plain' && pic.has ? pic.preview : null);
+        preview.replaceChildren(
+          h('div', { class: 'msgprev', 'aria-label': `How the ${kind} message will look` }, h('b', {}, 'Good Boy ', h('span', { class: 'tagapp' }, 'APP')),
+            h('div', { class: 'msgtext' }, out.text ? boldWords(out.text) : h('span', { class: 'muted' }, 'No message written yet')),
+            img ? h('img', { class: 'picprev wide', src: img, alt: 'The picture, as it will be sent' }) : null),
+          v.look === 'card' && !out.has_picture ? h('p', { class: 'muted small' }, 'No background picture yet, so the card uses its colour theme. Add one to make it yours.') : null);
+      };
+      const soon = () => { clearTimeout(timer); timer = setTimeout(paint, 250); };
+      const field = (label, el, hint) => h('div', { class: 'field' }, h('label', {}, label), el, hint ? h('span', { class: 'hint' }, hint) : null);
+      const box = (f, max, area, ph) => { const el = area ? h('textarea', { rows: 3, maxlength: max, placeholder: ph || '' }) : h('input', { type: 'text', maxlength: max, placeholder: ph || '' }); el.value = v[f]; el.addEventListener('input', () => { v[f] = el.value; soon(); }); return el; };
+      const message = box('message', 1900, true);
+      const holes = h('div', { class: 'btns holes' }, HOLES.map(([code, label]) => h('button', { class: 'btn quiet small', type: 'button', title: `Adds ${code}`, onclick: () => { const at = message.selectionStart ?? message.value.length; message.value = message.value.slice(0, at) + code + message.value.slice(message.selectionEnd ?? at); v.message = message.value; message.focus(); message.setSelectionRange(at + code.length, at + code.length); soon(); } }, label)));
+      const wheel = h('input', { type: 'color', class: 'colourwheel', value: /^#[0-9a-f]{6}$/i.test(v.accent) ? v.accent : '#6b93ff', 'aria-label': 'Ring and bar colour (picker)' });
+      const code = h('input', { type: 'text', class: 'colourcode', maxlength: 7, value: v.accent, placeholder: '#rrggbb', spellcheck: 'false', 'aria-label': 'Ring and bar colour (code)' });
+      wheel.addEventListener('input', () => { code.value = v.accent = wheel.value; soon(); });
+      code.addEventListener('input', () => { v.accent = code.value; if (/^#[0-9a-f]{6}$/i.test(code.value)) { wheel.value = code.value; soon(); } });
+      const theme = h('select', { 'aria-label': 'Colours behind your picture', onchange: (e) => { v.theme = e.target.value; soon(); } }, THEME_CHOICES.map(([id, label]) => h('option', { value: id, selected: id === v.theme }, label)));
+      const cardFields = h('div', { class: 'stack', hidden: v.look !== 'card' },
+        field('Big words', box('title', 120, false), 'You can use {username}, {server} and {count} here too.'), field('Smaller words', box('line', 160, false)),
+        h('div', { class: 'row2' }, field('Ring and bar colour', h('div', { class: 'colourrow' }, wheel, code)), field('Colours behind your picture', theme)));
+      const look = h('div', { class: 'seg', role: 'group', 'aria-label': 'Look' }, [['plain', 'Words'], ['card', 'Picture card']].map(([id, label]) => h('button', { type: 'button', 'aria-pressed': String(v.look === id), onclick: (e) => { v.look = id; for (const b of e.currentTarget.parentNode.children) b.setAttribute('aria-pressed', String(b === e.currentTarget)); cardFields.hidden = id !== 'card'; soon(); } }, label)));
+      const reload = () => build();
+      const picture = h('div', { class: 'field' }, h('label', {}, 'Upload a picture'),
+        h('p', { class: 'muted small' }, v.look === 'card' ? 'Goes behind the card. PNG, JPG, GIF or WebP under 8 MB.' : 'Sent with the message. PNG, JPG, GIF or WebP under 8 MB. A moving GIF stays moving.'),
+        h('div', { class: 'btns' }, ...pictureButton(pic.has ? 'Change picture' : 'Choose a picture', async (f) => { await call('greeting_image_set', { guild: g.id, kind, name: f.name, data: f.data }); toast('Picture saved.'); reload(); }),
+          pic.has ? h('button', { class: 'btn quiet', type: 'button', onclick: async () => { try { await call('greeting_image_clear', { guild: g.id, kind }); toast('Picture removed.'); reload(); } catch (e) { toast(e.message || String(e), true); } } }, 'Remove') : null));
+      const save = h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.target, async () => {
+        for (const [f, key] of Object.entries(keys)) { const kept = await call('setting_set', { guild: g.id, module: 'member-management', key, value: v[f] }); const d = r.settings.find((x) => x.key === key); if (d) d.value = kept; }
+        toast('Saved. New members get this.'); await paint();
+      }) }, 'Save');
+      const tabs = h('div', { class: 'seg', role: 'tablist', 'aria-label': 'Which message' }, [['welcome', 'Welcome'], ['goodbye', 'Goodbye']].map(([id, label]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(kind === id), onclick: () => { kind = id; build(); } }, label)));
+      root.replaceChildren(h('div', { class: 'row' }, h('h2', {}, 'Welcome and goodbye designer'), tabs),
+        h('p', { class: 'muted' }, kind === 'welcome' ? 'What new members get when they join. Change anything and the preview updates. Nothing changes for members until you press Save.' : 'What is posted when someone leaves. Change anything and the preview updates. Nothing changes until you press Save.'),
+        h('div', { class: 'gdesign' },
+          h('div', { class: 'stack' }, picture, field('Look', look), field('Message', message, 'The words members read above the picture.'), holes, cardFields, h('div', { class: 'btns' }, save)),
+          h('div', { class: 'stack' }, h('b', {}, 'Preview'), h('p', { class: 'muted small' }, 'With a sample member called Alex.'), preview)));
+      paint();
     };
-    load();
-    return h('div', { class: 'card' }, h('h2', {}, 'Pictures'), h('p', { class: 'muted' }, 'PNG, JPG, GIF or WebP under 8 MB. A moving GIF stays moving.'), body);
+    build();
+    return root;
+  }
+  /** Eclipse ID module: what it does here, the two switches that matter, and how many people use it. */
+  function eclipseCard(g, r) {
+    const get = (key) => ((r && r.settings.find((d) => d.key === key)) || {}).value;
+    const root = h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Loading…'));
+    (async () => {
+      let v; try { v = await call('eclipse_view', { guild: g.id }); } catch (e) { root.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); return; }
+      const sw = (key, label, hint) => {
+        const input = h('input', { type: 'checkbox', class: 'toggle', role: 'switch', checked: !!get(key), 'aria-label': label, onchange: async (e) => {
+          try { const kept = await call('setting_set', { guild: g.id, module: 'eclipseid', key, value: e.target.checked }); const d = r.settings.find((x) => x.key === key); if (d) d.value = kept; toast('Saved'); } catch (er) { e.target.checked = !e.target.checked; toast(er.message || String(er), true); }
+        } });
+        return h('label', { class: 'setting inline' }, h('span', {}, h('b', {}, label), h('br'), h('span', { class: 'muted small' }, hint)), input);
+      };
+      const stat = (n, label) => h('div', { class: 'stat' }, h('b', {}, Number(n).toLocaleString()), h('span', {}, label));
+      root.replaceChildren(h('h2', {}, 'Eclipse ID'),
+        h('p', { class: 'muted' }, 'A gaming profile each member controls. It is one card per person, the same in every server that runs Good Boy, so members fill it in once. They choose who sees each part and which servers show it.'),
+        h('div', { class: 'stats' }, stat(v.cards, 'Cards made'), stat(v.here, 'People seen here'), stat(v.picked, 'With games picked up')),
+        sw('autoDetect', 'Pick up what members play', 'Reads the game a member is playing from their Discord status and adds it to their card as "picked up automatically", with the kind of device. Members can switch this off for themselves with /id auto, hide it, or erase it.'),
+        v.auto && !v.presence ? h('p', { class: 'note' }, 'Discord is not sending statuses yet, so nothing can be picked up. Turn on "Presence Intent" on your application\'s Bot page in the Discord developer portal, then restart the bot. Servers with 100 or more members also need Discord to approve it.') : null,
+        sw('robloxLookup', 'Let /id roblox check a Roblox name', 'Contacts Roblox to see that a username exists. It does not prove the account is theirs.'),
+        h('h3', {}, 'What members can do'),
+        h('ul', {}, [['/id edit', 'fill in their card'], ['/id privacy', 'choose who sees each part'], ['/id share', 'choose which servers show it'], ['/id auto', 'pick up games, or stop it and forget'], ['/id find', 'find members who play a game'], ['/id export and /id import', 'move the card to another Good Boy with a code']].map(([c, t]) => h('li', {}, h('code', {}, c), ' · ' + t))));
+    })();
+    return root;
   }
   /** Critters module: the server's own characters, each with its picture. */
   function crittersCard(g) {
@@ -1439,7 +1966,7 @@
   function modulePage(g, m) {
     const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));
     const bar = h('div', { class: 'seg modtabs', role: 'tablist' });
-    const head = h('div', { class: 'card mhead' }, h('span', { class: 'ticon big', 'data-cat': String(MOD_CAT[m.id] ?? 5), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'),
+    const head = h('div', { class: 'card mhead' }, h('span', { class: 'ticon big', 'data-cat': String(MOD_CAT[m.id] ?? 9), 'aria-hidden': 'true' }, MOD_ICON[m.id] || '◆'),
       h('div', { class: 'grow' }, h('h1', {}, m.name), h('p', { class: 'muted' }, m.about)), modStatus(m), moduleSwitch(g, m, () => draw()));
     call('settings', { guild: g.id, module: m.id }).then((r) => {
       const tabs = [['setup', 'Setup'], ['settings', 'Settings'], ['advanced', 'Advanced'], ['where', 'Where it works'], ['who', 'Who can use it'], ['commands', m.commands.length ? 'Commands' : 'About'], ['history', 'History']]
@@ -1456,8 +1983,8 @@
           return;
         }
         const intro = { setup: 'The channels and roles this module uses.', settings: 'Switches and choices.', advanced: 'Numbers, lists and text you can fine-tune.' }[S.modTab];
-        const part = { ...r, settings: r.settings.filter((d) => TAB_OF(d.kind) === S.modTab) };
-        body.replaceChildren(...(S.modTab === 'setup' && PANELS[m.id] ? [panelCard(g, m, r)] : []), ...(S.modTab === 'setup' && m.id === 'member-management' ? [greetingPicturesCard(g, r)] : []), ...(S.modTab === 'setup' && m.id === 'critters' ? [crittersCard(g)] : []), ...(m.id === 'economy' && S.modTab === 'settings' ? [resetZone(g)] : []), h('div', { class: 'card' }, h('p', { class: 'muted' }, intro), ...grouped(g.id, m.id, part)));
+        const part = { ...r, settings: r.settings.filter((d) => TAB_OF(d.kind) === S.modTab && !(m.id === 'member-management' && /^(welcome|goodbye)(Look|Message|Image|Card[A-Za-z]*)$/.test(d.key)) && !(m.id === 'eclipseid' && /^(autoDetect|robloxLookup)$/.test(d.key))) };
+        body.replaceChildren(...(S.modTab === 'setup' && PANELS[m.id] ? [panelCard(g, m, r)] : []), ...(S.modTab === 'setup' && m.id === 'member-management' ? [greetingPicturesCard(g, r)] : []), ...(S.modTab === 'setup' && m.id === 'critters' ? [crittersCard(g)] : []), ...((S.modTab === 'setup' || S.modTab === 'settings') && m.id === 'eclipseid' ? [eclipseCard(g, r)] : []), ...(m.id === 'economy' && S.modTab === 'settings' ? [resetZone(g)] : []), h('div', { class: 'card' }, h('p', { class: 'muted' }, intro), ...grouped(g.id, m.id, part)));
       }
       tab();
     }, (e) => body.replaceChildren(h('p', { class: 'msg bad' }, e.message)));
@@ -1514,13 +2041,13 @@
       const ready = S.swOk.stopped && S.swOk.token && !st.running;
       let asked = false;
       box.replaceChildren(...[
-        h('div', { class: 'stats' }, tile(st.v3?.servers, 'Servers in Good Boy 3'), tile(st.v3?.records, 'Saved records in Good Boy 3'), tile(st.v4?.servers, 'Servers in Good Boy 4'), tile(st.v4?.records, 'Saved records in Good Boy 4')),
+        h('div', { class: 'stats' }, tile(st.v3?.servers, 'Servers in Good Boy 3'), tile(st.v3?.records, 'Saved records in Good Boy 3'), tile(st.v4?.servers, 'Servers in this Good Boy'), tile(st.v4?.records, 'Saved records in Good Boy 4')),
         h('div', { class: 'card pad' }, h('h2', {}, st.found ? 'Where Good Boy 3\'s data is' : 'Good Boy 3\'s data was not found'),
           st.found ? h('p', { class: 'muted small' }, st.folder) : h('p', { class: 'muted' }, `Looked in ${st.looked_in || 'the usual place'}. If Good Boy 3 keeps its data somewhere else, paste the folder that holds the file eclipse.db (it is usually called bot-data).`),
           (() => { const inp = h('input', { type: 'text', placeholder: 'C:\\Users\\you\\AppData\\Roaming\\Good Boy\\bot-data', spellcheck: 'false', style: { width: '100%' } });
             return h('div', { class: 'field' }, h('label', {}, st.found ? 'Use a different folder' : 'Folder with eclipse.db'), inp, h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: (e) => busy(e.currentTarget, async () => { st = await call('v3_folder_set', { path: inp.value }); toast('Found it.'); paint(); }) }, 'Use this folder'))); })()),
         step(1, 'Copy your Good Boy 3 data', h('p', { class: 'muted' }, 'This only reads Good Boy 3\'s data; nothing there is changed, and Good Boy 3 keeps working. Copy again any time to bring in what happened since. Whatever Good Boy 4 has now is set aside in a dated folder, never deleted.'),
-          st.running ? h('p', { class: 'note warn' }, 'Good Boy 4 is running. Stop it on Home first.') : null,
+          st.running ? h('p', { class: 'note warn' }, 'Good Boy is running. Stop it on Home first.') : null,
           h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', disabled: !st.found || st.running, onclick: (e) => {
             const b = e.currentTarget;
             if (st.v4 && b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Set my current copy aside and copy again?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Copy my Good Boy 3 data again'; }, 6000); return; }
@@ -1531,13 +2058,13 @@
           checked ? [h('p', { class: checked.problems || !checked.v3_ok || !checked.v4_ok ? 'msg bad' : 'msg good' }, !checked.v3_ok || !checked.v4_ok ? 'One of the databases did not pass its own integrity check. Do not switch yet.' : checked.problems ? `${plural(checked.problems, 'table has', 'tables have')} fewer rows than Good Boy 3 (listed below).` : `Everything from Good Boy 3 is in the copy (${plural(checked.rows.length, 'table', 'tables')} checked).`),
             checked.rows.some((r) => r.state !== 'same') ? h('div', { class: 'list' }, checked.rows.filter((r) => r.state !== 'same').map((r) => h('div', { class: 'case' }, h('div', { class: 'text' }, h('b', {}, r.table), h('p', { class: 'muted small' }, `Good Boy 3: ${r.v3.toLocaleString()} · Good Boy 4: ${r.v4 == null ? 'missing' : r.v4.toLocaleString()} · ${{ fewer: 'fewer in the copy', missing: 'not in the copy', more: 'more in the copy (new activity)' }[r.state]}`))))) : null] : null),
         step(3, 'Switch over', h('p', { class: 'muted' }, 'Two programs must never run the same bot at once: members would get every answer twice. Tick both, then start.'),
-          tick('stopped', 'Good Boy 3 is closed completely (not just minimised).'), tick('token', 'Settings has the token of the bot I want Good Boy 4 to be.'),
-          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', disabled: !ready, onclick: (e) => busy(e.currentTarget, async () => { await call('bot_start'); toast('Good Boy 4 is starting. Watch Home for the green light.'); await refresh(); await load(); }) }, st.running ? 'Good Boy 4 is running' : 'Start Good Boy 4 now'))),
-        step(4, 'Going back to Good Boy 3', h('p', { class: 'muted' }, 'Stop Good Boy 4 on Home, close this app, and open Good Boy 3 again. Its data was never changed, so it carries on where it was. Anything members earned or did while Good Boy 4 was running stays in Good Boy 4\'s copy and will not appear in Good Boy 3.'))].filter(Boolean));
+          tick('stopped', 'Good Boy 3 is closed completely (not just minimised).'), tick('token', 'Settings has the token of the bot I want this Good Boy to run.'),
+          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', disabled: !ready, onclick: (e) => busy(e.currentTarget, async () => { await call('bot_start'); toast('Good Boy is starting. Watch Home for the green light.'); await refresh(); await load(); }) }, st.running ? 'Good Boy 4 is running' : 'Start Good Boy 4 now'))),
+        step(4, 'Going back to Good Boy 3', h('p', { class: 'muted' }, 'Stop Good Boy on Home, close this app, and open Good Boy 3 again. Its data was never changed, so it carries on where it was. Anything members earned or did while Good Boy 4 was running stays in Good Boy 4\'s copy and will not appear in Good Boy 3.'))].filter(Boolean));
       void asked;
     }
     load().catch((e) => box.replaceChildren(h('div', { class: 'card note' }, e.message || String(e))));
-    return [h('div', { class: 'head' }, h('h1', {}, 'From Good Boy 3'), h('p', { class: 'muted' }, 'Try Good Boy 4 on a copy of your data, check it, and switch when you are happy. You can always go back.')), box];
+    return [h('div', { class: 'head' }, h('h1', {}, 'From Good Boy 3'), h('p', { class: 'muted' }, 'Try the new Good Boy on a copy of your data, check it, and switch when you are happy. You can always go back.')), box];
   }
 
   // ---- Check-up: what would stop the bot working, in plain words
@@ -1670,10 +2197,11 @@
             h('p', { class: 'muted small' }, 'Replies only the member can see (balance, forms, lists, game windows) are taken down after this long without anyone pressing anything on them. Pressing a button starts the wait again, and game windows have a Close button. Exports and transcripts stay.')),
           h('div', {}, h('span', {}, 'Look'), h('div', { class: 'segs', role: 'group', 'aria-label': 'Look' }, ...[['pixel', 'Pixel'], ['classic', 'Classic']].map(([v, l]) => h('button', { class: 'seg', type: 'button', 'aria-pressed': String((document.documentElement.dataset.look || 'pixel') === v), onclick: () => { try { localStorage.setItem('gb-look', v); } catch { /* not kept */ } document.documentElement.dataset.look = v; draw(); } }, l)))),
           h('div', {}, h('span', {}, 'Colours (classic look)'), h('div', { class: 'segs', role: 'group', 'aria-label': 'Colours' }, seg('system', 'Match Windows'), seg('dark', 'Dark'), seg('light', 'Light'))))),
+      coloursCard(),
       h('div', { class: 'card' }, h('h2', {}, 'Your data'), h('p', { class: 'muted small path' }, o.data_folder),
         h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, () => call('open', { what: 'data' })) }, 'Open folder'),
           h('button', { class: 'btn quiet', type: 'button', onclick: (e) => busy(e.target, async () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); const file = await call('backup_now', { stamp: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` }); toast(`Backed up to ${file}`); }) }, 'Back up now'),
-          !window.GB.web ? h('button', { class: 'btn quiet', type: 'button', title: 'Use this if Good Boy 4 shows old levels or coins instead of what Good Boy 3 had', onclick: (e) => confirmInline(e.currentTarget, 'This puts Good Boy 3\'s data here in place of what this app holds now. What is here now is kept in a dated folder, not deleted. The bot is stopped for a moment.', 'Copy it again', async () => {
+          !window.GB.web ? h('button', { class: 'btn quiet', type: 'button', title: 'Use this if Good Boy shows old levels or coins instead of what Good Boy 3 had', onclick: (e) => confirmInline(e.currentTarget, 'This puts Good Boy 3\'s data here in place of what this app holds now. What is here now is kept in a dated folder, not deleted. The bot is stopped for a moment.', 'Copy it again', async () => {
             try { await call('bot_stop'); } catch { /* not running */ }
             try { const r = await call('v3_recopy'); toast(r.kept ? `Copied Good Boy 3's data. The old data is kept in ${r.kept}` : 'Copied Good Boy 3\'s data.'); } catch (err) { toast(err.message || String(err), true); }
             try { await call('bot_start'); } catch { /* the Home page says why */ }
@@ -1684,7 +2212,7 @@
   }
 
   /** What changed in this version, from the change notes that come with the program. */
-  /** Updates: what is installed, whether a newer Good Boy 4 is out, and one button to install it. */
+  /** Updates: what is installed, whether a newer Good Boy is out, and one button to install it. */
   function pageUpdates() {
     const box = h('div', { class: 'stack' });
     const mb = (n) => `${(n / 1048576).toFixed(0)} MB`;
@@ -1715,7 +2243,7 @@
     };
     paint();
     call('update_check').then((r) => { S.upd = r; paint(); }, () => { /* the last answer stays */ });
-    return [h('div', { class: 'head' }, h('h1', {}, 'Updates'), h('p', { class: 'muted' }, 'Keep Good Boy 4 current without downloading anything.')), box];
+    return [h('div', { class: 'head' }, h('h1', {}, 'Updates'), h('p', { class: 'muted' }, 'Keep Good Boy current without downloading anything.')), box];
   }
   function pageWhatsNew() {
     const box = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));
@@ -1725,6 +2253,28 @@
         h('ul', {}, s.body.split('\n').map(line).filter(Boolean)))));
     }, (e) => box.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))));
     return [h('div', { class: 'head' }, h('h1', {}, "What's new"), h('p', { class: 'muted' }, `Good Boy ${(S.o && S.o.version) || ''} and what came with each update`)), box];
+  }
+  /** The Commands guide: every command, its parts and what each box takes, written from the bot's own list. */
+  function commandsGuide() {
+    const box = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));
+    const paint = (ref) => {
+      const q = (S.cfind || '').trim().toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
+      const hay = (c) => JSON.stringify([c.name, c.path, c.about, c.note, c.subs.map((x) => [x.name, x.about]), c.options.map((o) => o.name)]).toLowerCase();
+      const opts = (list) => list.length ? h('ul', { class: 'cmdopts' }, list.map((o) => h('li', {}, h('code', {}, o.name), o.required ? '' : ' (optional)', ' · ', o.takes, h('span', { class: 'muted' }, ' — ' + o.about)))) : null;
+      const card = (c) => h('details', { class: 'cmd', open: words.length > 0 && ref.count < 8 || null },
+        h('summary', {}, h('code', {}, c.path), ' ', h('span', { class: 'muted' }, c.about), c.staff ? h('span', { class: 'tag' }, 'Staff') : null),
+        c.note ? h('p', {}, c.note) : null, opts(c.options),
+        c.subs.length ? h('div', {}, h('b', {}, 'Parts'), h('ul', { class: 'cmdsubs' }, c.subs.map((x) => h('li', {}, h('code', {}, x.name), ' · ', x.about, x.staff ? h('span', { class: 'tag' }, 'Staff') : null, opts(x.options))))) : null);
+      const sections = ref.modules.map((m) => ({ m, list: m.commands.filter((c) => words.every((w) => hay(c).includes(w) || m.name.toLowerCase().includes(w))) })).filter((x) => x.list.length);
+      ref.count = sections.reduce((n, x) => n + x.list.length, 0);
+      box.replaceChildren(h('p', { class: 'muted small' }, `${ref.count} ${ref.count === 1 ? "command" : "commands"}. In Discord, type /help command: and a name to see the same thing. Commands inside a group (like /server) are opened from the group's menu.`),
+        ...(sections.length ? sections.map(({ m, list }) => h('div', { class: 'card' }, h('h3', {}, m.name), h('p', { class: 'muted small' }, m.about), h('div', { class: 'stack' }, list.map(card)))) : [h('div', { class: 'card empty' }, h('h2', {}, 'Nothing matches that'), h('p', { class: 'muted' }, 'Try a command name or a word like "ban" or "picture".'))]));
+    };
+    const search = h('input', { type: 'search', id: 'cfind', value: S.cfind || '', placeholder: 'Find a command, e.g. ban, picture, music', 'aria-label': 'Find a command' });
+    (async () => { try { S.cref = S.cref || await call('commands_guide'); paint(S.cref); } catch (e) { box.replaceChildren(h('p', { class: 'msg bad' }, e.message || String(e))); } })();
+    search.addEventListener('input', () => { S.cfind = search.value; if (S.cref) paint(S.cref); });
+    return [h('div', { class: 'field' }, search), box];
   }
   function pageHelp() {
     const guide = window.GBGuide;
@@ -1738,8 +2288,10 @@
       : b[0] === 'note' ? h('p', { class: 'note' }, b[1]) : h('div', {}, h('button', { class: 'btn quiet', type: 'button', onclick: () => go(b[2]) }, b[1]));
     const search = h('input', { type: 'search', id: 'find', value: S.find, placeholder: 'Search the guide, e.g. reset token', 'aria-label': 'Search the guide' });
     search.addEventListener('input', () => { S.find = search.value; S.picked = null; const at = search.selectionStart; draw(); const again = document.getElementById('find'); again.focus(); again.setSelectionRange(at, at); });
+    const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Help section' }, [['guide', 'Guide'], ['commands', 'Commands']].map(([id, label]) => h('button', { type: 'button', 'aria-pressed': String((S.helpTab || 'guide') === id), onclick: () => { S.helpTab = id; draw(); } }, label)));
+    if (S.helpTab === 'commands') return [h('div', { class: 'row' }, h('div', { class: 'head' }, h('h1', {}, 'Help'), h('p', { class: 'muted' }, 'Every command, what its parts do and what each box takes.')), tabs), ...commandsGuide()];
     return [
-      h('div', { class: 'row' }, h('div', { class: 'head' }, h('h1', {}, 'Help'), h('p', { class: 'muted' }, 'The guide to everything in this app.')),
+      h('div', { class: 'row' }, h('div', { class: 'head' }, h('h1', {}, 'Help'), h('p', { class: 'muted' }, 'The guide to everything in this app.'), tabs),
         h('div', { class: 'btns' }, h('button', { class: 'btn quiet', type: 'button', onclick: () => window.GBTour.app(0) }, 'Show me around'), h('button', { class: 'btn', type: 'button', onclick: () => window.GBTour.showcase(0) }, 'What can Good Boy do?'))),
       h('div', { class: 'field' }, search),
       topic ? h('div', { class: 'guide' },
@@ -1750,8 +2302,61 @@
   }
 
   // the same names and order as the Good Boy 3 dashboard, so nobody has to learn a new map
-  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], updates: ['Updates', pageUpdates, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'] };
+  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], setup: ['Server setup', pageSetup, ''], images: ['Images', pageImages, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], updates: ['Updates', pageUpdates, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'] };
+  // The menu on the left, in sections that fold away so it never gets long. The section you are in stays open.
+  const SECTIONS = [
+    ['', ['home', 'servers']],
+    ['People', ['server', 'inactive', 'leavers', 'tickets', 'rolemenus', 'images']],
+    ['Safety', ['cases', 'automod', 'permissions']],
+    ['Money', ['economy', 'shop']],
+    ['Fun', ['arcade', 'fishing', 'music']],
+    ['Tools', ['setup', 'lists', 'commands']],
+    ['Bot', ['checkup', 'switch', 'activity', 'updates', 'whatsnew', 'bot', 'help']],
+  ];
+  function navMenu(pages) {
+    let kept = {}; try { kept = JSON.parse(localStorage.getItem('gb-nav') || '{}'); } catch { /* the choice is only a convenience */ }
+    const known = SECTIONS.flatMap(([, ids]) => ids);
+    const button = (id) => h('button', { class: 'nav', type: 'button', 'data-page': id, 'aria-current': id === S.page ? 'page' : null, onclick: () => go(id) }, icon(id), PAGES[id][0]);
+    const out = [];
+    for (const [name, ids] of SECTIONS) {
+      const shown = ids.filter((id) => pages.includes(id) && PAGES[id]);
+      if (!shown.length) continue;
+      if (!name) { out.push(...shown.map(button)); continue; }
+      const here = shown.includes(S.page);
+      const open = here || kept[name] === true;
+      const head = h('button', { class: 'navgroup navfold', type: 'button', 'aria-expanded': String(open), onclick: (e) => {
+        const now = e.currentTarget.getAttribute('aria-expanded') !== 'true';
+        e.currentTarget.setAttribute('aria-expanded', String(now));
+        e.currentTarget.nextElementSibling.hidden = !now;
+        kept[name] = now; try { localStorage.setItem('gb-nav', JSON.stringify(kept)); } catch { /* ignore */ }
+      } }, h('span', {}, name), h('span', { class: 'chev', 'aria-hidden': 'true' }, '▾'));
+      out.push(head, h('div', { class: 'navsub', hidden: !open }, shown.map(button)));
+    }
+    // pages that are in no section still get a place
+    const rest = pages.filter((id) => PAGES[id] && !known.includes(id));
+    if (rest.length) out.push(...rest.map(button));
+    return out;
+  }
   function go(page) { S.page = page; draw(); document.querySelector('.main')?.scrollTo(0, 0); }
+  // What the right-click menu (menu.js) may do: move between pages, start and stop the bot, and change the look.
+  window.GBApp = {
+    go: (page) => { if (S.o && S.o.prefs.setup_done && visiblePages().includes(page)) go(page); },
+    page: () => S.page, ready: () => !!(S.o && S.o.prefs.setup_done), title: (page) => (PAGES[page] || [page])[0], can: (page) => !!S.o && visiblePages().includes(page),
+    owner: () => !window.GB.web || !!(S.o && S.o.web && S.o.web.owner), local: () => !window.GB.web,
+    phase: () => (S.o ? S.o.live.phase : ''), tokenSaved: () => !!(S.o && S.o.token_saved),
+    bot: async (what) => { try { await call(`bot_${what}`); toast(what === 'stop' ? 'Stopping the bot.' : what === 'start' ? 'Starting the bot.' : 'Restarting the bot.'); await refresh(); draw(); } catch (e) { toast(e.message, true); } },
+    reload: async () => { try { await refresh(); draw(); toast('Up to date.'); } catch (e) { toast(e.message, true); } },
+    dark: () => document.documentElement.dataset.theme !== 'light',
+    look: () => document.documentElement.dataset.look || 'pixel',
+    setTheme: async (t) => { try { await call('prefs_set', { patch: { theme: t } }); await refresh(); draw(); } catch (e) { toast(e.message, true); } },
+    setLook: (v) => { try { localStorage.setItem('gb-look', v); } catch { /* not kept */ } document.documentElement.dataset.look = v; draw(); },
+    paid, coloursOn: () => !!(S.o && S.o.prefs.colours && S.o.prefs.colours.on && paid()),
+    setColours: (on) => setColours({ on }, on ? 'Your colours are on.' : 'Back to the regular colours.'),
+    colours: () => { go('bot'); setTimeout(() => document.getElementById('own-colours')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); },
+    openLink: (url) => window.open(url, '_blank', 'noopener'),
+    caseItems: (el) => (S.page === 'cases' && S.caseMenu ? S.caseMenu(el) : []),
+    toast,
+  };
   // On the web some things stay on the computer (tokens, the move from Good Boy 3, this computer's settings), and only the
   // person who runs the bot sees the bot's own controls.
   function visiblePages() {
@@ -1779,7 +2384,7 @@
     const kept = SCROLLS.map((q) => [q, document.querySelector(q)?.scrollTop || 0]);
     app.replaceChildren(h('div', { class: 'shell' },
       h('nav', { class: 'side', 'aria-label': 'Pages' }, h('div', { class: 'brand' }, h('img', { src: 'mascot.png', alt: '', width: 40, height: 40, class: 'pup-logo' }), h('span', {}, 'Good Boy')),
-        Object.entries(PAGES).filter(([id]) => pages.includes(id)).flatMap(([id, [label, , group]], i, all) => [group && group !== (all[i - 1]?.[1][2] ?? '') ? h('div', { class: 'navgroup' }, group) : null, h('button', { class: 'nav', type: 'button', 'aria-current': id === S.page ? 'page' : null, onclick: () => go(id) }, icon(id), label)]),
+        navMenu(pages),
         h('span', { class: 'grow' }), h('div', { class: 'pup-corner' }, h('div', { class: 'pup-bubble', role: 'status' }), h('div', { class: 'dog' }, h('img', { src: 'mascot.png', alt: '' })), h('span', {}, 'On duty')), h('div', { class: 'state' }, h('span', { class: `dot ${dot}` }), h('span', {}, line)),
         window.GB.web ? h('button', { class: 'nav signout', type: 'button', title: `Signed in as ${S.o.web ? S.o.web.name : ''}`, onclick: async () => { try { await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'x-gb': '1' } }); } catch { /* leave anyway */ } location.reload(); } }, 'Sign out') : null),
       h('main', { class: 'main' }, h('div', { class: 'page' }, PAGES[S.page][1]()))));

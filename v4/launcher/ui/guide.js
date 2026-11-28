@@ -1,4 +1,4 @@
-// Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+// Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 // The user guide. Each topic is plain data: a title and blocks. Blocks are ['p', text], ['h', text],
 // ['steps', [text...]], ['list', [text...]], ['note', text] or ['go', label, page] (a button that opens a page).
 'use strict';
@@ -117,9 +117,9 @@ window.GBGuide = [
     ['list', ['Back up now makes a full copy in the backups folder. It is safe while the bot is running.', 'To move to another PC, copy the whole data folder across, then add the token there.']],
   ] },
   { id: 'from3', title: 'Coming from Good Boy 3', blocks: [
-    ['p', 'On first run Good Boy 4 looks for Good Boy 3 on this computer and offers to copy its data: servers, levels, coins, settings and your own art.'],
-    ['list', ['Good Boy 3\'s data is only read, never changed. Good Boy 3 keeps working exactly as before.', 'Modules that Good Boy 4 has not rebuilt yet keep their settings and data, ready for when they arrive.']],
-    ['p', 'Most people never do this by hand: Good Boy 3 shows a card when Good Boy 4 is out, then moves your server over by itself (backup, download, hand over the bot and licence, start Good Boy 4, remove Good Boy 3). If Good Boy 4 does not come up, Good Boy 3 is put back as it was. The backup is kept for 14 days.'],
+    ['p', 'On first run Good Boy looks for Good Boy 3 on this computer and offers to copy its data: servers, levels, coins, settings and your own art.'],
+    ['list', ['Good Boy 3\'s data is only read, never changed. Good Boy 3 keeps working exactly as before.', 'Modules that have not been rebuilt yet keep their settings and data, ready for when they arrive.']],
+    ['p', 'Most people never do this by hand: Good Boy 3 shows a card when the new Good Boy is out, then moves your server over by itself (backup, download, hand over the bot and licence, start the new Good Boy, remove Good Boy 3). If it does not come up, Good Boy 3 is put back as it was. The backup is kept for 14 days.'],
     ['note', 'Two programs cannot run the same bot at once. If Good Boy 3 is still running this bot, close it first.'],
   ] },
   { id: 'phone', title: 'Using Good Boy on your phone', blocks: [
@@ -128,7 +128,7 @@ window.GBGuide = [
     ['note', 'The phone can only reach the bot while the computer (or web host) running it is on. Tailscale Funnel or Cloudflare Tunnel give a free https link to a computer at home.'],
   ] },
   { id: 'host', title: 'Running on a web host', blocks: [
-    ['p', 'A web host keeps the bot online when your PC is off. The same Good Boy 4 runs there as a small program with no window.'],
+    ['p', 'A web host keeps the bot online when your PC is off. The same Good Boy runs there as a small program with no window.'],
     ['steps', ['Put the goodboy program and your data folder on the host.', 'Set DISCORD_TOKEN in the host\'s secrets or environment page. The token is never typed on a command line.', 'Set the start command to: goodboy run <data folder>']],
     ['note', 'This app manages a bot that runs on this PC. To manage a hosted bot, turn on the web app on the host (Settings, Web app) and sign in to it from your phone or browser.'],
   ] },
@@ -165,11 +165,11 @@ window.GBGuide = [
     ['note', 'Pages that act in Discord (moderation, tickets, music, inactive scans and removals) need the bot to be running.'],
   ] },
   { id: 'build', title: 'What is in this version', blocks: [
-    ['p', 'Good Boy 4 is Good Boy rebuilt from the ground up. It is the same bot: your settings, levels, coins, tickets, licence and token carried over from Good Boy 3.'],
+    ['p', 'Since version 4, Good Boy is rebuilt from the ground up. It is the same bot: your settings, levels, coins, tickets, licence and token carried over from Good Boy 3.'],
     ['h', 'What it does'],
     ['list', ['Levels with rank cards, Money with a shop, pets, treasury and exchange, and games (slots, blackjack, the arcade, fishing, critters)', 'Moderation with AutoMod, the strike ladder, server logs and appeals; Tickets with search and transcripts', 'Welcome, Role menus, Reminders, Giveaways, Custom commands, Counting, Fun, Family, Parties and image Quotes', 'Music with playlists, a sound filter, autoplay and vote skip, and a Music page that joins the call you are in', 'The dashboard in this window, and a phone web app (turn it on in Settings)', 'Your bot\'s token and client secret are kept by the operating system, not in a file']],
     ['h', 'Good to know'],
-    ['list', ['Two programs cannot run the same bot at once, so Good Boy 3 is switched off when Good Boy 4 starts.', 'A backup of your Good Boy 3 data is kept for 14 days after the move.', 'Good Boy 4 is installed with Good-Boy-4-Setup.exe (for you only, no administrator password) and can be removed in Windows Settings, Apps; your data stays unless you choose to delete it. It updates itself. It looks for a new version a little after it opens and every six hours, and Home shows a card when one is ready. Press Update now on the Updates page: the file is checked against its checksum first, the bot stops for a moment, and Good Boy reopens on the new version. Your data, settings and token stay where they are.']],
+    ['list', ['Two programs cannot run the same bot at once, so Good Boy 3 is switched off when the new Good Boy starts.', 'A backup of your Good Boy 3 data is kept for 14 days after the move.', 'Good Boy is installed with Good-Boy-4-Setup.exe (for you only, no administrator password) and can be removed in Windows Settings, Apps; your data stays unless you choose to delete it. It updates itself. It looks for a new version a little after it opens and every six hours, and Home shows a card when one is ready. Press Update now on the Updates page: the file is checked against its checksum first, the bot stops for a moment, and Good Boy reopens on the new version. Your data, settings and token stay where they are.']],
     ['h', 'Still to come'],
     ['list', ['Running on Linux and in Docker', 'The clipping and broadcast software']],
   ] },
@@ -186,7 +186,7 @@ window.GBGroups = {
   me: ['profile', 'introduce', 'birthday', 'afk', 'timezone', 'id', 'plural'],
   social: ['marry', 'family', 'rp', 'quote', 'party', 'highlight'],
   voice: ['tts', 'room', 'voicehub'],
-  server: ['greeting', 'verify', 'deadchat', 'announce', 'suggestion', 'starboard', 'feed', 'minecraft', 'webhook', 'notifications', 'backup', 'invites', 'logs', 'say', 'sticky', 'botnews', 'clips', 'tags'],
+  server: ['greeting', 'images', 'setup', 'verify', 'deadchat', 'announce', 'suggestion', 'starboard', 'feed', 'minecraft', 'webhook', 'notifications', 'backup', 'invites', 'logs', 'say', 'sticky', 'botnews', 'clips', 'tags'],
 };
 (function () {
   const group = {};

@@ -224,6 +224,10 @@ pub fn next_repeat(r: &str) -> &'static str {
     match r { "off" => "one", "one" => "all", _ => "off" }
 }
 
+/// The popup that asks for a song, for the bot whose button id prefix is in `id`.
+fn add_form(id: String, title: &str) -> Action {
+    Action::Form { id, title: title.into(), fields: vec![Field { id: "song".into(), label: ADD_LABEL.into(), long: false, required: true, max: 300, placeholder: Some("e.g. never gonna give you up".into()), ..Default::default() }] }
+}
 /// What a bot's player is called in memory: the server's id, with `~N` on a helper bot.
 pub fn slot_key(guild: &str, slot: usize) -> String {
     if slot == 0 { guild.to_string() } else { format!("{guild}~{slot}") }
@@ -279,11 +283,12 @@ impl Music<'_> {
     }
     /// Who may skip or stop: whoever added the song, the DJ role, anyone with Manage Channels, or anyone alone with the bot.
     fn can_control(&self, m: &Member, track: Option<&Track>) -> bool {
+        let privileged = self.settings.text(self.guild, MODULE, "djRole").is_some_and(|r| m.roles.contains(&r)) || m.perms & (MANAGE_CHANNELS | crate::perms::ADMINISTRATOR) != 0;
+        if privileged { return true; }
+        // a player belongs to the people in its call: someone listening in another call has their own player
+        if self.elsewhere(m) { return false; }
         let listeners = self.players.with(&self.key(), |p| p.voice.clone()).map(|v| self.dir.in_voice(self.guild, &v).len()).unwrap_or(0);
-        listeners <= 1
-            || track.is_some_and(|t| t.by == m.id)
-            || self.settings.text(self.guild, MODULE, "djRole").is_some_and(|r| m.roles.contains(&r))
-            || m.perms & (MANAGE_CHANNELS | crate::perms::ADMINISTRATOR) != 0
+        listeners <= 1 || track.is_some_and(|t| t.by == m.id)
     }
 
     /// The player card: what's playing, how far in, what's next, and the buttons.
@@ -318,6 +323,7 @@ impl Music<'_> {
                 .button_with(self.mu("skip"), "Skip", ButtonStyle::Plain, Some("⏭️".into()))
                 .button_with(self.mu("stop"), "Stop", ButtonStyle::Danger, Some("⏹️".into()))
                 .button_with(self.mu("add"), "Add", ButtonStyle::Good, Some("➕".into()))
+                .button_with(self.mu("start"), "Start mine", ButtonStyle::Good, Some("🎧".into()))
                 .button_with(self.mu("down"), "Quieter", ButtonStyle::Plain, Some("🔉".into()))
                 .button_with(self.mu("up"), "Louder", ButtonStyle::Plain, Some("🔊".into()))
                 .button_with(self.mu("repeat"), "Repeat", ButtonStyle::Plain, Some("🔁".into()))
@@ -471,6 +477,38 @@ impl Music<'_> {
     }
 
     /// The player's buttons (and the commands that do the same).
+    /// Is this member in a different voice channel from the one this player is in?
+    fn elsewhere(&self, m: &Member) -> bool {
+        let theirs = self.dir.voice_of(self.guild, &m.id);
+        self.players.with(&self.key(), |p| p.voice.clone()).is_some_and(|v| theirs.as_ref() != Some(&v))
+    }
+    /// Is this member in a voice channel, but not the one this player is in?
+    fn in_other_call(&self, m: &Member) -> bool {
+        self.dir.voice_of(self.guild, &m.id).is_some() && self.elsewhere(m)
+    }
+    /// Says no to a control, and when the reason is that they are in another call, says what to do instead.
+    fn nope(&self, m: &Member, normal: &str) -> Vec<Action> {
+        if self.in_other_call(m) { private("This player is in a different voice channel from yours, so its buttons are not for you. Press **Start mine** to begin your own queue in your call.") } else { private(normal) }
+    }
+    /// "Start mine": the person wants their own queue in their own call. A bot can only be in one voice channel per
+    /// server, so this finds a free music bot for them (or says why there is none) and opens the Add popup for it.
+    fn start_mine(&self, m: &Member) -> Vec<Action> {
+        let Some(mine) = self.dir.voice_of(self.guild, &m.id) else { return private("Join a voice channel first, then press **Start mine** again. A music bot will play there.") };
+        let slots = self.dir.slots(self.guild);
+        let state = |s: usize| self.players.with(&slot_key(self.guild, s), |p| (p.voice.clone(), p.now.is_some() || !p.queue.is_empty()));
+        if slots.iter().copied().any(|s| state(s).0.as_deref() == Some(mine.as_str())) {
+            return private(format!("A music bot is already in <#{mine}>. Use its player, or press **Add** on it."));
+        }
+        let Some(free) = slots.iter().copied().find(|s| { let (v, busy) = state(*s); v.is_none() && !busy }) else {
+            return private(if self.dir.helpers().is_empty() {
+                "The music bot is already playing in another voice channel, and a bot can only be in one channel at a time. For two calls at once, the bot's owner can add more music bots under **Music bots** in the Good Boy app."
+            } else {
+                "Every music bot here is busy in another call. Try again when one finishes, or ask the bot's owner to add another music bot."
+            });
+        };
+        let id = if free == 0 { "mu:add".to_string() } else { format!("mu~{free}:add") };
+        vec![add_form(id, "Start your own music")]
+    }
     fn press(&self, m: &Member, what: &str, now: i64, from_card: bool) -> Vec<Action> {
         let now_track = self.players.with(&self.key(), |p| p.now.clone());
         let update = |out: &mut Vec<Action>| { if !from_card { out.extend(self.refresh(now)); } };
@@ -478,7 +516,8 @@ impl Music<'_> {
             if from_card { vec![Action::Update { card: self.card(now) }, Action::FollowUp { card: Card::new(Area::Music).line(text).private() }] } else { private(text) }
         };
         match what {
-            "add" => vec![Action::Form { id: self.mu("add"), title: "Add music".into(), fields: vec![Field { id: "song".into(), label: ADD_LABEL.into(), long: false, required: true, max: 300, placeholder: Some("e.g. never gonna give you up".into()), ..Default::default() }] }],
+            "add" => vec![add_form(self.mu("add"), "Add music")],
+            "start" => self.start_mine(m),
             "queue" => {
                 let text = self.players.with(&self.key(), |p| {
                     let mut lines = Vec::new();
@@ -502,7 +541,7 @@ impl Music<'_> {
             "mediaon" | "mediaoff" => self.media_set(m, what == "mediaon", now),
             "pause" => {
                 let Some(t) = now_track else { return private("Nothing is playing.") };
-                if !self.can_control(m, Some(&t)) { return private("Only the person who added this song, a DJ, or someone with Manage Channels can do that."); }
+                if !self.can_control(m, Some(&t)) { return self.nope(m, "Only the person who added this song, a DJ, or someone with Manage Channels can do that."); }
                 let paused = self.players.with(&self.key(), |p| match p.paused_at.take() { Some(at) => { p.paused_ms += now - at; false } None => { p.paused_at = Some(now); true } });
                 let mut out = answer(if paused { "⏸️ Paused.".into() } else { "▶️ Playing again.".into() });
                 out.push(self.music(if paused { MusicCmd::Pause } else { MusicCmd::Resume }));
@@ -512,7 +551,7 @@ impl Music<'_> {
             "skip" => {
                 let Some(t) = now_track else { return private("Nothing is playing.") };
                 if !self.can_control(m, Some(&t)) {
-                    if !self.settings.bool(self.guild, MODULE, "voteSkip") { return private("Only the person who added this song, a DJ, or someone with Manage Channels can skip it."); }
+                    if !self.settings.bool(self.guild, MODULE, "voteSkip") || self.in_other_call(m) { return self.nope(m, "Only the person who added this song, a DJ, or someone with Manage Channels can skip it."); }
                     if let Some(said) = self.vote(m) { return said; }
                 }
                 // a skipped song is done with, even when repeating one: it is not played again
@@ -525,7 +564,7 @@ impl Music<'_> {
             }
             "back" => {
                 let Some(prev) = self.players.with(&self.key(), |p| p.history.pop()) else { return private("There's no song before this one.") };
-                if !self.can_control(m, now_track.as_ref()) { return private("Only a DJ, or someone with Manage Channels, can go back."); }
+                if !self.can_control(m, now_track.as_ref()) { return self.nope(m, "Only a DJ, or someone with Manage Channels, can go back."); }
                 self.players.with(&self.key(), |p| { if let Some(cur) = p.now.take() { p.queue.insert(0, cur); } p.queue.insert(0, prev.clone()); });
                 let mut out = answer(format!("⏮️ Back to {}.", prev.label()));
                 if now_track.is_some() { out.push(self.music(MusicCmd::Stop)); }
@@ -534,7 +573,7 @@ impl Music<'_> {
                 out
             }
             "stop" => {
-                if !self.can_control(m, now_track.as_ref()) { return private("Only a DJ, or someone with Manage Channels, can stop the music for everyone."); }
+                if !self.can_control(m, now_track.as_ref()) { return self.nope(m, "Only a DJ, or someone with Manage Channels, can stop the music for everyone."); }
                 self.players.with(&self.key(), |p| { p.queue.clear(); p.now = None; p.paused_at = None; p.idle_since = Some(now); p.loading = false; });
                 let mut out = answer("⏹️ Stopped, and the queue is cleared.".into());
                 out.push(self.music(MusicCmd::Leave));

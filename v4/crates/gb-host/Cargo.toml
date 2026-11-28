@@ -9,6 +9,7 @@ publish.workspace = true
 gb-data = { path = "../gb-data" }
 gb-core = { path = "../gb-core" }
 gb-discord = { path = "../gb-discord" }
+gb-art = { path = "../gb-art" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
 base64 = "0.21"
 axum = { version = "0.7", default-features = false, features = ["tokio", "http1", "json", "query"] }

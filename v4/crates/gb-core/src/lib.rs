@@ -1,4 +1,4 @@
-//! Basic Ghost Labs - Good Boy 4. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
+//! Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved.
 //!
 //! The bot's brain, kept apart from Discord. Things that happen arrive as plain events (`event`), modules decide
 //! what to do, and what they want done comes back as plain actions. The Discord connection is a thin layer
@@ -44,6 +44,9 @@ pub mod arcade;
 pub mod arcade_data;
 pub mod casino;
 pub mod community;
+pub mod gallery;
+pub mod setup;
+pub mod guide;
 pub mod levels;
 pub mod logs;
 pub mod messages;
@@ -72,8 +75,8 @@ pub mod tts;
 pub mod welcome;
 
 pub use bot::Bot;
-pub use card::{Area, Art, Button, ButtonStyle, Card, CardFile, RankArt, Select};
-pub use event::{Action, ButtonEvent, CommandEvent, Field, FieldKind, FormEvent, KeepFile, Member, MessageEvent, Place, TranscriptHead, TranscriptTo};
+pub use card::{Area, Art, Button, ButtonStyle, Card, CardFile, GreetingArt, RankArt, Select};
+pub use event::{SetupJob, SetupStep, Action, ButtonEvent, CommandEvent, Field, FieldKind, FormEvent, KeepFile, Member, MessageEvent, Place, TranscriptHead, TranscriptTo};
 pub use settings::{Def, Kind, Settings, SettingsError};
 
 use gb_data::Store;

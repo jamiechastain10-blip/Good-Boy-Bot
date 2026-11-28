@@ -1,5 +1,6 @@
 //! The bot: holds the database and settings, and passes each event through the modules that are on.
 
+use crate::setup;
 use crate::Member;
 use crate::community;
 use crate::modplus;
@@ -347,7 +348,7 @@ pub const MODULES: &[ModuleInfo] = &[
     ModuleInfo { id: levels::MODULE, name: "Levels", about: "Members earn XP for chatting, reacting and talking in voice, and level up with role rewards. Reputation, leaderboards (also a live one), XP boosts, a member counter. /rank, /leaderboard, /rep, /xp, /levels, /liveboard, /serverstats." },
     ModuleInfo { id: money::MODULE, name: "Money", about: "Coins, daily streaks, paying members, live leaderboards, the shop and inventory, work, the bank, pets, robbing (if allowed), the weekly lottery and coin events. /balance, /daily, /pay, /top, /shop, /work, /rob, /pet, /bank." },
     ModuleInfo { id: moderation::MODULE, name: "Moderation", about: "Warn, time out, kick, ban (for good or for a while), purge, each member's history, AutoMod, a strike ladder, server logs, raid protection and anti-nuke." },
-    ModuleInfo { id: welcome::MODULE, name: "Welcome", about: "Welcome and goodbye messages with a picture, roles given back to members who return, verification with an optional captcha, profile roles, introductions, birthdays and AFK. Needs Server Members on the bot's page. /greeting, /verify, /profile, /introduce, /birthday, /afk." },
+    ModuleInfo { id: welcome::MODULE, name: "Welcome", about: "Welcome and goodbye messages with a picture, roles given back to members who return, verification with an optional captcha, profile roles, introductions, birthdays and AFK. Needs Server Members on the bot's page. /greeting, /images, /verify, /profile, /introduce, /birthday, /afk." },
     ModuleInfo { id: roles::MODULE, name: "Role menus", about: "Buttons or a dropdown for members to pick roles, reaction roles, roles given on join, roles while playing a game, and roles that run out. /rolemenu, /reactionrole, /autorole, /gamerole." },
     ModuleInfo { id: tickets::MODULE, name: "Tickets", about: "Tickets with categories and urgency, popups, a staff watch log for reports, required close notes, transcripts, ratings and a history. /ticket." },
     ModuleInfo { id: reminders::MODULE, name: "Reminders", about: "Private reminders and team reminders that notify roles, once or repeating. /remind." },
@@ -355,7 +356,7 @@ pub const MODULES: &[ModuleInfo] = &[
     ModuleInfo { id: tags::MODULE, name: "Custom commands", about: "Your own commands such as ?rules, and replies when someone says a phrase. /tags. Needs Message Content." },
     ModuleInfo { id: counting::MODULE, name: "Counting", about: "Counting channels and word chain, with records and top players. /counting. Needs Message Content." },
     ModuleInfo { id: fun::MODULE, name: "Fun", about: "Magic 8-ball, dice, ship two members and conversation topics. /fun." },
-    ModuleInfo { id: eclipseid::MODULE, name: "Eclipse ID", about: "A gaming profile members control: favourite games, platforms, availability, linked game names, and who sees each part. /id." },
+    ModuleInfo { id: eclipseid::MODULE, name: "Eclipse ID", about: "A gaming profile members control: favourite games, platforms, availability, linked game names, and who sees each part. One card per person, the same in every server, with games and platforms picked up from their Discord status (the server and the member can switch that off), a code to move the card to another Good Boy, and a way to find players of a game. /id." },
     ModuleInfo { id: stats::MODULE, name: "Activity stats", about: "Counts messages, voice time and reactions (never message text) for member stats, leaderboards, weekly recaps, inactive-member clean-up and counter channels. /stats, /counter." },
     ModuleInfo { id: engagement::MODULE, name: "Announcements, polls and suggestions", about: "Announcements (also scheduled and repeating), polls and suggestions on one voting engine, and a configurable starboard. /announce, /poll, /suggest, /suggestion, /starboard." },
     ModuleInfo { id: tempvoice::MODULE, name: "Temporary voice rooms", about: "Join-to-create voice rooms with full controls, plus event hubs that sort players into teams with their own voice rooms. /room, /voicehub." },
@@ -445,7 +446,7 @@ pub fn group_about(command: &str, group: &str) -> &'static str {
 }
 /// Every command this build of the bot answers. The Discord layer registers exactly these.
 pub fn commands() -> impl Iterator<Item = &'static CommandSpec> {
-    OWN.iter().chain(fun::COMMANDS).chain(counting::COMMANDS).chain(reminders::COMMANDS).chain(giveaways::COMMANDS).chain(tickets::COMMANDS).chain(tags::COMMANDS).chain(roles::COMMANDS).chain(welcome::COMMANDS).chain(economy::COMMANDS).chain(utility::COMMANDS).chain(roleplay::COMMANDS).chain(invites::COMMANDS).chain(backup::COMMANDS).chain(messages::COMMANDS).chain(deadchat::COMMANDS).chain(eclipseid::COMMANDS).chain(family::COMMANDS).chain(achievements::COMMANDS).chain(clips::COMMANDS).chain(botnews::COMMANDS).chain(partyfinder::COMMANDS).chain(quotes::COMMANDS).chain(critters::COMMANDS).chain(integrations::COMMANDS).chain(tts::COMMANDS).chain(tempvoice::COMMANDS).chain(engagement::COMMANDS).chain(stats::COMMANDS).chain(community::COMMANDS).chain(casino::COMMANDS).chain(crate::arcade::COMMANDS).chain(fish::COMMANDS).chain(notify::COMMANDS).chain(moderation::COMMANDS).chain(modplus::COMMANDS).chain(logs::COMMANDS).chain(music::COMMANDS).chain(timezones::COMMANDS).chain(altwatch::COMMANDS).chain(plural::COMMANDS)
+    OWN.iter().chain(fun::COMMANDS).chain(counting::COMMANDS).chain(reminders::COMMANDS).chain(giveaways::COMMANDS).chain(tickets::COMMANDS).chain(tags::COMMANDS).chain(roles::COMMANDS).chain(welcome::COMMANDS).chain(economy::COMMANDS).chain(utility::COMMANDS).chain(roleplay::COMMANDS).chain(invites::COMMANDS).chain(backup::COMMANDS).chain(messages::COMMANDS).chain(deadchat::COMMANDS).chain(eclipseid::COMMANDS).chain(family::COMMANDS).chain(achievements::COMMANDS).chain(clips::COMMANDS).chain(botnews::COMMANDS).chain(partyfinder::COMMANDS).chain(quotes::COMMANDS).chain(critters::COMMANDS).chain(integrations::COMMANDS).chain(tts::COMMANDS).chain(tempvoice::COMMANDS).chain(engagement::COMMANDS).chain(stats::COMMANDS).chain(community::COMMANDS).chain(casino::COMMANDS).chain(crate::arcade::COMMANDS).chain(fish::COMMANDS).chain(notify::COMMANDS).chain(moderation::COMMANDS).chain(modplus::COMMANDS).chain(logs::COMMANDS).chain(music::COMMANDS).chain(timezones::COMMANDS).chain(altwatch::COMMANDS).chain(plural::COMMANDS).chain(setup::COMMANDS)
 }
 
 /// Modules a brand-new server starts with.
@@ -566,7 +567,7 @@ impl Bot {
             card = card.line(format!("**Commands on their own**\n{}", alone.join(" ")));
         }
         if !any { card = card.line("No features are turned on yet. An admin can turn them on from the dashboard."); }
-        card.line("-# Group commands (like `/mod`) open a menu: pick what you want from it. Staff-only ones only work for staff.")
+        card.line("-# Group commands (like `/mod`) open a menu: pick what you want from it. Staff-only ones only work for staff.\n-# Want the details? Run `/help command:` and type a command, group or module, for example `/help command:images`.")
     }
     fn on(&self, guild: &str, module: &str) -> bool {
         self.db.get().module_enabled(guild, module).unwrap_or(false)
@@ -760,6 +761,12 @@ impl Bot {
             "rates": { "taxPay": s("taxPay"), "taxIncome": s("taxIncome"), "taxWithdraw": s("taxWithdraw"), "taxWinnings": s("taxWinnings"), "shopToTreasury": s("shopToTreasury"),
                 "gemsEnabled": s("gemsEnabled"), "gemName": s("gemName"), "gemEmoji": s("gemEmoji"), "exchangeRate": s("exchangeRate"), "exchangeFee": s("exchangeFee"), "currencyName": s("currencyName"), "currencyEmoji": s("currencyEmoji") },
         })
+    }
+    /// Adds coins to the treasury, chosen in the launcher. Gives the new balance.
+    pub fn economy_add(&self, guild: &str, amount: i64, note: &str, now: i64) -> Result<i64, String> {
+        if !self.on(guild, money::MODULE) { return Err("Money is turned off in this server. Turn it on first.".into()); }
+        let server = self.server_name(guild);
+        self.economy(guild, &server).treasury_add(&self.directory.bot_owner().unwrap_or_default(), amount, &crate::welcome::sanitize_name(note.trim(), 100), now)
     }
     /// Pays coins from the treasury to a member, chosen in the launcher. Gives what the treasury has left.
     pub fn economy_give(&self, guild: &str, user: &str, amount: i64, reason: &str, now: i64) -> Result<i64, String> {
@@ -978,8 +985,75 @@ impl Bot {
     pub fn greeting_image(&self, guild: &str, kind: &str) -> Option<(String, Vec<u8>)> {
         self.members(guild, "").greeting_image(kind)
     }
+    /// A welcome or goodbye message with a sample member, for the dashboard's preview.
+    pub fn greeting_preview(&self, guild: &str, kind: &str, ov: &serde_json::Value) -> Option<(Option<crate::GreetingArt>, String)> {
+        self.members(guild, "").greeting_preview(kind, ov)
+    }
     pub fn greeting_image_set(&self, guild: &str, kind: &str, name: &str, bytes: &[u8], now: i64) -> Result<(), String> {
         self.members(guild, "").greeting_image_set(kind, name, bytes, now)
+    }
+    /// The server's picture gallery, oldest first, each with where it is in use.
+    pub fn gallery_pictures(&self, guild: &str) -> Vec<(crate::gallery::Picture, Vec<&'static str>)> {
+        let g = crate::gallery::Gallery { db: &self.db, guild };
+        let m = self.members(guild, "");
+        g.list().into_iter().map(|p| { let uses = g.bytes(&p.id).map(|b| m.gallery_uses(&b)).unwrap_or_default(); (p, uses) }).collect()
+    }
+    pub fn gallery_bytes(&self, guild: &str, id: &str) -> Option<Vec<u8>> { crate::gallery::Gallery { db: &self.db, guild }.bytes(id) }
+    pub fn gallery_dir(&self, guild: &str) -> Option<std::path::PathBuf> { crate::gallery::Gallery { db: &self.db, guild }.dir() }
+    pub fn gallery_add(&self, guild: &str, name: &str, bytes: &[u8], now: i64) -> Result<String, String> { crate::gallery::Gallery { db: &self.db, guild }.add(name, bytes, now) }
+    pub fn gallery_rename(&self, guild: &str, id: &str, name: &str) -> Result<(), String> { crate::gallery::Gallery { db: &self.db, guild }.rename(id, name) }
+    pub fn gallery_remove(&self, guild: &str, id: &str) -> Result<(), String> { crate::gallery::Gallery { db: &self.db, guild }.remove(id) }
+    pub fn gallery_use(&self, guild: &str, id: &str, slot: &str, now: i64) -> Result<(), String> { self.members(guild, "").gallery_use(id, slot, now) }
+    pub fn gallery_stop(&self, guild: &str, slot: &str) -> Result<(), String> { self.members(guild, "").gallery_stop(slot) }
+    /// The Eclipse ID page for a server: how many cards and how many people picked up, and whether picking up can work.
+    pub fn eclipse_view(&self, guild: &str) -> serde_json::Value {
+        let (cards, here, picked) = self.db.get().eid_counts(guild).unwrap_or_default();
+        serde_json::json!({ "cards": cards, "here": here, "picked": picked, "auto": self.settings.bool(guild, eclipseid::MODULE, "autoDetect"), "presence": self.directory.sees_presences() })
+    }
+    // ---- server setup (the Discord layer reads and builds the server; these decide what to do)
+    fn setup_of<'a>(&'a self, guild: &'a str) -> setup::Setup<'a> { setup::Setup { db: &self.db, settings: &self.settings, guild } }
+    /// What a layout would add to the server as it is now.
+    pub fn setup_plan(&self, tid: &str, now_layout: &serde_json::Value, owner: &str) -> Option<Card> { Some(setup::plan_card(setup::template(tid)?, now_layout, owner)) }
+    /// The roles and channels a build has to add (what the server lacks).
+    pub fn setup_missing(&self, tid: &str, now_layout: &serde_json::Value) -> Option<(Vec<serde_json::Value>, Vec<serde_json::Value>)> {
+        let (r, c, ..) = setup::diff(setup::template(tid)?, now_layout);
+        Some((r, c))
+    }
+    /// After a build: connect the bot to what was made. Gives what to post and what was connected.
+    pub fn setup_wire(&self, guild: &str, tid: &str, built: &setup::Built) -> (Vec<Action>, Vec<String>) {
+        match setup::template(tid) { Some(t) => self.setup_of(guild).wire(t, built), None => (Vec::new(), Vec::new()) }
+    }
+    pub fn setup_built_card(&self, tid: &str, added: (usize, usize), failed: &[String], wired: &[String]) -> Card {
+        setup::template(tid).map(|t| setup::built_card(t, added, failed, wired)).unwrap_or_else(|| Card::new(Area::General).line("Done.").private())
+    }
+    /// The check of a server: a card, and the same as data for the dashboard. The result is kept for the dashboard.
+    pub fn setup_scan(&self, guild: &str, layout: &serde_json::Value, now: i64, owner: &str) -> (Card, serde_json::Value) {
+        let findings = self.setup_of(guild).audit(layout, now, self.directory.members(guild));
+        let data = serde_json::json!({ "at": now, "findings": findings.iter().map(|f| f.json()).collect::<Vec<_>>(), "channels": layout["channels"].as_array().map(|c| c.len()).unwrap_or(0), "roles": layout["roles"].as_array().map(|c| c.len()).unwrap_or(0) });
+        let _ = self.db.get().data_set(guild, "setup", "scan", &data);
+        (setup::scan_card(&findings, owner), data)
+    }
+    pub fn setup_fix(&self, guild: &str, what: &str, layout: &serde_json::Value) -> setup::FixPlan { self.setup_of(guild).fix(what, layout) }
+    /// Remembers how the last build or fix went, for the dashboard.
+    pub fn setup_note(&self, guild: &str, what: &str, text: &str, now: i64) {
+        let _ = self.db.get().data_set(guild, "setup", "last", &serde_json::json!({ "at": now, "what": what, "text": text }));
+    }
+    /// The Setup page: the layouts, the last check and the last thing built or fixed.
+    pub fn setup_view(&self, guild: &str) -> serde_json::Value {
+        let (scan, last) = { let d = self.db.get(); (d.data_get(guild, "setup", "scan").ok().flatten(), d.data_get(guild, "setup", "last").ok().flatten()) };
+        let layouts: Vec<serde_json::Value> = setup::pickable().map(|t| {
+            let l = setup::as_layout(t);
+            let chans = l["channels"].as_array().cloned().unwrap_or_default();
+            let tree: Vec<serde_json::Value> = t.cats.iter().map(|c| serde_json::json!({ "name": c.name, "private": c.access == setup::Access::Staff, "channels": c.chans.iter().map(|ch| serde_json::json!({ "name": ch.name, "voice": ch.kind == setup::Type::Voice, "read_only": ch.access == setup::Access::ReadOnly, "private": ch.access == setup::Access::Staff })).collect::<Vec<_>>() })).collect();
+            serde_json::json!({ "id": t.id, "name": t.name, "about": t.about, "roles": t.roles.iter().map(|r| r.name).collect::<Vec<_>>(), "channels": chans.iter().filter(|c| c["type"] != 4).count(), "tree": tree, "modules": t.modules.iter().map(|m| setup_module_name(m)).collect::<Vec<_>>() })
+        }).collect();
+        serde_json::json!({ "layouts": layouts, "scan": scan, "last": last, "fixes": setup::FIXES.iter().map(|(a, b)| serde_json::json!([a, b])).collect::<Vec<_>>() })
+    }
+    /// What a member was seen playing (from their Discord status): kept for their Eclipse ID when the server and they allow it.
+    pub fn eid_presence(&self, guild: &str, user: &str, games: &[String], platforms: &[&str], now: i64) {
+        if games.is_empty() && platforms.is_empty() { return; }
+        if !self.on(guild, eclipseid::MODULE) || !self.settings.bool(guild, eclipseid::MODULE, "autoDetect") { return; }
+        eclipseid::note_presence(&self.db, guild, user, games, platforms, now);
     }
     pub fn greeting_image_clear(&self, guild: &str, kind: &str) -> Result<(), String> {
         self.members(guild, "").greeting_image_clear(kind)
@@ -1323,7 +1397,7 @@ impl Bot {
             let cmd = CommandEvent { guild: ev.guild.clone(), place: ev.place.clone(), member: ev.member.clone(), name: "verify".into(), sub: Some("setup".into()), args, at_ms: ev.at_ms, from_form: true, ..Default::default() };
             return self.on_command(&cmd, name_of, roll);
         }
-        if ["verify:code", "intro:submit", "greet:image"].contains(&ev.id.as_str()) {
+        if ["verify:code", "intro:submit", "greet:image", "gallery:add"].contains(&ev.id.as_str()) {
             if let Some(no) = self.refused(&ev.guild, welcome::MODULE, &ev.place, &ev.member) { return vec![no]; }
             let server = self.server_name(&ev.guild);
             if let Some(out) = self.members(&ev.guild, &server).form(ev) { return out; }
@@ -1657,14 +1731,20 @@ impl Bot {
             ("party", _) => { let server = self.server_name(&ev.guild); return self.party(&ev.guild, &server).command(ev); }
             ("botnews", _) => return self.botnews(&ev.guild).command(ev),
             ("clips", _) => return self.clips(&ev.guild).command(ev),
-            ("help", _) => return vec![Action::Reply { card: self.help(&ev.guild) }],
+            ("setup", _) => return setup::command(&self.db, ev),
+            ("help", _) => {
+                if let Some(q) = ev.args.get("command").map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    return vec![Action::Reply { card: crate::guide::explain(q, &|m| m == notify::MODULE || self.on(&ev.guild, m)) }];
+                }
+                return vec![Action::Reply { card: self.help(&ev.guild) }];
+            }
             ("notifications", _) => return notify::command(&self.db, ev),
             ("achievements", _) => { let server = self.server_name(&ev.guild); return self.achievements(&ev.guild, &server).command(ev); }
             ("marry" | "family", _) => return self.family(&ev.guild).command(ev, name_of),
             ("id", _) => {
                 let server = self.server_name(&ev.guild);
                 let ach = self.on(&ev.guild, achievements::MODULE).then(|| self.achievements(&ev.guild, &server));
-                return eclipseid::command(&self.db, ev, self.settings.bool(&ev.guild, eclipseid::MODULE, "robloxLookup"), ach.as_ref());
+                return eclipseid::command(&self.db, ev, self.settings.bool(&ev.guild, eclipseid::MODULE, "robloxLookup"), self.settings.bool(&ev.guild, eclipseid::MODULE, "autoDetect"), ach.as_ref());
             }
             ("rp", _) => return roleplay::command(&self.db, &self.settings, &self.directory, ev),
             ("highlight", _) => return utility::command(&self.db, ev, self.directory.reads_messages()),
@@ -1674,7 +1754,7 @@ impl Bot {
                 if text.trim().is_empty() { return vec![private("That message has no text to translate.")]; }
                 return vec![Action::Translate { text, to: ev.args.get("locale").map(|l| l.split('-').next().unwrap_or("en").to_string()).filter(|l| !l.is_empty()).unwrap_or_else(|| "en".into()) }];
             }
-            ("greeting" | "verify" | "profile" | "introduce" | "birthday" | "afk", _) => {
+            ("greeting" | "images" | "verify" | "profile" | "introduce" | "birthday" | "afk", _) => {
                 let server = self.server_name(&ev.guild);
                 return self.members(&ev.guild, &server).command(ev, roll);
             }
@@ -1881,6 +1961,9 @@ impl Bot {
                 None => vec![private("That menu is from an older message. Use the command again.")],
             };
         }
+        if ev.id.starts_with("setup:") {
+            if let Some(out) = setup::button(&self.db, &ev.guild, &ev.id, &ev.member) { return out; }
+        }
         let old = || vec![private("That button is from an older message. Use the command again.")];
         self.db.seen().saw(&ev.guild, &ev.member.id, &ev.member.name);
         if let Some(form) = crate::forms::reopen(ev) {
@@ -2039,3 +2122,5 @@ fn roll_between(lo: i64, hi: i64) -> i64 {
     let span = (hi - lo + 1).max(1) as u64;
     lo + (h.finish() % span) as i64
 }
+
+fn setup_module_name(id: &str) -> String { MODULES.iter().find(|m| m.id == id).map(|m| m.name.to_string()).unwrap_or_else(|| id.to_string()) }

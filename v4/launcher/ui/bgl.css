@@ -1,0 +1,55 @@
+/* Basic Ghost Labs - Good Boy. Copyright (c) 2026 Basic Ghost Labs. All rights reserved. */
+/* The Basic Ghost Labs look: charcoal, hot pink and cyan from the logo, Figtree for text, Bowlby One for titles. It is the
+   regular (classic) look in the dark; the pixel look and the light theme are left as they are. Same look as Licence Studio. */
+@font-face{font-family:Figtree;src:url(fonts/Figtree-400.ttf) format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:Figtree;src:url(fonts/Figtree-500.ttf) format("truetype");font-weight:500;font-display:swap}
+@font-face{font-family:Figtree;src:url(fonts/Figtree-600.ttf) format("truetype");font-weight:600;font-display:swap}
+@font-face{font-family:Figtree;src:url(fonts/Figtree-700.ttf) format("truetype");font-weight:700;font-display:swap}
+@font-face{font-family:"Bowlby One";src:url(fonts/BowlbyOne-400.ttf) format("truetype");font-display:swap}
+
+:root[data-look="classic"]:not([data-theme="light"]){
+  --bg:#222222; --panel:#2a2a2d; --raised:#343438; --field:#1c1c1f; --line:rgba(255,255,255,.10);
+  --ink:#f6f2f7; --ink-2:#c3bec9; --ink-3:#8f8a96;
+  --accent:#fd78f7; --accent-ink:#02061b; --accent-soft:rgba(253,120,247,.14);
+  --cyan:#5ce1e6; --navy:#02061b; --good:#4fd9a0; --warn:#f3b94a; --bad:#ff6b7d;
+  --r:16px; --r-sm:10px;
+  --display:"Bowlby One","Arial Black",Impact,system-ui,sans-serif;
+  --text:Figtree,"Segoe UI",system-ui,sans-serif;
+}
+:root[data-look="classic"]:not([data-theme="light"]) body{background:radial-gradient(900px 420px at 92% -8%,rgba(253,120,247,.10),transparent 60%),radial-gradient(700px 360px at -5% 105%,rgba(92,225,230,.07),transparent 60%),var(--bg);font-size:14.5px}
+:root[data-look="classic"]:not([data-theme="light"]) :focus-visible{outline-color:var(--cyan)}
+:root[data-look="classic"]:not([data-theme="light"]) h1{font:400 clamp(20px,2.4vw,27px)/1.1 var(--display);text-transform:uppercase;letter-spacing:.01em;text-shadow:-1px 1px 0 var(--navy),-2px 2px 0 var(--navy),-3px 3px 0 var(--navy)}
+:root[data-look="classic"]:not([data-theme="light"]) h2{font:400 19px/1.15 var(--display);text-transform:uppercase;letter-spacing:.01em}
+:root[data-look="classic"]:not([data-theme="light"]) h3{font:700 15px var(--text)}
+/* buttons: a hard navy shadow under the pink ones, like the logo */
+:root[data-look="classic"]:not([data-theme="light"]) .btn{border-radius:10px;font-weight:700;box-shadow:3px 3px 0 var(--navy);transition:transform .12s,box-shadow .12s,background .12s,filter .12s}
+:root[data-look="classic"]:not([data-theme="light"]) .btn:hover{filter:none;background:#ff93f9;transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--navy)}
+:root[data-look="classic"]:not([data-theme="light"]) .btn:active{transform:none;box-shadow:1px 1px 0 var(--navy)}
+:root[data-look="classic"]:not([data-theme="light"]) .btn.quiet,:root[data-look="classic"]:not([data-theme="light"]) .btn.danger{box-shadow:none;background:var(--raised);border-color:rgba(255,255,255,.18);color:var(--ink)}
+:root[data-look="classic"]:not([data-theme="light"]) .btn.quiet:hover{background:#3d3d42;transform:none;box-shadow:none}
+:root[data-look="classic"]:not([data-theme="light"]) .btn.danger{color:var(--bad)}
+:root[data-look="classic"]:not([data-theme="light"]) .btn.danger:hover{background:rgba(255,107,125,.14);transform:none;box-shadow:none}
+:root[data-look="classic"]:not([data-theme="light"]) .btn.small{box-shadow:none}
+:root[data-look="classic"]:not([data-theme="light"]) input:focus,:root[data-look="classic"]:not([data-theme="light"]) textarea:focus,:root[data-look="classic"]:not([data-theme="light"]) select:focus,:root[data-look="classic"]:not([data-theme="light"]) .field input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(92,225,230,.16)}
+/* cards, tiles, chips, toggles */
+:root[data-look="classic"]:not([data-theme="light"]) .card{border-radius:16px}
+:root[data-look="classic"]:not([data-theme="light"]) .tile{border-radius:16px}
+:root[data-look="classic"]:not([data-theme="light"]) .tile:hover{border-color:var(--accent);transform:translateY(-2px)}
+:root[data-look="classic"]:not([data-theme="light"]) .seg,:root[data-look="classic"]:not([data-theme="light"]) .segs{border-radius:12px}
+:root[data-look="classic"]:not([data-theme="light"]) .seg[aria-pressed="true"],:root[data-look="classic"]:not([data-theme="light"]) .seg button[aria-pressed="true"],:root[data-look="classic"]:not([data-theme="light"]) .seg button[aria-selected="true"]{background:var(--accent);color:var(--navy);font-weight:700}
+:root[data-look="classic"]:not([data-theme="light"]) .chip[aria-pressed="true"]{background:var(--accent);color:var(--navy);font-weight:700}
+:root[data-look="classic"]:not([data-theme="light"]) .toggle:checked{background:var(--accent)}
+:root[data-look="classic"]:not([data-theme="light"]) .tag{background:rgba(92,225,230,.12);color:var(--cyan);border-radius:99px}
+:root[data-look="classic"]:not([data-theme="light"]) .layout.on,:root[data-look="classic"]:not([data-theme="light"]) .plan[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+/* the menu: charcoal, with a pink bar beside the page you are on */
+:root[data-look="classic"]:not([data-theme="light"]) .side{background:rgba(26,26,28,.88)}
+:root[data-look="classic"]:not([data-theme="light"]) .brand{font:700 15px var(--text);letter-spacing:.02em}
+:root[data-look="classic"]:not([data-theme="light"]) .brand img{border-radius:50%}
+:root[data-look="classic"]:not([data-theme="light"]) .nav{border-radius:10px;color:#d4cfd8;position:relative}
+:root[data-look="classic"]:not([data-theme="light"]) .nav:hover{background:rgba(255,255,255,.06);color:var(--ink)}
+:root[data-look="classic"]:not([data-theme="light"]) .nav[aria-current="page"]{background:var(--accent-soft);color:var(--ink);font-weight:700}
+:root[data-look="classic"]:not([data-theme="light"]) .nav[aria-current="page"]::before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:4px;border-radius:0 4px 4px 0;background:var(--accent)}
+:root[data-look="classic"]:not([data-theme="light"]) .nav[aria-current="page"] svg{color:var(--accent)}
+:root[data-look="classic"]:not([data-theme="light"]) .navgroup{font:700 10.5px var(--text);letter-spacing:.16em;color:#7d7882}
+:root[data-look="classic"]:not([data-theme="light"]) .navfold:hover{color:var(--ink)}
+:root[data-look="classic"]:not([data-theme="light"]) .page{padding-top:28px}

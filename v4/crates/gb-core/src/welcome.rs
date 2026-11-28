@@ -14,6 +14,7 @@ use std::sync::{Mutex, OnceLock};
 
 pub const MODULE: &str = "member-management";
 pub const MANAGE: Perm = Perm { key: "member-management.manage", level: Level::Admin };
+const THEME_IDS: &[&str] = &["dark", "light", "midnight", "sunset", "forest", "ocean", "candy"];
 pub static SETTINGS: &[Def] = &[
     Def { key: "welcomeEnabled", label: "Send welcome messages", kind: Kind::Toggle, default: Fallback::Bool(false) },
     Def { key: "welcomeChannel", label: "Welcome channel", kind: Kind::Channel, default: Fallback::None },
@@ -23,6 +24,16 @@ pub static SETTINGS: &[Def] = &[
     Def { key: "goodbyeEnabled", label: "Send goodbye messages", kind: Kind::Toggle, default: Fallback::Bool(false) },
     Def { key: "goodbyeChannel", label: "Goodbye channel", kind: Kind::Channel, default: Fallback::None },
     Def { key: "goodbyeMessage", label: "Goodbye message ({username} {server} {count})", kind: Kind::Text { max_len: 1900 }, default: Fallback::Str("**{username}** has left the server.") },
+    Def { key: "welcomeLook", label: "Welcome message look: plain (words, with your picture if you added one) or card (one picture with the member's name on it)", kind: Kind::Select(&["plain", "card"]), default: Fallback::Str("plain") },
+    Def { key: "welcomeCardTitle", label: "Welcome card: big words ({username} {server} {count})", kind: Kind::Text { max_len: 120 }, default: Fallback::Str("Welcome, {username}!") },
+    Def { key: "welcomeCardLine", label: "Welcome card: smaller words", kind: Kind::Text { max_len: 160 }, default: Fallback::Str("You are member #{count} of {server}") },
+    Def { key: "welcomeCardAccent", label: "Welcome card: ring and bar colour", kind: Kind::Colour, default: Fallback::Str("#6b93ff") },
+    Def { key: "welcomeCardTheme", label: "Welcome card: colours behind your picture", kind: Kind::Select(THEME_IDS), default: Fallback::Str("midnight") },
+    Def { key: "goodbyeLook", label: "Goodbye message look: plain or card", kind: Kind::Select(&["plain", "card"]), default: Fallback::Str("plain") },
+    Def { key: "goodbyeCardTitle", label: "Goodbye card: big words ({username} {server} {count})", kind: Kind::Text { max_len: 120 }, default: Fallback::Str("Goodbye, {username}") },
+    Def { key: "goodbyeCardLine", label: "Goodbye card: smaller words", kind: Kind::Text { max_len: 160 }, default: Fallback::Str("We hope to see you again") },
+    Def { key: "goodbyeCardAccent", label: "Goodbye card: ring and bar colour", kind: Kind::Colour, default: Fallback::Str("#b07cff") },
+    Def { key: "goodbyeCardTheme", label: "Goodbye card: colours behind your picture", kind: Kind::Select(THEME_IDS), default: Fallback::Str("dark") },
     Def { key: "welcomeImage", label: "Welcome picture (set with /greeting image)", kind: Kind::Text { max_len: 200 }, default: Fallback::Str("") },
     Def { key: "goodbyeImage", label: "Goodbye picture (set with /greeting image)", kind: Kind::Text { max_len: 200 }, default: Fallback::Str("") },
     Def { key: "verificationRole", label: "Role given after verifying", kind: Kind::Role, default: Fallback::None },
@@ -47,7 +58,15 @@ pub static SETTINGS: &[Def] = &[
 const fn opt(name: &'static str, about: &'static str, takes: Takes, required: bool) -> Opt {
     Opt { name, about, takes, required }
 }
+const SLOT_CHOICES: &[(&str, &str)] = &[("Welcome message", "welcome"), ("Goodbye message", "goodbye"), ("Rank card background for everyone", "rank")];
 pub const COMMANDS: &[CommandSpec] = &[
+    CommandSpec { name: "images", about: "(Staff) The server's picture gallery: every picture saved for the bot, ready to reuse", module: MODULE, options: &[], subs: &[
+        Sub { name: "list", about: "See the saved pictures and where each one is used", options: &[] },
+        Sub { name: "add", about: "Save pictures to the gallery (opens a form)", options: &[] },
+        Sub { name: "use", about: "Use a saved picture for the welcome, goodbye or rank cards", options: &[opt("number", "Its number in /images list", Takes::Whole { min: 1, max: 60 }, true), opt("where", "Where to use it", Takes::Choice(SLOT_CHOICES), true)] },
+        Sub { name: "stop", about: "Stop using a picture for the welcome, goodbye or rank cards", options: &[opt("where", "Which one", Takes::Choice(SLOT_CHOICES), true)] },
+        Sub { name: "remove", about: "Delete a saved picture (places already using it keep their copy)", options: &[opt("number", "Its number in /images list", Takes::Whole { min: 1, max: 60 }, true)] },
+    ] },
     CommandSpec { name: "greeting", about: "(Staff) Add a picture to welcome or goodbye messages (opens a form)", module: MODULE, options: &[], subs: &[] },
     CommandSpec { name: "verify", about: "Verification gate", module: MODULE, options: &[], subs: &[
         Sub { name: "setup", about: "Set the roles and post the verification panel", options: &[
@@ -183,6 +202,33 @@ impl Members<'_> {
         Some(base.join("files").join(MODULE).join(self.guild).join("greetings"))
     }
 
+    /// The words and look of a welcome or goodbye picture for a member. `ov` holds values being tried out (the dashboard's
+    /// preview), which win over what is saved: look, title, line, accent, theme.
+    pub fn greeting_art(&self, kind: &str, member: &Member, count: Option<u64>, ov: &Value) -> crate::GreetingArt {
+        let pick = |key: &str, saved: &str| -> String { ov[key].as_str().map(str::to_string).or_else(|| self.text(&format!("{kind}Card{saved}"))).unwrap_or_default() };
+        // the picture is words only, so a mention is written as the person's name
+        let plain = |t: String| fill(&t, member, self.server, count).replace(&format!("<@{}>", member.id), &member.name);
+        crate::GreetingArt {
+            name: member.name.clone(),
+            avatar_url: member.avatar.clone().map(|a| a.replace("size=128", "size=256")),
+            background: self.greeting_image(kind).map(|(_, bytes)| std::sync::Arc::from(bytes)),
+            title: plain(pick("title", "Title")),
+            line: plain(pick("line", "Line")),
+            accent: Some(pick("accent", "Accent")).filter(|a| !a.is_empty()),
+            theme: Some(pick("theme", "Theme")).filter(|a| !a.is_empty()),
+            pixel: false,
+        }
+    }
+    /// What the dashboard shows for a welcome or goodbye message with a sample member: the picture's inputs and the message
+    /// text as a person would read it. `ov` has values being tried out (look, message, title, line, accent, theme).
+    pub fn greeting_preview(&self, kind: &str, ov: &Value) -> Option<(Option<crate::GreetingArt>, String)> {
+        let kind = greet_kind(kind)?;
+        let sample = Member { id: "1".into(), name: "Alex".into(), ..Default::default() };
+        let message = ov["message"].as_str().map(str::to_string).or_else(|| self.text(&format!("{kind}Message"))).unwrap_or_default();
+        let text = fill(&message, &sample, self.server, Some(123)).replace("<@1>", "@Alex");
+        let look = ov["look"].as_str().map(str::to_string).or_else(|| self.text(&format!("{kind}Look"))).unwrap_or_else(|| "plain".into());
+        Some((if look == "card" { Some(self.greeting_art(kind, &sample, Some(123), ov)) } else { None }, text))
+    }
     /// The welcome or goodbye picture as it is kept: its file name and bytes. None when there is none (or it is gone).
     pub fn greeting_image(&self, kind: &str) -> Option<(String, Vec<u8>)> {
         let name = self.text(&format!("{}Image", greet_kind(kind)?))?;
@@ -209,9 +255,100 @@ impl Members<'_> {
         Ok(())
     }
 
+    // ------------------------------------------------------------------ the picture gallery
+    fn rank_default_path(&self) -> Option<std::path::PathBuf> {
+        let stored = self.settings.text(self.guild, crate::levels::MODULE, "cardDefaultBackground").filter(|s| !s.is_empty())?;
+        let name = stored.strip_prefix("file:")?;
+        if !crate::levels::ok_background_file(name) { return None; }
+        Some(crate::levels::background_dir(self.db.get().path().parent()?, self.guild).join(name))
+    }
+    /// Where a picture in the gallery is in use (it is compared by content, so it stays right when a copy is replaced).
+    pub fn gallery_uses(&self, bytes: &[u8]) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        for kind in ["welcome", "goodbye"] { if self.greeting_image(kind).is_some_and(|(_, b)| b == bytes) { out.push(kind); } }
+        if self.rank_default_path().and_then(|p| std::fs::read(p).ok()).is_some_and(|b| b == bytes) { out.push("rank"); }
+        out
+    }
+    /// Uses a gallery picture for the welcome message, the goodbye message or the rank card background.
+    pub fn gallery_use(&self, id: &str, slot: &str, at_ms: i64) -> Result<(), String> {
+        let bytes = crate::gallery::Gallery { db: self.db, guild: self.guild }.bytes(id).ok_or("That picture is not in the gallery.")?;
+        match slot {
+            "welcome" | "goodbye" => self.greeting_image_set(slot, id, &bytes, at_ms),
+            "rank" => {
+                let ext = image_ext(id, &bytes)?;
+                let dir = crate::levels::background_dir(self.db.get().path().parent().ok_or("The data folder is not ready yet.")?, self.guild);
+                std::fs::create_dir_all(&dir).map_err(|e| format!("The picture could not be saved ({e})."))?;
+                let stored = format!("{at_ms}-9999.{ext}");
+                std::fs::write(dir.join(&stored), &bytes).map_err(|e| format!("The picture could not be saved ({e})."))?;
+                if let Some(old) = self.rank_default_path() { if !old.ends_with(&stored) { let _ = std::fs::remove_file(old); } }
+                self.settings.set(self.guild, crate::levels::MODULE, "cardDefaultBackground", &json!(format!("file:{stored}"))).map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            _ => Err("Pick welcome, goodbye or rank.".into()),
+        }
+    }
+    /// Stops using a picture there (the welcome and goodbye messages go back to words only; the rank card to its theme).
+    pub fn gallery_stop(&self, slot: &str) -> Result<(), String> {
+        match slot {
+            "welcome" | "goodbye" => self.greeting_image_clear(slot),
+            "rank" => {
+                if let Some(old) = self.rank_default_path() { let _ = std::fs::remove_file(old); }
+                self.settings.set(self.guild, crate::levels::MODULE, "cardDefaultBackground", &json!("")).map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            _ => Err("Pick welcome, goodbye or rank.".into()),
+        }
+    }
+    fn images_command(&self, ev: &CommandEvent, sub: &str) -> Vec<Action> {
+        let gallery = crate::gallery::Gallery { db: self.db, guild: self.guild };
+        let label = |slot: &str| crate::gallery::SLOTS.iter().find(|(s, _)| *s == slot).map(|(_, l)| *l).unwrap_or("");
+        let number = || ev.args.get("number").and_then(|n| n.trim().parse::<i64>().ok());
+        let slot = ev.args.get("where").map(String::as_str).unwrap_or("");
+        match sub {
+            "add" => vec![Action::Form { id: "gallery:add".into(), title: "Save pictures to the gallery".into(), fields: vec![
+                Field { id: "pictures".into(), label: "Pictures".into(), desc: Some("PNG, JPG, GIF or WebP, each under 8 MB. Pick up to 10.".into()), kind: FieldKind::Files { most: 10 }, required: true, ..Default::default() },
+            ] }],
+            "use" => {
+                let Some(pic) = number().and_then(|n| gallery.nth(n)) else { return private("There is no picture with that number. Run `/images list` to see them.") };
+                match self.gallery_use(&pic.id, slot, ev.at_ms) {
+                    Ok(()) => private(format!("**{}** is now the {}.", pic.name, label(slot).to_lowercase())),
+                    Err(e) => private(e),
+                }
+            }
+            "stop" => match self.gallery_stop(slot) {
+                Ok(()) => private(format!("The {} no longer has a picture.", label(slot).to_lowercase())),
+                Err(e) => private(e),
+            },
+            "remove" => {
+                let Some(pic) = number().and_then(|n| gallery.nth(n)) else { return private("There is no picture with that number. Run `/images list` to see them.") };
+                match gallery.remove(&pic.id) {
+                    Ok(()) => private(format!("**{}** was removed from the gallery. Anywhere it was already in use keeps its own copy.", pic.name)),
+                    Err(e) => private(e),
+                }
+            }
+            _ => {
+                let pics = gallery.list();
+                if pics.is_empty() { return private("The gallery is empty. Run `/images add` to save pictures, or add them from the dashboard's Images page."); }
+                let mut card = Card::new(Area::General).title("Picture gallery").line(format!("{} of {} pictures. Use one with `/images use`, remove one with `/images remove`.", pics.len(), crate::gallery::MAX_PICTURES));
+                for (i, p) in pics.iter().take(25).enumerate() {
+                    let uses: Vec<&str> = gallery.bytes(&p.id).map(|b| self.gallery_uses(&b)).unwrap_or_default().into_iter().map(label).collect();
+                    card = card.line(format!("`{}` **{}** · {}{}", i + 1, p.name, crate::gallery::size_words(p.size), if uses.is_empty() { String::new() } else { format!(" · in use: {}", uses.join(", ")) }));
+                }
+                if pics.len() > 25 { card = card.line(format!("…and {} more. The dashboard's Images page shows them all.", pics.len() - 25)); }
+                vec![Action::Reply { card: card.private() }]
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ welcome / goodbye
     /// A welcome or goodbye message: plain text, or with the server's picture a card with the member's avatar.
-    pub fn greeting(&self, kind: &str, member: &Member, text: String) -> Card {
+    pub fn greeting(&self, kind: &str, member: &Member, text: String, count: Option<u64>) -> Card {
+        if self.text(&format!("{kind}Look")).as_deref() == Some("card") {
+            let mention = if kind == "welcome" { format!("<@{}>\n", member.id) } else { String::new() };
+            let mut card = Card::new(Area::General).line(format!("{mention}{text}"));
+            card.art = Some(crate::Art::Greeting(self.greeting_art(kind, member, count, &Value::Null)));
+            return card;
+        }
         let picture = self.text(&format!("{kind}Image")).and_then(|name| {
             let bytes = std::fs::read(self.greet_dir()?.join(&name)).ok()?;
             Some((name, bytes))
@@ -255,7 +392,7 @@ impl Members<'_> {
         if self.on("welcomeEnabled") {
             if let Some(channel) = self.text("welcomeChannel") {
                 let text = fill(&self.text("welcomeMessage").unwrap_or_default(), member, self.server, count);
-                out.push(Action::Send { channel, card: self.greeting("welcome", member, text), ping: vec![member.id.clone()], roles: Vec::new() });
+                out.push(Action::Send { channel, card: self.greeting("welcome", member, text, count), ping: vec![member.id.clone()], roles: Vec::new() });
             }
         }
         out
@@ -275,7 +412,7 @@ impl Members<'_> {
         if self.on("goodbyeEnabled") {
             if let Some(channel) = self.text("goodbyeChannel") {
                 let text = fill(&self.text("goodbyeMessage").unwrap_or_default(), member, self.server, count);
-                out.push(Action::Send { channel, card: self.greeting("goodbye", member, text), ping: Vec::new(), roles: Vec::new() });
+                out.push(Action::Send { channel, card: self.greeting("goodbye", member, text, count), ping: Vec::new(), roles: Vec::new() });
             }
         }
         out
@@ -289,6 +426,10 @@ impl Members<'_> {
         let d = self.data();
         let _ = roll;
         match (ev.name.as_str(), ev.sub.as_deref().unwrap_or("")) {
+            ("images", sub) => {
+                if !may(MANAGE) { return no(); }
+                self.images_command(ev, sub)
+            }
             ("greeting", _) => {
                 if !may(MANAGE) { return no(); }
                 vec![Action::Form { id: "greet:image".into(), title: "Welcome and goodbye pictures".into(), fields: vec![
@@ -513,6 +654,30 @@ impl Members<'_> {
                 None => out.push(Action::Post { channel, card, note: format!("intro:{}", ev.member.id), ping: Vec::new(), roles: Vec::new() }),
             }
             return Some(out);
+        }
+        if ev.id == "gallery:add" {
+            if !perms::allowed(self.db, self.guild, &ev.member, MANAGE) { return Some(private(format!("You don't have permission for that (`{}`).", MANAGE.key))); }
+            let gallery = crate::gallery::Gallery { db: self.db, guild: self.guild };
+            let mut room = crate::gallery::MAX_PICTURES.saturating_sub(gallery.list().len());
+            let (mut keep, mut skipped) = (Vec::new(), Vec::new());
+            for (k, (name, url, size)) in ev.files.get("pictures").cloned().unwrap_or_default().into_iter().enumerate() {
+                let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+                let ext = if ext == "jpeg" { "jpg".to_string() } else { ext };
+                if !GREET_IMAGE_TYPES.contains(&ext.as_str()) { skipped.push(format!("{name} (not a PNG, JPG, GIF or WebP picture)")); continue; }
+                if size > MAX_IMAGE_BYTES as u64 { skipped.push(format!("{name} (over 8 MB)")); continue; }
+                if room == 0 { skipped.push(format!("{name} (the gallery is full)")); continue; }
+                room -= 1;
+                let stored = format!("{}-{k}.{ext}", ev.at_ms);
+                gallery.name_upload(&stored, &name);
+                keep.push(KeepFile { name, url, size, stored });
+            }
+            if keep.is_empty() { return Some(private(if skipped.is_empty() { "No pictures were added. Pick at least one.".to_string() } else { format!("Nothing was added: {}.", skipped.join(", ")) })); }
+            let mut text = format!("Saving {} picture{} to the gallery. Run `/images list` in a moment to see {}.", keep.len(), if keep.len() == 1 { "" } else { "s" }, if keep.len() == 1 { "it" } else { "them" });
+            if !skipped.is_empty() { text.push_str(&format!(" Skipped: {}.", skipped.join(", "))); }
+            return Some(vec![
+                Action::Reply { card: Card::new(Area::General).line(text).private() },
+                Action::KeepFiles { dir: format!("files/{}/{}", crate::gallery::MODULE, self.guild), files: keep, post: None },
+            ]);
         }
         if ev.id == "greet:image" {
             if !perms::allowed(self.db, self.guild, &ev.member, MANAGE) { return Some(private(format!("You don't have permission for that (`{}`).", MANAGE.key))); }

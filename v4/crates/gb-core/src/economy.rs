@@ -305,7 +305,7 @@ impl Economy<'_> {
         }
         let mut card = Card::new(Area::Money).title("🏛️ The treasury").line(lines.join("\n\n")).line("-# Taxes and fees from the economy collect here. Admins pay it out as prizes and rewards.");
         card = card.button_with(format!("mpx:tdonate:{}:-", me.id), "Give coins", ButtonStyle::Good, Some("🎁".into()));
-        if self.is_server_owner(me) { card = card.button_with(format!("mpx:tadd:{}:-", me.id), "Add coins", ButtonStyle::Good, Some("➕".into())); }
+        if self.is_server_owner(me) || self.staff(me) { card = card.button_with(format!("mpx:tadd:{}:-", me.id), "Add coins", ButtonStyle::Good, Some("➕".into())); }
         if self.staff(me) { card = card.button_with(format!("mpx:tgive:{}:-", me.id), "Pay out", ButtonStyle::Primary, Some("💸".into())); }
         card
     }
@@ -322,6 +322,12 @@ impl Economy<'_> {
             .private()
     }
     /// Pays coins out of the treasury to a member (admins), with the reason in the record.
+    /// Puts new coins in the treasury (from the launcher: the person who runs the bot decides). The note is kept in the record.
+    pub fn treasury_add(&self, by: &str, amount: i64, note: &str, now: i64) -> Result<i64, String> {
+        if !(1..=1_000_000_000_000).contains(&amount) { return Err("Type an amount from 1 to 1,000,000,000,000.".into()); }
+        self.db.get().treasury_in(self.guild, amount, "staff", Some(by), Some(note).filter(|n| !n.is_empty()), now).map_err(|_| "The treasury could not be changed just now. Try again in a moment.".to_string())?;
+        Ok(self.db.get().treasury(self.guild).map(|t| t.balance).unwrap_or(amount))
+    }
     pub fn treasury_give(&self, by: &str, to: &str, amount: i64, reason: &str, now: i64) -> Result<(i64, i64), String> {
         if amount <= 0 { return Err("The amount must be at least 1.".into()); }
         self.wallet_of(to);
@@ -824,7 +830,7 @@ impl Economy<'_> {
             }
             "tdonate" => ("Give coins to the treasury", vec![amount(), Field { id: "note".into(), label: "Note (optional)".into(), placeholder: Some("What it is for".into()), max: 100, ..Default::default() }]),
             "tadd" => {
-                if !self.is_server_owner(&ev.member) { return private("Only the server owner can add coins to the treasury."); }
+                if !self.is_server_owner(&ev.member) && !self.staff(&ev.member) { return private("Only the server owner and admins can add coins to the treasury."); }
                 ("Add coins to the treasury", vec![amount(), Field { id: "note".into(), label: "Note (optional)".into(), placeholder: Some("What it is for".into()), max: 100, ..Default::default() }])
             }
             "tgive" => {
@@ -908,7 +914,7 @@ impl Economy<'_> {
                 }
             }
             "tadd" => {
-                if !self.is_server_owner(me) { return private("Only the server owner can add coins to the treasury."); }
+                if !self.is_server_owner(me) && !self.staff(me) { return private("Only the server owner and admins can add coins to the treasury."); }
                 let amount = match parse_amount(&v("amount"), None, 1, 1_000_000_000_000) { Ok(n) => n, Err(no) => return private(no) };
                 let note = crate::welcome::sanitize_name(&v("note"), 100);
                 if self.db.get().treasury_in(self.guild, amount, "staff", Some(&me.id), Some(&note).filter(|n| !n.is_empty()).map(|n| n.as_str()), now).is_err() { return private("The treasury could not be changed just now. Try again in a moment."); }

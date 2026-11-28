@@ -39,9 +39,11 @@ pub static SETTINGS: &[Def] = &[
     Def { key: "gameAnimations", label: "Animate the pictures (spinning reels, cards being dealt, balloons popping, balls dropping)", kind: Kind::Toggle, default: Fallback::Bool(true) },
     Def { key: "privateGames", label: "Only the player sees their game (keeps the channel quiet)", kind: Kind::Toggle, default: Fallback::Bool(true) },
     Def { key: "jackpotSeed", label: "Jackpot pool starts at", kind: Kind::Number { min: 0, max: 100_000_000 }, default: Fallback::Int(5000) },
+    Def { key: "jackpotLossPercent", label: "Share of every lost bet (all games) that goes into the jackpot (%)", kind: Kind::Number { min: 0, max: 100 }, default: Fallback::Int(100) },
+    Def { key: "allowAllIn", label: "Let players go all in (bet everything, even above the biggest bet)", kind: Kind::Toggle, default: Fallback::Bool(true) },
     Def { key: "jackpotPercent", label: "Share of each slots bet added to the jackpot (%)", kind: Kind::Number { min: 0, max: 20 }, default: Fallback::Int(3) },
 ];
-const BET: Opt = Opt { name: "bet", about: "How many coins (500, 2.5k, half, all)", takes: Takes::Text, required: true };
+const BET: Opt = Opt { name: "bet", about: "How many coins (500, 2.5k, half, all, or all in)", takes: Takes::Text, required: true };
 pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { name: "slots", about: "Spin the slot machine", module: MODULE, options: &[BET], subs: &[] },
     CommandSpec { name: "blackjack", about: "Play a hand of blackjack", module: MODULE, options: &[BET], subs: &[] },
@@ -380,10 +382,21 @@ impl Games<'_> {
     pub(crate) fn bet(&self, who: &Member, raw: &str) -> Result<i64, String> {
         let have = self.wallet(who);
         let min = self.int("minBet");
+        // "all in" bets everything, even above the biggest bet (unless the server turned that off)
+        let word: String = raw.trim().to_lowercase().chars().filter(|c| c.is_alphabetic()).collect();
+        if matches!(word.as_str(), "all" | "allin") && self.settings.bool(self.guild, MODULE, "allowAllIn") {
+            if have < min { return Err(format!("You need at least {} to play. You have {}.", group(min), group(have))); }
+            return Ok(have);
+        }
         parse_amount(raw, Some(have), min, self.int("maxBet").min(have.max(min)))
     }
     pub(crate) fn record(&self, user: &str, game: &str, wagered: i64, returned: i64) {
         let _ = self.db.get().game_record(self.guild, user, game, wagered, returned);
+        // what players lose feeds the slots jackpot (slots add their own share when they spin)
+        if game != "slots" && returned < wagered {
+            let add = (wagered - returned) * self.int("jackpotLossPercent") / 100;
+            if add > 0 { self.data().set("pool", &json!(self.pool() + add)); }
+        }
         // a tax on winnings comes off the profit (never the stake), after the game, and goes to the server treasury
         let tax = crate::money::tax_of(returned - wagered, self.settings.int(self.guild, crate::money::MODULE, "taxWinnings"));
         if tax > 0 {
@@ -407,6 +420,9 @@ impl Games<'_> {
         let s = spin(rng);
         let streak = self.streak_of(&who.id);
         let base = (bet as f64 * s.multiplier).floor() as i64;
+        // a lost spin puts its loss share in the pool too (when that is more than the usual cut)
+        let loss_share = (bet - ((bet as f64 * s.multiplier).floor() as i64)).max(0) * self.int("jackpotLossPercent") / 100;
+        let pool = if !s.jackpot && loss_share > cut { pool + (loss_share - cut) } else { pool };
         let (won_pool, pool_after) = if s.jackpot { (pool, self.int("jackpotSeed")) } else { (0, pool) };
         let bonus_pct = if base > 0 { (streak * 5).min(MAX_STREAK_BONUS) } else { 0 };
         let bonus = base * bonus_pct / 100;
@@ -443,6 +459,7 @@ impl Games<'_> {
             .button(id("auto", r.bet), "Auto ×5", ButtonStyle::Primary)
             .button(id("double", r.bet * 2), "Bet ×2", ButtonStyle::Plain)
             .button(id("half", (r.bet / 2).max(1)), "Bet ½", ButtonStyle::Plain)
+            .button(id("allin", -1), "All in", ButtonStyle::Danger)
     }
     pub(crate) fn slots(&self, who: &Member, raw: &str, rng: &mut dyn FnMut(u32) -> u32, auto: bool, place: &str, now: i64) -> Vec<Action> {
         if !self.on("slots") { return private("Slots are turned off in this server."); }
@@ -489,7 +506,8 @@ impl Games<'_> {
             .line(if won { format!("You won {}", self.coins(payout)) } else { format!("You lost {}", self.coins(bet)) })
             .line(format!("Wallet {}", self.coins(self.balance(who))))
             .button(format!("cf:{side}:{}:{bet}", who.id), format!("Again ({})", group(bet)), ButtonStyle::Good)
-            .button(format!("cf:{}:{}:{bet}", if side == "heads" { "tails" } else { "heads" }, who.id), format!("Switch to {}", if side == "heads" { "tails" } else { "heads" }), ButtonStyle::Plain);
+            .button(format!("cf:{}:{}:{bet}", if side == "heads" { "tails" } else { "heads" }, who.id), format!("Switch to {}", if side == "heads" { "tails" } else { "heads" }), ButtonStyle::Plain)
+            .button(format!("cf:{side}:{}:-1", who.id), "All in", ButtonStyle::Danger);
         card.accent = Some(if won { 0xffb12e } else { 0xed4245 });
         vec![Action::Reply { card: self.quiet(card) }]
     }
@@ -557,7 +575,7 @@ impl Games<'_> {
             let net = t.total_paid() - t.total_staked();
             card = card.line(format!("{} Wallet {}", if net > 0 { "🎉" } else if net == 0 { "🤝" } else { "😕" }, self.coins(self.balance(who))));
             card.accent = Some(if net > 0 { 0xffb12e } else if net == 0 { 0x95a5a6 } else { 0xed4245 });
-            return card.button(format!("bj:again:{}:{}", who.id, t.bet), format!("Deal again ({})", group(t.bet)), ButtonStyle::Good).button(format!("bj:bethalf:{}:{}", who.id, (t.bet / 2).max(1)), "Bet ½", ButtonStyle::Plain).button(format!("bj:betdouble:{}:{}", who.id, t.bet * 2), "Bet ×2", ButtonStyle::Plain);
+            return card.button(format!("bj:again:{}:{}", who.id, t.bet), format!("Deal again ({})", group(t.bet)), ButtonStyle::Good).button(format!("bj:bethalf:{}:{}", who.id, (t.bet / 2).max(1)), "Bet ½", ButtonStyle::Plain).button(format!("bj:betdouble:{}:{}", who.id, t.bet * 2), "Bet ×2", ButtonStyle::Plain).button(format!("bj:again:{}:-1", who.id), "All in", ButtonStyle::Danger);
         }
         if t.offering {
             return card.line("The dealer shows an ace. Insurance costs half your bet and pays 2 to 1 if the dealer has blackjack.")
@@ -582,7 +600,7 @@ impl Games<'_> {
     fn blackjack_press(&self, who: &Member, what: &str, bet_arg: Option<i64>, now: i64, rng: &mut dyn FnMut(u32) -> u32) -> Vec<Action> {
         if matches!(what, "again" | "bethalf" | "betdouble") && bet_arg.is_some() {
             // "double" and "half" here change the next bet; the move buttons share the name "double", told apart by the bet
-            return self.blackjack(who, &bet_arg.unwrap_or(0).to_string(), now, rng).into_iter().map(|a| match a { Action::Reply { card } => Action::Update { card }, o => o }).collect();
+            return self.blackjack(who, &if bet_arg == Some(-1) { "all".to_string() } else { bet_arg.unwrap_or(0).to_string() }, now, rng).into_iter().map(|a| match a { Action::Reply { card } => Action::Update { card }, o => o }).collect();
         }
         let Some(mut t) = self.load(&who.id) else { return private("That hand has finished. Start a new one with `/blackjack`.") };
         match what {
@@ -631,10 +649,12 @@ impl Games<'_> {
         let (kind, what, owner) = (parts.first().copied().unwrap_or(""), parts.get(1).copied().unwrap_or(""), parts.get(2).copied().unwrap_or(""));
         if owner != ev.member.id { return private("That's someone else's game. Start your own!"); }
         let bet: Option<i64> = parts.get(3).and_then(|b| b.parse().ok());
+        // a bet of -1 on a button means "all in": it is worked out from the wallet when pressed
+        let raw = if bet == Some(-1) { "all".to_string() } else { bet.unwrap_or(0).to_string() };
         let again = |out: Vec<Action>| -> Vec<Action> { out.into_iter().map(|a| match a { Action::Reply { card } => Action::Update { card }, o => o }).collect() };
         match kind {
-            "sl" => again(self.slots(&ev.member, &bet.unwrap_or(0).to_string(), rng, what == "auto", &ev.place.channel, ev.at_ms)),
-            "cf" => again(self.coinflip(&ev.member, &bet.unwrap_or(0).to_string(), what, rng)),
+            "sl" => again(self.slots(&ev.member, &raw, rng, what == "auto", &ev.place.channel, ev.at_ms)),
+            "cf" => again(self.coinflip(&ev.member, &raw, what, rng)),
             _ => self.blackjack_press(&ev.member, what, bet, ev.at_ms, rng),
         }
     }

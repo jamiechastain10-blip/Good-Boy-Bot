@@ -10,7 +10,6 @@
 name: Good Boy 4 test build
 on:
   push:
-    branches: ['main']
     paths: ['v4/**', '.github/workflows/v4-build.yml']
   workflow_dispatch:
 permissions:
@@ -126,4 +125,3 @@ jobs:
           printf 'Good Boy %s\n\nThe rebuilt Good Boy. Installed copies of Good Boy 3 offer to move to it by themselves: your settings, levels, coins and licence come with you, and Good Boy 3 is put back if anything goes wrong.\n\nNew here? Download Good-Boy-4-Setup.exe and run it. Good-Boy-4.exe is the same program without an installer (used by the move from Good Boy 3 and by web hosts), and Good-Boy-4-no-window.exe is for web hosts.\n' "$v" > notes.md
           gh release create "v$v" out/Good-Boy-4-Setup.exe out/Good-Boy-4.exe out/Good-Boy-4-no-window.exe -R "$REPO" --title "Good Boy $v" --notes-file notes.md --latest=false $pre
           echo "Published https://github.com/$REPO/releases/tag/v$v"
-

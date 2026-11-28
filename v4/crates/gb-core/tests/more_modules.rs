@@ -461,6 +461,58 @@ fn welcome_and_goodbye_messages() {
 }
 
 #[test]
+fn the_welcome_card_look_carries_the_servers_picture_and_words_and_the_preview_matches() {
+    use gb_core::Art;
+    let (_tmp, bot) = bot();
+    let kai = Member { avatar: Some("https://cdn.discordapp.com/avatars/1/a.png?size=128".into()), ..member("900000000000000001", "Kai", 0) };
+    bot.directory.set_members(G, 41);
+    let set = |k: &str, v: Value| { bot.settings.set(G, "member-management", k, &v).unwrap(); };
+    set("welcomeEnabled", json!(true));
+    set("welcomeChannel", json!("800000000000000010"));
+    // the default look is the words, exactly as before: no picture is drawn
+    let plain = bot.on_member(G, &kai, true);
+    assert!(matches!(&plain[0], Action::Send { card, .. } if card.art.is_none()));
+    // the card look: the message stays (it pings), and a picture is drawn from the server's words and picture
+    set("welcomeLook", json!("card"));
+    set("welcomeCardTitle", json!("Welcome, {username}! {user}"));
+    set("welcomeCardLine", json!("Member #{count} of {server}"));
+    set("welcomeCardAccent", json!("#ff3366"));
+    set("welcomeCardTheme", json!("sunset"));
+    let joined = bot.on_member(G, &kai, true);
+    let [Action::Send { ping, card, .. }] = &joined[..] else { panic!("{joined:?}") };
+    assert_eq!(ping, &vec![kai.id.clone()], "the welcome still pings the new member");
+    let Some(Art::Greeting(art)) = &card.art else { panic!("a greeting picture: {:?}", card.art) };
+    assert_eq!((art.title.as_str(), art.line.as_str()), ("Welcome, Kai! Kai", "Member #43 of Ghost Town"), "a mention in the picture is written as the name");
+    assert_eq!((art.accent.as_deref(), art.theme.as_deref(), art.name.as_str()), (Some("#ff3366"), Some("sunset"), "Kai"));
+    assert!(art.avatar_url.as_deref().is_some_and(|u| u.contains("size=256")) && art.background.is_none(), "no background picture yet");
+    assert!(card.lines.iter().any(|l| l.contains("<@900000000000000001>")), "the message text goes with the picture");
+    // the server's picture goes behind the card
+    bot.greeting_image_set(G, "welcome", "bg.png", &[0x89, b'P', b'N', b'G', 0, 0, 0, 0], 1).unwrap();
+    let with_picture = bot.on_member(G, &kai, true);
+    assert!(matches!(&with_picture[0], Action::Send { card, .. } if matches!(&card.art, Some(Art::Greeting(a)) if a.background.as_deref().is_some_and(|b| b.starts_with(&[0x89, b'P'])))));
+    // goodbye has its own look, off by default
+    set("goodbyeEnabled", json!(true));
+    set("goodbyeChannel", json!("800000000000000011"));
+    let left = bot.on_member(G, &kai, false);
+    assert!(matches!(&left[0], Action::Send { card, .. } if card.art.is_none()));
+    set("goodbyeLook", json!("card"));
+    let left = bot.on_member(G, &kai, false);
+    assert!(matches!(&left[0], Action::Send { card, ping, .. } if ping.is_empty() && matches!(&card.art, Some(Art::Greeting(a)) if a.title == "Goodbye, Kai")));
+    // the dashboard's preview: a sample member, and values being tried win over what is saved
+    let (art, said) = bot.greeting_preview(G, "welcome", &json!({})).unwrap();
+    assert!(said.contains("@Alex") && !said.contains("<@"), "{said}");
+    assert_eq!(art.unwrap().title, "Welcome, Alex! Alex");
+    let (art, _) = bot.greeting_preview(G, "welcome", &json!({ "look": "plain" })).unwrap();
+    assert!(art.is_none(), "trying the words look shows no picture");
+    let (art, said) = bot.greeting_preview(G, "welcome", &json!({ "title": "Hi {username}", "line": "", "accent": "#00ff00", "theme": "forest", "message": "Hey {user}, you are #{count}" })).unwrap();
+    let art = art.unwrap();
+    assert_eq!((art.title.as_str(), art.line.as_str(), art.accent.as_deref(), art.theme.as_deref(), said.as_str()), ("Hi Alex", "", Some("#00ff00"), Some("forest"), "Hey @Alex, you are #123"));
+    assert!(bot.greeting_preview(G, "nope", &json!({})).is_none());
+    // only the two looks are accepted
+    assert!(bot.settings.set(G, "member-management", "welcomeLook", &json!("hologram")).is_err());
+}
+
+#[test]
 fn automod_rules_give_the_same_answers_as_good_boy_3() {
     use gb_core::automod as am;
     let texts = [
@@ -1068,6 +1120,76 @@ fn member_management_like_good_boy_3() {
 }
 
 #[test]
+fn the_picture_gallery_keeps_uploads_and_uses_them_for_welcome_goodbye_and_rank_cards() {
+    use gb_core::Art;
+    let (_tmp, bot) = bot();
+    let admin = member("900000000000000009", "Ada", ADMINISTRATOR);
+    let kai = member("900000000000000001", "Kai", 0);
+    let png = |n: u8| vec![0x89, b'P', b'N', b'G', n, 0, 0, 0];
+    // from the dashboard: pictures are kept, named, and counted oldest first
+    let a = bot.gallery_add(G, "Sky view.png", &png(1), 1000).unwrap();
+    let b = bot.gallery_add(G, "Night.PNG", &png(2), 2000).unwrap();
+    assert!(bot.gallery_add(G, "notes.txt", b"hello", 3000).is_err() && bot.gallery_add(G, "empty.png", &[], 3000).is_err(), "only pictures");
+    let list = bot.gallery_pictures(G);
+    assert_eq!(list.iter().map(|(p, _)| p.name.as_str()).collect::<Vec<_>>(), ["Sky view", "Night"]);
+    assert!(list.iter().all(|(_, uses)| uses.is_empty()));
+    // nobody else's gallery shows them, and an id can never name another path
+    assert!(bot.gallery_pictures("700000000000000002").is_empty());
+    assert!(bot.gallery_bytes(G, "../../eclipse.db").is_none() && bot.gallery_remove(G, "../x.png").is_err());
+    // using a picture copies it where it goes
+    bot.gallery_use(G, &a, "welcome", 4000).unwrap();
+    bot.gallery_use(G, &b, "rank", 4001).unwrap();
+    bot.gallery_use(G, &b, "goodbye", 4002).unwrap();
+    let uses: Vec<_> = bot.gallery_pictures(G).into_iter().map(|(p, u)| (p.name, u)).collect();
+    assert_eq!(uses, vec![("Sky view".to_string(), vec!["welcome"]), ("Night".to_string(), vec!["goodbye", "rank"])]);
+    assert!(bot.gallery_use(G, &a, "nowhere", 1).is_err() && bot.gallery_use(G, "1-9.png", "welcome", 1).is_err());
+    assert_eq!(bot.greeting_image(G, "welcome").map(|(_, b)| b), Some(png(1)));
+    // the rank card of someone with no card of their own gets the server's background
+    let shown = run(&bot, cmd(&kai, "rank", None, None, &[], NOW));
+    let Action::Reply { card } = &shown[0] else { panic!("{shown:?}") };
+    let Some(Art::Rank(r)) = &card.art else { panic!("a rank picture: {:?}", card.art) };
+    assert!(r.background.as_deref().is_some_and(|b| b.starts_with("file:")), "{:?}", r.background);
+    let path = bot.rank_background_path(G, r.background.as_deref().unwrap()).expect("the kept file is found");
+    assert_eq!(std::fs::read(path).unwrap(), png(2));
+    // removing it from the gallery leaves the copies where they are in use
+    bot.gallery_remove(G, &b).unwrap();
+    assert_eq!(bot.gallery_pictures(G).len(), 1);
+    assert_eq!(bot.greeting_image(G, "goodbye").map(|(_, b)| b), Some(png(2)));
+    assert!(bot.rank_background_path(G, r.background.as_deref().unwrap()).is_some_and(|p| p.exists()));
+    bot.gallery_stop(G, "rank").unwrap();
+    assert!(bot.rank_background_path(G, r.background.as_deref().unwrap()).is_none_or(|p| !p.exists()));
+    bot.gallery_rename(G, &a, "<@everyone> Sunrise #1").unwrap();
+    assert_eq!(bot.gallery_pictures(G)[0].0.name, "everyone Sunrise 1", "the characters that ping or tag are stripped from a name");
+
+    // from Discord: /images list, use, stop, remove; a form to add (staff only)
+    let c = bot.gallery_add(G, "Third.png", &png(3), 5000).unwrap();
+    let listed = text(&run(&bot, cmd(&admin, "images", Some("list"), None, &[], NOW))[0]);
+    assert!(listed.contains("`1` **everyone Sunrise 1**") && listed.contains("in use: Welcome message") && listed.contains("`2` **Third**"), "{listed}");
+    assert!(text(&run(&bot, cmd(&kai, "images", Some("list"), None, &[], NOW))[0]).contains("permission"), "staff only");
+    assert!(text(&run(&bot, cmd(&admin, "images", Some("use"), None, &[("number", "2"), ("where", "goodbye")], NOW))[0]).contains("**Third** is now the goodbye message"));
+    assert_eq!(bot.greeting_image(G, "goodbye").map(|(_, b)| b), Some(png(3)));
+    assert!(text(&run(&bot, cmd(&admin, "images", Some("use"), None, &[("number", "9"), ("where", "goodbye")], NOW))[0]).contains("no picture with that number"));
+    assert!(text(&run(&bot, cmd(&admin, "images", Some("stop"), None, &[("where", "goodbye")], NOW))[0]).contains("no longer has a picture"));
+    assert!(bot.greeting_image(G, "goodbye").is_none());
+    assert!(text(&run(&bot, cmd(&admin, "images", Some("remove"), None, &[("number", "2")], NOW))[0]).contains("**Third** was removed"));
+    assert!(bot.gallery_bytes(G, &c).is_none());
+    let Action::Form { id, .. } = &run(&bot, cmd(&admin, "images", Some("add"), None, &[], NOW))[0] else { panic!() };
+    assert_eq!(id, "gallery:add");
+    let form = |who: &Member, files: Vec<(&str, u64)>| {
+        let mut ev = gb_core::FormEvent { guild: G.into(), place: Place::channel(CH), member: who.clone(), id: "gallery:add".into(), at_ms: 9000, ..Default::default() };
+        ev.files.insert("pictures".into(), files.into_iter().map(|(n, s)| (n.to_string(), format!("https://cdn.discordapp.com/attachments/1/2/{n}"), s)).collect());
+        bot.on_form(&ev, &|_| None, &mut |lo, _| lo)
+    };
+    let done = form(&admin, vec![("a.png", 100), ("b.jpeg", 100), ("c.exe", 100), ("huge.png", 9 << 20)]);
+    let Action::KeepFiles { dir, files, .. } = &done[1] else { panic!("{done:?}") };
+    assert_eq!(dir, &format!("files/gallery/{G}"));
+    assert_eq!(files.iter().map(|f| f.stored.as_str()).collect::<Vec<_>>(), ["9000-0.png", "9000-1.jpg"]);
+    let said = text(&done[0]);
+    assert!(said.contains("Saving 2 pictures") && said.contains("c.exe") && said.contains("huge.png"), "{said}");
+    assert!(text(&form(&kai, vec![("a.png", 1)])[0]).contains("permission"));
+}
+
+#[test]
 fn economy_shop_bank_pets_rob_events_like_good_boy_3() {
     use gb_core::economy::{interest_due, pet_bonus, rob_outcome, shares, slug, week_of};
     let (_tmp, bot) = bot();
@@ -1464,10 +1586,13 @@ fn dead_chat_ping_like_good_boy_3() {
 
 #[test]
 fn eclipse_id_like_good_boy_3() {
-    use gb_core::eclipseid::{clean_field, eid_label, normalize_link, parse_platforms};
+    use gb_core::eclipseid::{clean_field, eid_code, normalize_link, parse_platforms};
     assert_eq!(clean_field("hi @everyone <@123> <@&45>  there\u{7}\n\n\n\nok", 300), "hi there\n\nok");
     assert_eq!(parse_platforms("PS5, pc; nintendo, toaster"), (vec!["playstation".to_string(), "pc".into(), "switch".into()], vec!["toaster".to_string()]));
-    assert_eq!(eid_label(123), "EID-000123");
+    let a = eid_code("700000000000000001");
+    assert_eq!(a, eid_code("700000000000000001"), "the same person always gets the same ID");
+    assert_ne!(a, eid_code("700000000000000002"));
+    assert!(a.starts_with("EID-") && a.len() == 15 && a.as_bytes()[9] == b'-', "{a}");
     assert_eq!(normalize_link("nintendo", "sw-1234-5678-9012"), Ok("SW-1234-5678-9012".into()));
     assert_eq!(normalize_link("riot", "Ghost#EUW"), Ok("Ghost#EUW".into()));
     assert_eq!(normalize_link("battlenet", "Ghost#12"), Err("That doesn't look like a Battle.net BattleTag like Name#1234.".into()));
@@ -1479,16 +1604,190 @@ fn eclipse_id_like_good_boy_3() {
     assert_eq!((id.as_str(), title.as_str(), fields.len()), ("eid:edit", "Your Eclipse ID", 5));
     let send = |values: &[(&str, &str)]| bot.on_form(&gb_core::FormEvent { guild: G.into(), place: Place::channel(CH), member: kai.clone(), id: "eid:edit".into(), values: values.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(), at_ms: NOW, ..Default::default() }, &|_| None, &mut |lo, _| lo);
     assert!(text(&send(&[("platforms", "fridge")])[0]).contains("I don't know these platforms: fridge."));
-    assert!(text(&send(&[("bio", "Night owl"), ("games", "Rust, Celeste"), ("platforms", "pc, ps5"), ("region", "UK")])[0]).contains("Saved. See it with `/id show`."));
+    assert!(text(&send(&[("bio", "Night owl"), ("games", "Rust, Celeste"), ("platforms", "pc, ps5"), ("region", "UK")])[0]).contains("Saved. This card goes with you to every server this bot is in."));
     assert!(text(&run(&bot, cmd(&kai, "id", Some("link"), None, &[("platform", "steam"), ("name", "ghostly")], NOW))[0]).contains("Saved your Steam name **ghostly** (only you can see it)."));
     run(&bot, cmd(&kai, "id", Some("privacy"), None, &[("field", "region"), ("who", "private")], NOW));
     let mine = text(&run(&bot, cmd(&kai, "id", Some("show"), None, &[], NOW))[0]);
-    assert!(mine.contains("Night owl") && mine.contains("pc · playstation") && mine.contains("ghostly *(only you)*") && mine.contains("EID-000001") && mine.contains("hidden from others: region or timezone, linked accounts"), "{mine}");
+    assert!(mine.contains("Night owl") && mine.contains("pc · playstation") && mine.contains("ghostly *(only you)*") && mine.contains(&eid_code("900000000000000001")) && mine.contains("hidden from others: region or timezone, linked accounts"), "{mine}");
     let theirs = text(&run(&bot, cmd(&rowan, "id", Some("show"), Some(&kai), &[], NOW))[0]);
     assert!(theirs.contains("Night owl") && !theirs.contains("UK") && !theirs.contains("ghostly"), "{theirs}");
     assert!(text(&run(&bot, cmd(&kai, "id", Some("roblox"), None, &[("name", "builderman")], NOW))[0]).contains("Roblox lookup is turned off"));
+    // the card follows its owner to every server, and the owner chooses where it is shown
+    bot.db.get().set_module_enabled("700000000000000099", "eclipseid", true).unwrap();
+    let seen = |who: &gb_core::Member, guild: &str| text(&run(&bot, gb_core::CommandEvent { guild: guild.into(), ..cmd(who, "id", Some("show"), Some(&kai), &[], NOW) })[0]);
+    assert!(seen(&rowan, "700000000000000099").contains("Night owl"), "a new card is shown in another server too");
+    assert!(text(&run(&bot, cmd(&kai, "id", Some("share"), None, &[("where", "hide")], NOW))[0]).contains("hidden in this server"));
+    assert!(text(&run(&bot, cmd(&rowan, "id", Some("show"), Some(&kai), &[], NOW))[0]).contains("has not shared their card in this server"));
+    assert!(seen(&rowan, "700000000000000099").contains("Night owl"), "hiding in one server leaves the others alone");
+    let own = text(&run(&bot, cmd(&kai, "id", Some("show"), None, &[], NOW))[0]);
+    assert!(own.contains("Night owl"), "its owner always sees it");
+    run(&bot, cmd(&kai, "id", Some("share"), None, &[("where", "none")], NOW));
+    assert!(seen(&rowan, "700000000000000099").contains("has not shared their card"));
+    run(&bot, cmd(&kai, "id", Some("share"), None, &[("where", "all")], NOW));
+    assert!(text(&run(&bot, cmd(&rowan, "id", Some("show"), Some(&kai), &[], NOW))[0]).contains("Night owl"));
     run(&bot, cmd(&kai, "id", Some("delete"), None, &[], NOW));
     assert!(text(&run(&bot, cmd(&rowan, "id", Some("show"), Some(&kai), &[], NOW))[0]).contains("This member has not shared anything yet."));
+}
+
+#[test]
+fn eclipse_id_picks_up_games_with_two_off_switches_moves_by_code_and_finds_players() {
+    use gb_core::eclipseid::{export_code, read_code};
+    let (_tmp, bot) = bot();
+    bot.db.get().set_module_enabled(G, "eclipseid", true).unwrap();
+    let kai = member("900000000000000001", "Kai", 0);
+    let rowan = member("900000000000000002", "Rowan", 0);
+    let id = |who: &gb_core::Member, sub: &str, args: &[(&str, &str)]| text(&run(&bot, cmd(who, "id", Some(sub), None, args, NOW))[0]);
+    let shown = |who: &gb_core::Member, of: &gb_core::Member| text(&run(&bot, cmd(who, "id", Some("show"), Some(of), &[], NOW))[0]);
+    let now = NOW;
+    // picked up from the Discord status: games and the kind of app, on the card as "picked up automatically"
+    bot.eid_presence(G, &kai.id, &["Celeste".to_string(), "Minecraft".to_string()], &["pc"], now);
+    bot.eid_presence(G, &kai.id, &["Minecraft".to_string()], &["pc"], now + 60_000);
+    let seen = shown(&rowan, &kai);
+    assert!(seen.contains("Seen playing") && seen.contains("Minecraft") && seen.contains("Celeste") && seen.contains("on PC"), "{seen}");
+    // the server owner's switch stops it, and hides what was already picked up
+    bot.settings.set(G, "eclipseid", "autoDetect", &json!(false)).unwrap();
+    bot.eid_presence(G, &kai.id, &["Valorant".to_string()], &["mobile"], now + 120_000);
+    assert!(!shown(&rowan, &kai).contains("Seen playing"));
+    bot.settings.set(G, "eclipseid", "autoDetect", &json!(true)).unwrap();
+    assert!(!shown(&rowan, &kai).contains("Valorant"), "nothing was picked up while it was off");
+    // a member can hide it, switch it off for themselves, or forget it
+    id(&kai, "privacy", &[("field", "seen"), ("who", "private")]);
+    assert!(!shown(&rowan, &kai).contains("Seen playing") && id(&kai, "show", &[]).contains("Minecraft"), "hidden from others, not from them");
+    id(&kai, "privacy", &[("field", "seen"), ("who", "public")]);
+    assert!(id(&kai, "auto", &[("mode", "forget")]).contains("erased") && !shown(&rowan, &kai).contains("Minecraft"));
+    bot.eid_presence(G, &kai.id, &["Rust".to_string()], &[], now + 200_000);
+    assert!(shown(&rowan, &kai).contains("Rust"));
+    assert!(id(&kai, "auto", &[("mode", "off")]).contains("erased"));
+    bot.eid_presence(G, &kai.id, &["Terraria".to_string()], &[], now + 300_000);
+    assert!(!shown(&rowan, &kai).contains("Rust") && !shown(&rowan, &kai).contains("Terraria"), "off means nothing is kept");
+    id(&kai, "auto", &[("mode", "on")]);
+
+    // find players: members of this server who use Eclipse ID and share their card
+    let send = |who: &gb_core::Member, values: &[(&str, &str)]| bot.on_form(&gb_core::FormEvent { guild: G.into(), place: Place::channel(CH), member: who.clone(), id: "eid:edit".into(), values: values.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(), at_ms: NOW, ..Default::default() }, &|_| None, &mut |lo, _| lo);
+    send(&kai, &[("games", "Rust, Celeste"), ("platforms", "pc, ps5"), ("bio", "Night owl"), ("availability", "evenings")]);
+    send(&rowan, &[("games", "Minecraft"), ("platforms", "switch")]);
+    id(&kai, "link", &[("platform", "steam"), ("name", "ghostly"), ("who", "public")]);
+    let found = id(&rowan, "find", &[("game", "celeste")]);
+    assert!(found.contains("<@900000000000000001>") && found.contains("pc · playstation") && !found.contains("<@900000000000000002>"), "{found}");
+    assert!(id(&rowan, "find", &[("game", "zelda")]).contains("Nobody here has shared"));
+    assert!(id(&rowan, "find", &[("game", "z")]).contains("at least two letters"));
+    run(&bot, cmd(&kai, "id", Some("share"), None, &[("where", "hide")], NOW));
+    assert!(id(&rowan, "find", &[("game", "celeste")]).contains("Nobody here has shared"), "a hidden card is not listed");
+    run(&bot, cmd(&kai, "id", Some("share"), None, &[("where", "here")], NOW));
+    id(&kai, "privacy", &[("field", "games"), ("who", "private")]);
+    assert!(id(&rowan, "find", &[("game", "celeste")]).contains("Nobody here has shared"), "a private games list is not searched");
+    id(&kai, "privacy", &[("field", "games"), ("who", "public")]);
+
+    // a code moves the card to another Good Boy, with a check so a bad copy is caught
+    let code = export_code(&bot.db, &kai.id);
+    assert!(code.starts_with("EIDX1.") && code.matches('.').count() == 2 && !code.contains("ghostly"), "the card is packed, not readable: {code}");
+    let (card, links, skipped) = read_code(&code).unwrap();
+    assert_eq!((card.games.as_str(), card.platforms.as_str(), card.bio.as_str(), links.len(), skipped), ("Rust, Celeste", "pc, playstation", "Night owl", 1, 0));
+    assert!(read_code(&code.replace("EIDX1.", "EIDX2.")).is_err() && read_code(&code[..code.len() - 3]).is_err() && read_code("nonsense").is_err());
+    let tampered = { let mut c = code.clone().into_bytes(); let at = 12; c[at] = if c[at] == b'A' { b'B' } else { b'A' }; String::from_utf8(c).unwrap() };
+    assert!(read_code(&tampered).is_err(), "a changed code is refused");
+    let there = member("900000000000000003", "Ivy", 0);
+    assert!(id(&there, "export", &[]).contains("Your card is empty"));
+    let said = id(&there, "import", &[("code", &code)]);
+    assert!(said.contains("replaced with the one in the code (1 linked account)") && !said.contains("old card"), "{said}");
+    assert!(shown(&rowan, &there).contains("Night owl") && shown(&rowan, &there).contains("ghostly"));
+    let again = id(&there, "import", &[("code", &code)]);
+    assert!(again.contains("Your old card, in case you want it back") && again.contains("EIDX1."), "an import keeps a way back");
+    assert!(id(&there, "import", &[("code", "EIDX1.bad.code")]).contains("not complete"));
+    assert!(id(&kai, "export", &[]).contains("keep it to yourself"));
+    // deleting a card also erases what was picked up and where they showed up
+    id(&kai, "delete", &[]);
+    let after = id(&rowan, "find", &[("game", "celeste")]);
+    assert!(!after.contains("<@900000000000000001>") && after.contains("<@900000000000000003>"), "Kai is gone, Ivy (who imported the card) is listed: {after}");
+}
+
+#[test]
+fn server_setup_builds_connects_and_checks_a_server() {
+    use gb_core::setup::{self, Built};
+    use gb_core::{Action, SetupStep};
+    let (_tmp, bot) = bot();
+    let admin = member("900000000000000009", "Ada", ADMINISTRATOR);
+    let kai = member("900000000000000001", "Kai", 0);
+    // only admins; the commands hand the work to the Discord layer
+    assert!(text(&run(&bot, cmd(&kai, "setup", Some("scan"), None, &[], NOW))[0]).contains("admins"));
+    let Action::Setup(job) = &run(&bot, cmd(&admin, "setup", Some("scan"), None, &[], NOW))[0] else { panic!() };
+    assert_eq!((job.by.as_str(), &job.step), ("900000000000000009", &SetupStep::Scan));
+    let picker = text(&run(&bot, cmd(&admin, "setup", Some("start"), None, &[], NOW))[0]);
+    assert!(picker.contains("Community") && picker.contains("Gaming") && picker.contains("setup:plan:gaming"), "{picker}");
+    let click = |id: &str, who: &gb_core::Member| bot.on_button(&gb_core::ButtonEvent { guild: G.into(), place: Place::channel(CH), member: who.clone(), id: id.into(), message: "m".into(), values: vec![], at_ms: NOW }, &|_| None, &mut |lo, _| lo);
+    assert!(matches!(&click("setup:plan:community", &admin)[0], Action::Setup(j) if j.step == SetupStep::Plan("community".into())));
+    assert!(matches!(&click(&format!("setup:build:community:{}", admin.id), &admin)[0], Action::Setup(j) if j.step == SetupStep::Build("community".into())));
+    assert!(text(&click(&format!("setup:build:community:{}", admin.id), &kai)[0]).contains("admins"), "a member cannot press it");
+    let other = member("900000000000000010", "Bo", ADMINISTRATOR);
+    assert!(text(&click(&format!("setup:build:community:{}", admin.id), &other)[0]).contains("belongs to someone else"));
+    assert!(click("setup:build:nonsense:1", &admin).is_empty() || matches!(&click("setup:build:nonsense:1", &admin)[0], Action::Reply { .. }));
+
+    // after a build the bot is connected to what was made, and nothing already set is overwritten
+    let ids = |list: &[(&str, Option<&str>, &str)]| Built { roles: vec![("Moderator".into(), "600000000000005000".into()), ("Admin".into(), "600000000000005001".into())], channels: list.iter().map(|(n, p, i)| (n.to_string(), p.map(str::to_string), i.to_string())).collect() };
+    let built = ids(&[("welcome", Some("Info"), "800000000000000100"), ("rules", Some("Info"), "800000000000000101"), ("introductions", Some("Community"), "800000000000000102"), ("mod-log", Some("Staff"), "800000000000000103"), ("server-log", Some("Staff"), "800000000000000104"),
+        ("ticket-log", Some("Staff"), "800000000000000105"), ("suggestions", Some("Community"), "800000000000000106"), ("open-a-ticket", Some("Support"), "800000000000000107"), ("Tickets", None, "800000000000000108")]);
+    bot.settings.set(G, "moderation", "serverLogChannel", &json!("800000000000000999")).unwrap();
+    let (actions, said) = bot.setup_wire(G, "community", &built);
+    let get = |m: &str, k: &str| bot.settings.text(G, m, k);
+    assert_eq!(get("member-management", "welcomeChannel").as_deref(), Some("800000000000000100"));
+    assert_eq!(get("member-management", "introChannel").as_deref(), Some("800000000000000102"));
+    assert_eq!(get("moderation", "logChannel").as_deref(), Some("800000000000000103"));
+    assert_eq!(get("moderation", "serverLogChannel").as_deref(), Some("800000000000000999"), "what the server already chose is kept");
+    assert_eq!((get("support", "logChannel").as_deref(), get("support", "ticketCategory").as_deref(), get("support", "staffRole").as_deref()), (Some("800000000000000105"), Some("800000000000000108"), Some("600000000000005000")));
+    assert_eq!(get("engagement", "suggestionChannel").as_deref(), Some("800000000000000106"));
+    assert!(bot.settings.bool(G, "member-management", "welcomeEnabled"));
+    for m in ["moderation", "member-management", "community", "support", "engagement"] { assert!(bot.db.get().module_enabled(G, m).unwrap(), "{m} is on"); }
+    assert!(said.iter().any(|s| s.contains("<#800000000000000100>")) && !said.iter().any(|s| s.contains("<#800000000000000104>")));
+    assert!(actions.iter().any(|a| matches!(a, Action::Send { channel, card, .. } if channel == "800000000000000101" && card.lines.join(" ").contains("Server rules"))), "the rules are posted");
+    assert!(actions.iter().any(|a| matches!(a, Action::Post { channel, .. } | Action::Send { channel, .. } if channel == "800000000000000107")), "the ticket buttons are posted: {actions:?}");
+
+    // the check of a server that is already set up
+    let day = 86_400_000i64;
+    let now = 1_794_441_600_000i64;
+    let old_id = ((now - 400 * day - 1_420_070_400_000) << 22).to_string();
+    let new_id = ((now - 5 * day - 1_420_070_400_000) << 22).to_string();
+    let layout = json!({ "everyone": (setup::MENTION_EVERYONE | setup::MANAGE_MESSAGES | setup::VIEW_CHANNEL).to_string(),
+        "roles": [{ "id": "1", "name": "Boss", "permissions": setup::ADMINISTRATOR.to_string() }, { "id": "2", "name": "Boss2", "permissions": setup::ADMINISTRATOR.to_string() }, { "id": "3", "name": "Boss3", "permissions": setup::ADMINISTRATOR.to_string() }, { "id": "4", "name": "Helper", "permissions": "0" }, { "id": "5", "name": "helper", "permissions": "0" }],
+        "channels": [
+            { "id": "800000000000000020", "name": "Old Stuff", "type": 4, "parent": null }, { "id": "800000000000000021", "name": "Main", "type": 4, "parent": null },
+            { "id": "800000000000000030", "name": "welcome", "type": 0, "parent": "Main", "lastMessage": now - day },
+            { "id": "800000000000000031", "name": "mod-logs", "type": 0, "parent": "Main", "lastMessage": now - day },
+            { "id": old_id, "name": "old-news", "type": 0, "parent": "Main", "lastMessage": null },
+            { "id": new_id, "name": "chat", "type": 0, "parent": "Main", "lastMessage": now - day },
+            { "id": "800000000000000040", "name": "chat", "type": 0, "parent": "Main", "lastMessage": now - day }] });
+    let (card, data) = bot.setup_scan("700000000000000099", &layout, now, "1");
+    let ids: Vec<&str> = data["findings"].as_array().unwrap().iter().map(|f| f["id"].as_str().unwrap()).collect();
+    for want in ["everyone", "admins", "duplicates", "dup-roles", "empty", "quiet", "connect", "modules"] { assert!(ids.contains(&want), "{want} in {ids:?}"); }
+    assert!(!ids.contains(&"logs"), "no \"add logs\" when #mod-logs exists and can just be connected");
+    assert_eq!(data["findings"][0]["level"], "warn", "the worrying ones come first");
+    let said = card.lines.join("\n");
+    assert!(said.contains("Old Stuff") && said.contains("#old-news") && said.contains("#welcome looks like the welcome") && !said.contains("#chat looks"), "{said}");
+    assert!(card.buttons.iter().any(|b| b.id == "setup:fix:empty:1") && card.buttons.len() <= 4);
+    card.check().unwrap();
+    // the fixes do exactly what they say
+    let g = "700000000000000099";
+    let plan = bot.setup_fix(g, "empty", &layout);
+    assert_eq!(plan.actions, vec![Action::DeleteChannel { channel: "800000000000000020".into(), after_secs: 0 }], "only the empty category, never one with channels");
+    let plan = bot.setup_fix(g, "everyone", &layout);
+    assert_eq!(plan.everyone_remove, setup::MENTION_EVERYONE | setup::MANAGE_MESSAGES, "only the risky bits, not viewing");
+    assert_eq!(bot.setup_fix(g, "logs", &layout).build, Some("logs"));
+    assert!(bot.setup_fix(g, "connect", &layout).text.contains("<#800000000000000030>"));
+    assert_eq!(bot.settings.text(g, "member-management", "welcomeChannel").as_deref(), Some("800000000000000030"));
+    assert_eq!(bot.settings.text(g, "moderation", "logChannel").as_deref(), Some("800000000000000031"), "the log channel it found is used instead of making one");
+    assert!(bot.setup_fix(g, "connect", &layout).text.contains("nothing left"));
+    assert!(bot.setup_fix(g, "modules", &layout).text.contains("Turned on"));
+    assert!(bot.setup_fix(g, "nonsense", &layout).text.contains("don't know"));
+    // a tidy server has nothing to report, and a ticket category in use is never called empty
+    bot.settings.set(g, "support", "ticketCategory", &json!("800000000000000020")).unwrap();
+    assert!(bot.setup_fix(g, "empty", &layout).actions.is_empty());
+    let (done, view) = bot.setup_scan(g, &json!({ "everyone": "1024", "roles": [], "channels": [] }), now, "1");
+    assert!(view["findings"].as_array().unwrap().iter().all(|f| f["id"] != "everyone"));
+    drop(done);
+    // the dashboard sees the layouts, the check, and what was last done
+    bot.setup_note(g, "fix", "Connected", now);
+    let v = bot.setup_view(g);
+    assert!(v["layouts"].as_array().unwrap().len() == 4 && v["scan"]["at"] == now && v["last"]["text"] == "Connected" && v["fixes"].as_array().unwrap().len() == 5, "{v}");
+    assert_eq!(v["layouts"][0]["tree"][0]["channels"][0]["read_only"], true);
 }
 
 #[test]
@@ -2198,6 +2497,62 @@ fn moderation_upgrades() {
 }
 
 #[test]
+fn losses_feed_the_jackpot_all_in_works_and_coins_can_be_added_to_the_treasury() {
+    let (_tmp, bot) = bot();
+    bot.db.get().set_module_enabled(G, "economy", true).unwrap();
+    bot.db.get().set_module_enabled(G, "games", true).unwrap();
+    let kai = member("900000000000000601", "Kai", 0);
+    let base = 1_794_441_600_000i64;
+    bot.db.get().wallet(G, &kai.id, Some("Kai"), 1000).unwrap();
+    let coins = || bot.db.get().wallet(G, &kai.id, None, 0).unwrap().coins;
+    let pool = || bot.db.get().data_get(G, "games", "pool").unwrap().and_then(|v| v.as_i64()).unwrap_or(5000);
+    let flip = |bet: &str, side: &str, at: i64| text(&bot.on_command(&cmd(&kai, "coinflip", None, None, &[("bet", bet), ("side", side)], at), &|_| None, &mut |lo, _| lo)[0]);
+    // one of the two calls loses: exactly that bet goes into the jackpot
+    let before = pool();
+    flip("100", "heads", base);
+    flip("100", "tails", base + 1000);
+    assert_eq!(pool(), before + 100, "the lost 100 is in the jackpot, the win is not");
+    assert!((990..=1000).contains(&coins()), "one lost and one won (a tax on the win may apply): {}", coins());
+    // the share is a setting
+    bot.settings.set(G, "games", "jackpotLossPercent", &json!(50)).unwrap();
+    let before = pool();
+    flip("100", "heads", base + 2000);
+    flip("100", "tails", base + 3000);
+    assert_eq!(pool(), before + 50);
+    // all in bets everything, even above the biggest bet
+    let have = coins();
+    bot.db.get().credit(G, &kai.id, 200_000 - have, "test").unwrap();
+    assert_eq!(coins(), 200_000);
+    let said = flip("all in", "heads", base + 4000);
+    assert!(!said.contains("at most"), "{said}");
+    assert!(coins() == 0 || coins() >= 390_000, "everything was on the line: {}", coins());
+    // a server can turn it off: then the biggest bet applies again
+    bot.db.get().credit(G, &kai.id, 200_000, "test").unwrap();
+    bot.settings.set(G, "games", "allowAllIn", &json!(false)).unwrap();
+    assert!(flip("all", "heads", base + 5000).contains("at most"));
+    // and the buttons carry it
+    let again = bot.on_button(&gb_core::ButtonEvent { guild: G.into(), place: Place::channel(CH), member: kai.clone(), id: format!("cf:heads:{}:-1", kai.id), message: "m".into(), values: vec![], at_ms: base + 6000 }, &|_| None, &mut |lo, _| lo);
+    assert!(text(&again[0]).contains("at most"), "the button asks for all in, and the server said no");
+    bot.settings.set(G, "games", "allowAllIn", &json!(true)).unwrap();
+    let before = coins();
+    let again = bot.on_button(&gb_core::ButtonEvent { guild: G.into(), place: Place::channel(CH), member: kai.clone(), id: format!("cf:heads:{}:-1", kai.id), message: "m".into(), values: vec![], at_ms: base + 7000 }, &|_| None, &mut |lo, _| lo);
+    assert!(text(&again[0]).contains("All in") || text(&again[0]).contains("Wallet"), "{}", text(&again[0]));
+    assert!(coins() == 0 || coins() >= before * 2 - before / 10);
+
+    // the treasury: coins can be added from the launcher and by admins in Discord
+    let t = || bot.db.get().treasury(G).unwrap().balance;
+    assert_eq!(bot.economy_add(G, 5000, "seed", base).unwrap(), 5000);
+    assert_eq!(t(), 5000);
+    assert!(bot.economy_add(G, 0, "", base).is_err() && bot.economy_add(G, -5, "", base).is_err());
+    assert!(bot.economy_add("700000000000000002", 10, "", base).is_err(), "money is off in a server that has not turned it on");
+    let admin = member("900000000000000009", "Ada", ADMINISTRATOR);
+    let card = text(&bot.on_command(&cmd(&admin, "treasury", None, None, &[], base), &|_| None, &mut |lo, _| lo)[0]);
+    assert!(card.contains("Add coins") && card.contains("Pay out"), "an admin who does not own the server can add too: {card}");
+    let card = text(&bot.on_command(&cmd(&kai, "treasury", None, None, &[], base), &|_| None, &mut |lo, _| lo)[0]);
+    assert!(card.contains("Give coins") && !card.contains("Add coins"), "{card}");
+}
+
+#[test]
 fn the_new_slots_and_blackjack_with_real_wallets() {
     let (_tmp, bot) = bot();
     bot.db.get().set_module_enabled(G, "economy", true).unwrap();
@@ -2755,9 +3110,10 @@ fn taxes_the_treasury_and_the_second_currency() {
     assert_eq!((coins(&kai), treasury().balance), (kai_before + 250, have - 250));
     let log = bot.db.get().treasury_log(G, 3).unwrap();
     assert_eq!((log[0].delta, log[0].kind.as_str(), log[0].note.as_deref()), (-250, "grant", Some("Event winner")));
-    // only the server's owner can add coins to the treasury (an admin cannot)
+    // the server's owner and admins can add coins to the treasury; a plain member cannot
     bot.directory.set_powers(G, &kai.id, 0, Default::default());
-    assert!(say(&send(&admin, "mpx:tadd:-", &[("amount", "500")], NOW + 18)).contains("Only the server owner"));
+    let pat = member("900000000000000777", "Pat", 0);
+    assert!(say(&send(&pat, "mpx:tadd:-", &[("amount", "500")], NOW + 18)).contains("Only the server owner and admins"));
     let before = treasury().balance;
     let t = say(&send(&kai, "mpx:tadd:-", &[("amount", "500"), ("note", "prize pool")], NOW + 19));
     assert!(t.contains("added **500** 🪙 to the server treasury"), "{t}");

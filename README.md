@@ -7,7 +7,7 @@
 **One Discord bot instead of ten.** Moderation, tickets, levels, an economy, games, music and more, in modules you
 switch on per server. You run it yourself, so your community's data stays with you.
 
-[![Download Good Boy 4 for Windows](https://img.shields.io/badge/Download_Good_Boy_4_for_Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/download/v4.0.1/Good-Boy-4-Setup.exe)
+[![Download Good Boy 4 for Windows](https://img.shields.io/badge/Download_Good_Boy_4_for_Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jamiechastain10-blip/Good-Boy-Bot/releases/download/v4.1.0/Good-Boy-4-Setup.exe)
 
 New here? Press the blue button, run the file, and follow the steps.
 
