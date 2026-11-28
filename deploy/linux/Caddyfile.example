@@ -1,0 +1,7 @@
+# Basic Ghost Labs - Good Boy 4: https for the web dashboard, with Caddy (https://caddyserver.com).
+# Caddy gets and renews the certificate by itself. Point the name's DNS at this server first.
+# One block per bot; the port is GOODBOY_WEB_PORT in that bot's /etc/goodboy/<name>.env.
+bot.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:47890
+}

@@ -20,7 +20,10 @@ async fn main() {
     bot.directory.set_role_facts("700000000000000001", roles, Some(10));
     bot.directory.set_bot_owner(Some("42".into()));
     let w = web::Web::new(desk, &format!("http://127.0.0.1:{port}"));
-    let cookie = w.sign_in(web::Session { user: "42".into(), name: "Basic".into(), owner: true, guilds: vec!["700000000000000001".into(), "700000000000000002".into()], staff: Vec::new(), expires: 0 });
+    let cookie = w.sign_in(web::Session { user: "42".into(), name: "Basic".into(), owner: true, guilds: vec!["700000000000000001".into(), "700000000000000002".into()], staff: Vec::new(), expires: 0, role: String::new() });
     println!("COOKIE {cookie}");
+    // a Basic Ghost Labs support visit too, to look at the Support page
+    let support = w.sign_in(web::Session { user: "sam@basicghostlabs.com".into(), name: "Sam".into(), owner: false, guilds: Vec::new(), staff: Vec::new(), expires: i64::MAX, role: "support".into() });
+    println!("SUPPORT {support}");
     web::serve(w, port, false).await.unwrap();
 }

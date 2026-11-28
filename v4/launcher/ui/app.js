@@ -2302,7 +2302,10 @@
   }
 
   // the same names and order as the Good Boy 3 dashboard, so nobody has to learn a new map
-  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], setup: ['Server setup', pageSetup, ''], images: ['Images', pageImages, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], updates: ['Updates', pageUpdates, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'] };
+  const PAGES = { home: ['Home', pageHome, ''], servers: ['Modules', pageServers, ''], tickets: ['Tickets', pageTickets, ''], server: ['Members', pageServer, ''], inactive: ['Inactive', pageInactive, ''], leavers: ['Leavers', pageLeavers, ''], cases: ['Moderation', pageCases, ''], automod: ['AutoMod', pageAutomod, ''], economy: ['Economy', pageEconomy, ''], shop: ['Shop', pageShop, ''], rolemenus: ['Role menus', pageRoleMenus, ''], setup: ['Server setup', pageSetup, ''], images: ['Images', pageImages, ''], lists: ['Lists', pageLists, ''], commands: ['Commands', pageCommands, ''], permissions: ['Permissions', pagePermissions, ''], arcade: ['Arcade', pageArcade, 'Fun'], fishing: ['Fishing', pageFishing, 'Fun'], music: ['Music', pageMusic, 'Fun'], checkup: ['Check-up', pageCheckup, 'Bot'], switch: ['From Good Boy 3', pageSwitch, 'Bot'], activity: ['Logs', pageActivity, 'Bot'], updates: ['Updates', pageUpdates, 'Bot'], whatsnew: ["What's new", pageWhatsNew, 'Bot'], bot: ['Settings', pageBot, 'Bot'], help: ['Help', pageHelp, 'Bot'],
+    access: ['Access', () => window.GBAccess.page(accessKit()), 'Bot'], support: ['Support', () => window.GBAccess.supportPage(accessKit()), 'Bot'] };
+  // what the Access and Support pages (access.js) use from here
+  const accessKit = () => ({ h, call, toast, busy, bot: (what) => window.GBApp.bot(what) });
   // The menu on the left, in sections that fold away so it never gets long. The section you are in stays open.
   const SECTIONS = [
     ['', ['home', 'servers']],
@@ -2311,7 +2314,7 @@
     ['Money', ['economy', 'shop']],
     ['Fun', ['arcade', 'fishing', 'music']],
     ['Tools', ['setup', 'lists', 'commands']],
-    ['Bot', ['checkup', 'switch', 'activity', 'updates', 'whatsnew', 'bot', 'help']],
+    ['Bot', ['support', 'checkup', 'switch', 'activity', 'updates', 'whatsnew', 'access', 'bot', 'help']],
   ];
   function navMenu(pages) {
     let kept = {}; try { kept = JSON.parse(localStorage.getItem('gb-nav') || '{}'); } catch { /* the choice is only a convenience */ }
@@ -2361,8 +2364,11 @@
   // person who runs the bot sees the bot's own controls.
   function visiblePages() {
     // the move from Good Boy 3 happens by itself now, so its page is not in the menu
-    const all = Object.keys(PAGES).filter((id) => id !== 'switch');
+    // Access and Support are web pages: the owner's list of who else comes in, and a Basic Ghost Labs support visit
+    const all = Object.keys(PAGES).filter((id) => !['switch', 'access', 'support'].includes(id));
     if (!window.GB.web) return all;
+    if (S.o && S.o.web && S.o.web.support) return ['support', 'checkup', 'updates'];
+    if (S.o && S.o.web && S.o.web.owner) all.push('access');
     // ticket staff who do not manage the server see the Tickets page and nothing else
     if (S.o && S.o.web && S.o.web.staff_only) return ['tickets'];
     const gone = ['bot', 'switch', ...(S.o.web && S.o.web.owner ? [] : ['checkup'])];
@@ -2371,7 +2377,7 @@
   function signinScreen() {
     app.replaceChildren(h('div', { class: 'wizard' }, h('div', { class: 'card signin' },
       h('img', { class: 'hello pup-logo', src: 'mascot.png', alt: '', width: 72, height: 72 }),
-      h('h1', {}, 'Good Boy'), h('p', { class: 'muted' }, 'Sign in with Discord to manage your server. Only the person who runs the bot, and people with Manage Server, can come in.'),
+      h('h1', {}, 'Good Boy'), h('p', { class: 'muted' }, 'Sign in with Discord to manage your server. Only the person who runs the bot, people with Manage Server and people the owner lets in can come in.'),
       h('a', { class: 'btn', href: '/auth/login' }, 'Sign in with Discord'))));
   }
   function draw() {
