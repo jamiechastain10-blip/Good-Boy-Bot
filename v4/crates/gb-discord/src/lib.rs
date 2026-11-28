@@ -2377,6 +2377,17 @@ async fn run_helper(link: Arc<Link>, slot: usize, token: String, me: Id<UserMark
     }
 }
 
+/// Takes away the commands Good Boy 3 registered in one server (this bot's own are registered for all servers).
+/// Nothing is sent when there are none, so this costs one look per server.
+async fn clear_old_server_commands(http: &Client, app: Id<ApplicationMarker>, guild: Id<GuildMarker>) {
+    let Ok(answer) = http.interaction(app).guild_commands(guild).await else { return };
+    let Ok(old) = answer.models().await else { return };
+    if old.is_empty() { return; }
+    if let Err(e) = http.interaction(app).set_guild_commands(guild, &[]).await {
+        eprintln!("Could not clear Good Boy 3's old commands in server {guild}: {e}");
+    }
+}
+
 /// Connects to Discord and runs until it is told to stop. `bot` already holds the open database.
 pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -2559,6 +2570,13 @@ pub async fn run(token: String, bot: Arc<Bot>, mut ctl: Control) -> Result<(), S
                 if let twilight_model::gateway::payload::incoming::GuildCreate::Available(guild) = *g {
                     let gid = guild.id.to_string();
                     link.bot.on_server(&gid, &guild.name);
+                    // Good Boy 3 registered its commands in each server; this bot registers them once for every server.
+                    // Left there, the old ones show up next to the new ones in Discord, and the ones this bot does not
+                    // have answer nothing ("The application did not respond"). They are cleared once, when seen.
+                    {
+                        let (link, id) = (link.clone(), guild.id);
+                        tokio::spawn(async move { clear_old_server_commands(&link.http, link.app, id).await; });
+                    }
                     // the invites as they are now, so the first join can be told apart
                     if link.bot.tracks_invites(&gid) {
                         let (link, id) = (link.clone(), guild.id);
@@ -2902,7 +2920,7 @@ mod tests {
     #[test]
     fn the_commands_are_ones_discord_accepts() {
         let list = commands();
-        assert_eq!(list.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["rank", "leaderboard", "remind", "giveaway", "ticket", "achievements", "poll", "suggest", "starboard", "xp", "levels", "help", "music", "time", "money", "games", "mod", "community", "roles", "me", "social", "voice", "server", "View wallet", "Pay member", "Warn member", "Message stats", "Translate", "Quote Image", "Quote Image (Color)", "Report message"]);
+        assert_eq!(list.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["rank", "leaderboard", "remind", "giveaway", "ticket", "achievements", "poll", "suggest", "starboard", "xp", "levels", "help", "whatsnew", "about", "music", "time", "money", "games", "mod", "community", "roles", "me", "social", "voice", "server", "View wallet", "Pay member", "Warn member", "Message stats", "Translate", "Quote Image", "Quote Image (Color)", "Report message"]);
         assert_eq!(list.iter().find(|c| c.name == "Warn member").map(|c| c.kind), Some(twilight_model::application::command::CommandType::User), "right-click a member > Apps > Warn member");
         assert_eq!(list.last().map(|c| c.kind), Some(twilight_model::application::command::CommandType::Message), "right-click a message > Apps > Translate");
         assert!(list[0].options.is_empty(), "/rank's member box is asked in its popup");

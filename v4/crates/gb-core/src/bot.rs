@@ -446,7 +446,7 @@ pub fn group_about(command: &str, group: &str) -> &'static str {
 }
 /// Every command this build of the bot answers. The Discord layer registers exactly these.
 pub fn commands() -> impl Iterator<Item = &'static CommandSpec> {
-    OWN.iter().chain(fun::COMMANDS).chain(counting::COMMANDS).chain(reminders::COMMANDS).chain(giveaways::COMMANDS).chain(tickets::COMMANDS).chain(tags::COMMANDS).chain(roles::COMMANDS).chain(welcome::COMMANDS).chain(economy::COMMANDS).chain(utility::COMMANDS).chain(roleplay::COMMANDS).chain(invites::COMMANDS).chain(backup::COMMANDS).chain(messages::COMMANDS).chain(deadchat::COMMANDS).chain(eclipseid::COMMANDS).chain(family::COMMANDS).chain(achievements::COMMANDS).chain(clips::COMMANDS).chain(botnews::COMMANDS).chain(partyfinder::COMMANDS).chain(quotes::COMMANDS).chain(critters::COMMANDS).chain(integrations::COMMANDS).chain(tts::COMMANDS).chain(tempvoice::COMMANDS).chain(engagement::COMMANDS).chain(stats::COMMANDS).chain(community::COMMANDS).chain(casino::COMMANDS).chain(crate::arcade::COMMANDS).chain(fish::COMMANDS).chain(notify::COMMANDS).chain(moderation::COMMANDS).chain(modplus::COMMANDS).chain(logs::COMMANDS).chain(music::COMMANDS).chain(timezones::COMMANDS).chain(altwatch::COMMANDS).chain(plural::COMMANDS).chain(setup::COMMANDS)
+    OWN.iter().chain(fun::COMMANDS).chain(counting::COMMANDS).chain(reminders::COMMANDS).chain(giveaways::COMMANDS).chain(tickets::COMMANDS).chain(tags::COMMANDS).chain(roles::COMMANDS).chain(welcome::COMMANDS).chain(economy::COMMANDS).chain(utility::COMMANDS).chain(roleplay::COMMANDS).chain(invites::COMMANDS).chain(backup::COMMANDS).chain(messages::COMMANDS).chain(deadchat::COMMANDS).chain(eclipseid::COMMANDS).chain(family::COMMANDS).chain(achievements::COMMANDS).chain(clips::COMMANDS).chain(botnews::COMMANDS).chain(partyfinder::COMMANDS).chain(quotes::COMMANDS).chain(critters::COMMANDS).chain(integrations::COMMANDS).chain(tts::COMMANDS).chain(tempvoice::COMMANDS).chain(engagement::COMMANDS).chain(stats::COMMANDS).chain(community::COMMANDS).chain(casino::COMMANDS).chain(crate::arcade::COMMANDS).chain(fish::COMMANDS).chain(notify::COMMANDS).chain(crate::about::COMMANDS).chain(moderation::COMMANDS).chain(modplus::COMMANDS).chain(logs::COMMANDS).chain(music::COMMANDS).chain(timezones::COMMANDS).chain(altwatch::COMMANDS).chain(plural::COMMANDS).chain(setup::COMMANDS)
 }
 
 /// Modules a brand-new server starts with.
@@ -1739,6 +1739,7 @@ impl Bot {
                 return vec![Action::Reply { card: self.help(&ev.guild) }];
             }
             ("notifications", _) => return notify::command(&self.db, ev),
+            ("whatsnew" | "about", _) => return crate::about::command(&ev.name, MODULES.iter().filter(|m| self.on(&ev.guild, m.id)).count()),
             ("achievements", _) => { let server = self.server_name(&ev.guild); return self.achievements(&ev.guild, &server).command(ev); }
             ("marry" | "family", _) => return self.family(&ev.guild).command(ev, name_of),
             ("id", _) => {
@@ -1961,6 +1962,8 @@ impl Bot {
                 None => vec![private("That menu is from an older message. Use the command again.")],
             };
         }
+        // the older-versions menu under /whatsnew
+        if ev.id == crate::about::PICK { return crate::about::picked(ev.values.first().map(String::as_str)); }
         if ev.id.starts_with("setup:") {
             if let Some(out) = setup::button(&self.db, &ev.guild, &ev.id, &ev.member) { return out; }
         }
