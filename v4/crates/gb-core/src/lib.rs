@@ -4,6 +4,7 @@
 //! what to do, and what they want done comes back as plain actions. The Discord connection is a thin layer
 //! around this (the `gb-discord` crate), which is what lets every rule here be tested without Discord.
 
+pub mod about;
 pub mod activity;
 pub mod colours;
 pub mod roster;
