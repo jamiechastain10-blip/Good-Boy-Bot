@@ -1,0 +1,14 @@
+/* Basic Ghost Labs - Good Boy 4. The Access and Support pages (access.js). */
+.acc .case .text p{white-space:normal;overflow-wrap:anywhere}
+.acc .case .text b{overflow-wrap:anywhere}
+.acc ul{padding-left:20px;margin:8px 0}
+.acc li{margin:4px 0}
+.acc .btns{flex-wrap:wrap;align-items:center}
+@media (max-width:760px){
+  .acc .card{padding:14px}
+  .acc .case{align-items:flex-start;gap:10px}
+  .acc .case .text{flex:1 1 0;min-width:0}
+  .acc .case .btn{flex:none;padding:6px 10px;font-size:11px;min-height:0}
+  .acc ul{padding-left:16px}
+  .acc .btns > span{flex:1 1 100%}
+}

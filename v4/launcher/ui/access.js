@@ -28,7 +28,7 @@
   /** The owner's page. */
   function page(x) {
     const { h, call, toast, busy } = x;
-    const box = h('div', { class: 'stack big' }, h('p', { class: 'muted' }, 'Loading…'));
+    const box = h('div', { class: 'stack big acc' }, h('p', { class: 'muted' }, 'Loading…'));
     async function load() {
       let v, servers = [];
       try { [v, servers] = await Promise.all([call('access_view'), call('servers').catch(() => [])]); } catch (e) { box.replaceChildren(h('div', { class: 'card note warn' }, e.message)); return; }
@@ -70,7 +70,7 @@
   /** What Basic Ghost Labs support sees on a visit. */
   function supportPage(x) {
     const { h, call, toast, busy, bot } = x;
-    const box = h('div', { class: 'stack big' }, h('p', { class: 'muted' }, 'Loading…'));
+    const box = h('div', { class: 'stack big acc' }, h('p', { class: 'muted' }, 'Loading…'));
     (async () => {
       let v; try { v = await call('support_view'); } catch (e) { box.replaceChildren(h('div', { class: 'card note warn' }, e.message)); return; }
       const act = (what, label) => h('button', { class: what === 'stop' ? 'btn quiet' : 'btn', type: 'button', onclick: (e) => busy(e.currentTarget, () => bot(what)) }, label);

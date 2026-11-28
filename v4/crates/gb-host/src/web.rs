@@ -481,6 +481,7 @@ const FILES: &[(&str, &str, &[u8])] = &[
     ("/ctxmenu.js", "text/javascript; charset=utf-8", include_bytes!("../../../launcher/ui/ctxmenu.js")),
     ("/menu.js", "text/javascript; charset=utf-8", include_bytes!("../../../launcher/ui/menu.js")),
     ("/access.js", "text/javascript; charset=utf-8", include_bytes!("../../../launcher/ui/access.js")),
+    ("/access.css", "text/css; charset=utf-8", include_bytes!("../../../launcher/ui/access.css")),
     ("/fonts/Figtree-400.ttf", "font/ttf", include_bytes!("../../../launcher/ui/fonts/Figtree-400.ttf")),
     ("/fonts/Figtree-500.ttf", "font/ttf", include_bytes!("../../../launcher/ui/fonts/Figtree-500.ttf")),
     ("/fonts/Figtree-600.ttf", "font/ttf", include_bytes!("../../../launcher/ui/fonts/Figtree-600.ttf")),
